@@ -6,8 +6,8 @@ A PC-9821 (NEC Xe10) core for
 directory carry the grant). It emulates a
 mid-range 486 PC-9821: the PC-98 memory map and firmware interface, GDC text
 and graphics, YM2608 sound, ATA IDE storage, keyboard, joystick and RTC. NEC
-firmware is copyrighted and is not included — the core runs the ROM set dumped
-from your own machine.
+firmware is copyrighted and is not included in this repository: the core loads
+it at runtime as a BIOS pack (see Requirements).
 
 ## What works
 
@@ -24,10 +24,14 @@ from your own machine.
 ## Requirements
 
 - A MiSTer DE10-Nano with the SDRAM addon board.
-- Your own PC-9821 Xe10 ROM dump: `BANK0.BIN`..`BANK7.BIN`, `BIOS.ROM`,
-  `FONT.ROM`, plus optional YM2608 rhythm samples. The pack is not
-  redistributable and is **not included**. `make pack` builds it; the OSD
-  `Load ROM pack` (`F0,BIN`) loads it.
+- The Xe10 BIOS pack, which is **not included**. Download `pc98pack-xe10.bin` from
+  <https://archive.org/download/PC9821-xe-xe10-bios> and put it at
+  `games/PC9821/pc98pack-xe10.bin`. The MGL loads it from there, and the OSD's
+  `Load ROM pack` (`F0,BIN`) loads one by hand. Use only that file, not `pc98pack-xe.bin`:
+  the Xe firmware set does not run yet.
+- Or build the pack from your own PC-9821 Xe10 ROM dump with `make pack`. The dump is
+  `BANK0.BIN`..`BANK7.BIN`, `BIOS.ROM` and `FONT.ROM`, plus the optional YM2608 rhythm
+  samples and `SOUND.ROM`.
 - `firmware/diagnostic/` is the in-tree bring-up pack.
 
 ## DOS setup and drivers
@@ -176,4 +180,4 @@ and `--no-cdrom-audio` builds a data-only drive. Deeper detail lives in
   `0x6C`, `0x60` bit 6, the `0x043F` read-back and the IDE work-RAM window at `0xDA000`);
   [`TODO.md`](TODO.md) lists each with what would settle it.
 
-NEC and Yamaha ROM data are copyrighted; supply your own dumps.
+NEC and Yamaha ROM data are copyrighted and are not part of this repository.
