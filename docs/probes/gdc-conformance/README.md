@@ -4,8 +4,8 @@ These are **real PC-9821 hardware** captures, so they sit at the TOP of this
 repo's evidence hierarchy (AGENTS.md, "Evidence hierarchy": real hardware beats
 NP2kai, qemu-pc98, MAME and our own RTL). They are the oracle for the graphics
 GDC (the uPD7220-compatible *slave* on ports `0xA0`/`0xA2`) command/drawing
-work — the GDC2 drawing gap listed in README.md's known issues ("Most GDC2 drawing commands
-are accepted but not executed".
+work — the GDC2 drawing gap listed in README.md's known issues ("the graphics GDC's line, arc,
+rectangle and character drawing").
 
 ## What ran, on what
 

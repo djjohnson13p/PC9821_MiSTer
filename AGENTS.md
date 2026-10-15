@@ -583,6 +583,6 @@ tree: never renumber or reuse one. A closed item is deleted and its number retir
 `python3 tools/check_todo_split.py` holds the files, the index and every reference together.
 `todo/` holds only work still to follow up or verify (a capture whose answer would change guest-
 visible behaviour, a divergence, a re-check, an open owner decision): a known limitation with no
-plan goes in README's "Known issues and limitations", a latency/area trade in
+plan goes in README's "Known issues", a latency/area trade in
 `docs/trade-candidates.md`, a standing rule here - otherwise the list fills with finished history
 and stops being a work list (owner, 2026-10-11).

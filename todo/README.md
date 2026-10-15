@@ -2,8 +2,8 @@
 
 `todo/` holds only work we still need to follow up on or verify: a capture owed on the real
 machine whose answer would change what a guest observes, a divergence to fix, a re-check, or an
-open owner decision. Known limitations with no plan belong in `README.md`'s "Known issues and
-limitations"; latency/area trades in `docs/trade-candidates.md`; standing rules in `AGENTS.md`.
+open owner decision. Known limitations with no plan belong in `README.md`'s "Known issues";
+latency/area trades in `docs/trade-candidates.md`; standing rules in `AGENTS.md`.
 A finished item is deleted, not marked done.
 
 ## Status tags
