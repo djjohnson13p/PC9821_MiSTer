@@ -69,7 +69,12 @@ CARD_CORE="/media/fat/_Computer/PC9821Z486.rbf"
 CARD_MGL="/media/fat/PC9821Z486.mgl"
 RBF="$REPO/output_files/z486_mister.rbf"
 
-SSH=("${SSHPASS_CMD[@]}" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$HOST")
+SSH=("${SSHPASS_CMD[@]}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$HOST")
+# Local scratch is per card: two runs against two cards must not share a capture file.
+HOST_SLUG="$(printf '%s' "${HOST#*@}" | tr -c 'A-Za-z0-9._-' '_')"
+SCRATCH="${MISTER_SCRATCH:-$REPO/.build/mister/$HOST_SLUG}"
+mkdir -p "$SCRATCH"
+CAPTURE_FILE="$SCRATCH/capture.txt"
 
 # sshd on the card prints a post-quantum warning to stderr on every connection; it is not ours.
 quiet() { grep -viE 'WARNING|vulnerable|store now|upgraded|openssh.com/pq' || true; }
@@ -118,7 +123,7 @@ cmd_state() {
     fi
 
     echo "== the MGL and the packs it loads"
-    "${SSH[@]}" "wc -c < $CARD_MGL 2>/dev/null | sed 's/^/  mgl bytes: /'
+    "${SSH[@]}" "if [ -f $CARD_MGL ]; then wc -c < $CARD_MGL | sed 's/^/  mgl bytes: /'; else echo '  (no MGL on the card yet: run tools/mister_load.sh)'; fi
        sed -n 's|.*<file[^>]*type=\"f\"[^>]*path=\"\([^\"]*\)\".*|  pack the MGL names: \1|p' $CARD_MGL 2>/dev/null
        ls -l /media/fat/games/PC9821/*.bin 2>/dev/null | awk '{printf \"  %-44s %s bytes\n\", \$NF, \$5}'" 2>&1 | quiet | sed 's/^/  /'
 
@@ -157,9 +162,9 @@ cmd_capture() {
     local secs="${1:-12}"
     echo "== capturing /dev/ttyS1 for ${secs}s"
     "${SSH[@]}" "stty speed 115200 -F /dev/ttyS1" 2>/dev/null || true
-    "${SSH[@]}" "timeout $secs cat /dev/ttyS1" 2>/dev/null > /tmp/mister-capture.txt || true
-    echo "  $(stat -c%s /tmp/mister-capture.txt) bytes -> /tmp/mister-capture.txt"
-    if [ ! -s /tmp/mister-capture.txt ]; then
+    "${SSH[@]}" "timeout $secs cat /dev/ttyS1" 2>/dev/null > "$CAPTURE_FILE" || true
+    echo "  $(stat -c%s "$CAPTURE_FILE") bytes -> $CAPTURE_FILE"
+    if [ ! -s "$CAPTURE_FILE" ]; then
         echo "  NOTHING CAPTURED. Either the core is not running, or it has not reached a trigger."
         echo "  Check 'state', and give the guest longer - the first message is usually at ~2 s."
     fi
@@ -172,7 +177,7 @@ cmd_boot() {
     sleep 25
     cmd_capture "$secs"
     echo
-    cmd_decode /tmp/mister-capture.txt
+    cmd_decode "$CAPTURE_FILE"
 }
 
 # THE HARDWARE LOOP, AND THE ONE THING IT MUST NOT DO IS MEASURE THE WRONG BITSTREAM.

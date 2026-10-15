@@ -4,11 +4,15 @@
 // reads its coefficients through a port so the PARENT holds one shared ROM for both
 // channels, and is otherwise a pure "run TAPS taps and hand back the answer" machine.
 //
-// Fixed 2-deep MAC pipeline, one tap per clock (addresses issued at cycle c):
+// Fixed MAC pipeline, one tap per clock (addresses issued at cycle c):
 //   end of c   : history and coefficient registers load  (RAM in here, ROM in the parent)
-//   end of c+1 : product registers load
-//   c+2        : the product is accumulated
-// A run is therefore TAPS+3 clocks and the accumulator's final value is latched in the last.
+//   end of c+1 : the product is added into the accumulator (multiply-accumulate in one DSP
+//                block: the accumulator is the DSP's own output register)
+// The accumulator's final value is ready after tap TAPS-1's add; the run still lasts TAPS+3
+// clocks and latches the result in the last, so `done` and the output land on the same clock
+// they did when the product was registered separately and added a clock later (that form
+// cost 68 product flip-flops and kept the 42-bit adder chain in logic, ~45 ALMs per engine
+// at TAPS=247; tb_pc9821_audio_out_equiv holds the two cycle-identical).
 //
 // History addressing: the tap window is the TAPS samples ending at `start_addr`, read as
 // start_addr - k on a circular buffer. The buffer is deliberately larger than the window
@@ -31,7 +35,19 @@ module pc9821_audio_fir_engine #(
     parameter integer RAM_AW  = 5,    // history RAM address width (window + margin)
     parameter integer CMIRROR = 9,    // prototype symmetry centre: coefficient (2*CMIRROR - m)
     parameter integer COEF_AW = 4,    // coefficient address width after mirroring
-    parameter integer SHIFT   = 17    // Q17 coefficients -> output
+    parameter integer SHIFT   = 17,   // Q17 coefficients -> output
+    // 1: out_l/out_r are registers that hold the last result until the next `done` (the
+    // polyphase stage, whose result is read at an arbitrary later clock). 0: the outputs are
+    // the saturated accumulator itself, valid from `done` until the next run's first
+    // accumulate (cyc 2, at least two clocks after the next run could start) - enough for a
+    // consumer that registers them on `done`/`done+1` (stages A and B feed a history-RAM
+    // write one clock after their strobe), and 32 flip-flops fewer.
+    parameter integer HOLD_OUT = 1,
+    // 0: no output clamp. Only for a prototype whose accumulator provably stays inside
+    // [-2^(SHIFT+15), 2^(SHIFT+15)) (stage A: |acc| <= 32768 * 131072 = 2^32 with the negative
+    // end exactly -2^32, whose accumulator bits [33:32] are 2'b11, so the overflow test never
+    // fires); tools/check_fir_acc_bound.py holds the bound.
+    parameter integer SAT      = 1
 )(
     input  wire                    clk,
 
@@ -54,8 +70,8 @@ module pc9821_audio_fir_engine #(
 
     output reg                     busy,
     output reg                     done,
-    output reg  signed [15:0]      out_l,
-    output reg  signed [15:0]      out_r
+    output wire signed [15:0]      out_l,
+    output wire signed [15:0]      out_r
 );
 
     (* ramstyle = "M10K" *) reg signed [15:0] ram_l [0:(1<<RAM_AW)-1];
@@ -114,21 +130,34 @@ module pc9821_audio_fir_engine #(
     // simulation and is never used - the engine only accumulates inside a run, and a run
     // always issues TAPS addresses first.
     reg signed [15:0] q_l, q_r;
-    // Pipeline stage 2: product.
-    reg signed [33:0] prod_l, prod_r;
-    // Pipeline stage 3: accumulator. 34-bit products with 7 bits of tap growth (TAPS <= 128).
-    reg signed [41:0] acc_l, acc_r;
+    // Pipeline stage 2: accumulator, in the DSP block. 34 bits is exact for every prototype
+    // this engine runs: |acc| <= 32768 * sum|coef| over a run, and that sum is at most
+    // 166 417 (stage B), 253 170 (stage C, worst of the five phases) and 131 072 (stage A,
+    // sum h = 1024, coefficients h<<7), i.e. |acc| <= 8.30e9 < 2^33.
+    // A two's-complement add is exact modulo 2^34 and the true value always fits, so the
+    // narrower accumulator holds the same value the 42-bit one did. The bounds are recomputed
+    // from the shipped tables by tools/check_fir_acc_bound.py (held by the equivalence bench's
+    // full-scale phase, which drives the worst-case sign pattern).
+    localparam integer ACCW = 34;
+    reg signed [ACCW-1:0] acc_l, acc_r;
 
     // Q17 accumulator -> 16-bit, saturating (the filters' DC gain is unity, so this only
-    // ever catches arithmetic, never the signal). The accumulator's 42 bits are products
-    // (34) plus tap growth (<= 7); SHIFT+15 is the sign bit of the 16-bit result, so
-    // anything above it that is not that sign is an overflow.
+    // ever catches arithmetic, never the signal). SHIFT+15 is the sign bit of the 16-bit
+    // result, so anything above it that is not that sign is an overflow.
     localparam integer OSB = SHIFT + 15;               // 32
-    localparam integer OVW = 41 - OSB;                 // 9
-    wire ovf_l = (acc_l[41:OSB+1] != {OVW{acc_l[OSB]}});
-    wire ovf_r = (acc_r[41:OSB+1] != {OVW{acc_r[OSB]}});
-    wire signed [15:0] y_l = ovf_l ? (acc_l[OSB] ? 16'sh8000 : 16'sh7FFF) : acc_l[OSB -: 16];
-    wire signed [15:0] y_r = ovf_r ? (acc_r[OSB] ? 16'sh8000 : 16'sh7FFF) : acc_r[OSB -: 16];
+    localparam integer OVW = ACCW - 1 - OSB;           // 1
+    wire ovf_l = (acc_l[ACCW-1:OSB+1] != {OVW{acc_l[OSB]}});
+    wire ovf_r = (acc_r[ACCW-1:OSB+1] != {OVW{acc_r[OSB]}});
+    wire signed [15:0] y_l = (SAT != 0 && ovf_l) ? (acc_l[OSB] ? 16'sh8000 : 16'sh7FFF) : acc_l[OSB -: 16];
+    wire signed [15:0] y_r = (SAT != 0 && ovf_r) ? (acc_r[OSB] ? 16'sh8000 : 16'sh7FFF) : acc_r[OSB -: 16];
+
+    reg signed [15:0] out_l_q, out_r_q;
+    assign out_l = (HOLD_OUT != 0) ? out_l_q : y_l;
+    assign out_r = (HOLD_OUT != 0) ? out_r_q : y_r;
+
+    // Full-width products (16 x 18 signed = 34 bits), sign-extended to the accumulator.
+    wire signed [33:0] pm_l = q_l * coef_data;
+    wire signed [33:0] pm_r = q_r * coef_data;
 
     always @(posedge clk) begin
         done <= 1'b0;
@@ -140,8 +169,6 @@ module pc9821_audio_fir_engine #(
 
         q_l <= ram_l[tap_addr];
         q_r <= ram_r[tap_addr];
-        prod_l <= q_l * coef_data;
-        prod_r <= q_r * coef_data;
 
         case (st)
             2'd0: begin
@@ -152,8 +179,6 @@ module pc9821_audio_fir_engine #(
                           base  <= pend_addr;
                           ph    <= pend_ph;
                           cyc   <= 8'd1;
-                          acc_l <= 42'sd0;
-                          acc_r <= 42'sd0;
                           st    <= 2'd1;
                           busy  <= 1'b1;
                           pend  <= 1'b0;
@@ -170,14 +195,23 @@ module pc9821_audio_fir_engine #(
                           pend_addr <= start_addr;
                           pend_ph   <= phase;
                       end
-                      // Tap k is issued at cyc = k+1 and accumulated at cyc = k+3.
-                      if ((cyc >= 8'd3) && (cyc <= 8'(TAPS + 2))) begin
-                          acc_l <= acc_l + {{8{prod_l[33]}}, prod_l};
-                          acc_r <= acc_r + {{8{prod_r[33]}}, prod_r};
+                      // The accumulator clears on the run's first running clock, not at the
+                      // consume, so a finished result stays readable for two clocks after
+                      // `done` even if the next run starts at once (HOLD_OUT = 0).
+                      if (cyc == 8'd1) begin
+                          acc_l <= '0;
+                          acc_r <= '0;
+                      end
+                      // Tap k is issued at cyc = k+1 and accumulated at cyc = k+2.
+                      if ((cyc >= 8'd2) && (cyc <= 8'(TAPS + 1))) begin
+                          acc_l <= acc_l + ACCW'(pm_l);
+                          acc_r <= acc_r + ACCW'(pm_r);
                       end
                       if (cyc == 8'(TAPS + 3)) begin
-                          out_l <= y_l;
-                          out_r <= y_r;
+                          if (HOLD_OUT != 0) begin
+                              out_l_q <= y_l;
+                              out_r_q <= y_r;
+                          end
                           done  <= 1'b1;
                           busy  <= 1'b0;
                           st    <= 2'd0;

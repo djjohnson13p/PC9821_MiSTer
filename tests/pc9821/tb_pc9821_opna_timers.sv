@@ -29,6 +29,11 @@
 //   * The period formula is the YM2608's own, quoted in the vendored core's
 //     header: jt12/hdl/jt12_timers.v:21-22 - "Timer A = 144*(1024-NA)/Phi M,
 //     Timer B = 2304*(256-NB)/Phi M", where Phi M is the chip's master clock.
+//     That header is vendored RTL, so the primary reference is cited beside it:
+//     NP2kai sound/opntimer.c:30 `l = 18 * (1024 - ...)` and :59
+//     `l = 288 * (256 - opna->s.reg[0x26])`, in 2.4576 MHz-base CPU clocks scaled
+//     by 1536/625 (:36), i.e. 18 us per Timer A count and 288 us per Timer B
+//     count - within 0.2% of 144/7.9872 MHz and 2304/7.9872 MHz (bench-audit).
 //   * Phi M for this board is 7.9872 MHz: NP2kai sound/opngen.h:13 has
 //     OPNA_CLOCK = 3993600 and sound/opna.c:123 doubles it for the FM engine,
 //     and the glue's clock-enable comment (pc9821_opna.sv:38-42) cites that.

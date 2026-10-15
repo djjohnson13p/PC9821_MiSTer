@@ -243,7 +243,7 @@ module tb_pc9821_gfx_throughput;
       // under the intermediate model, before that arming rule landed). tb_pc9821_gvram_porta_equiv
       // encodes the same rule (its second pair is at acc + GVRAM_GR_HOLD and the path is next free
       // at +GVRAM_GR_HOLD + 2) and would fail if the second pair re-armed.
-      // RE-PINNED (TODO item 113, owner-authorised 2026-10-02): the GRCG's presentation is now
+      // RE-PINNED (docs/trade-candidates.md T28, owner-authorised 2026-10-02): the GRCG's presentation is now
       // the REGISTERED one, which takes the route decode off the GVRAM write-enable's clk_sys
       // cone and adds exactly ONE clk_sys to the walk. These two bounds were this bench's own
       // PRE-change measurement, not a machine number (the machine's GRCG_RMW row is 5 clk at
@@ -251,12 +251,12 @@ module tb_pc9821_gfx_throughput;
       // restored and the presentation deferred: S2 9.01 -> 10.01, S5 9.01 -> 10.01 clk_sys/store,
       // with every array access count unchanged.
       max_cyc[0] = 6;    // GRCG_RMW's own row, 103.9 ns at 50 MHz (unchanged: 6.01 measured)
-      max_cyc[1] = 10;   // RE-PINNED for TODO 113: the registered presentation adds exactly
+      max_cyc[1] = 10;   // RE-PINNED for trade T28: the registered presentation adds exactly
                          // one clk_sys to the walk, 9.01 -> 10.01 (the walk, not the
                          // period, paces this shape; access count unchanged at 8)
       max_cyc[2] = 6;    // the pair burst is one request: one period (was 3)
       max_cyc[3] = 6;    // (was 3)
-      max_cyc[4] = 10;   // RE-PINNED for TODO 113: 8.01 -> 10.01 with the registered presentation
+      max_cyc[4] = 10;   // RE-PINNED for trade T28: 8.01 -> 10.01 with the registered presentation
       max_cyc[5] = 6;    // (was 3)
     end
   endtask

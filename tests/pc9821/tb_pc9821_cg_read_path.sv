@@ -215,7 +215,7 @@ module tb_pc9821_cg_read_path;
       .clk(clk_sys), .reset(reset),
       .top_bank(top_bank), .ide_rom_enable(ide_rom_enable), .d8_bank(2'b00), .ide_ram_gate(1'b1),
       .bios_ram_gate(bios_ram_gate),
-      .win0_sel(win0_sel),
+      .win0_sel(win0_sel), .win0_sel_moved(win0_sel != 8'h08),
     .sys16m_en(sys16m_en),
       .pack_base(pack_base), .guest_ram_bytes(guest_ram_bytes),
       .gvram_access_page(gvram_access_page),

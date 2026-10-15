@@ -230,7 +230,14 @@ module tb_pc9821_pcm86_fifo;
     write_port(P_FIFO, 8'h08);             // buffer reset
     write_port(P_FIFO, 8'h00);
     write_port(P_DAC, 8'h60);              // 1-byte frames, so count is bytes
-    for (k = 0; k < 16'h8000; k = k + 1) write_port(P_DATA, 8'h5A);
+    // The boundary itself, from below: NP2kai pcm86_ia466 sets bit 7 on
+    // `g_pcm86.virbuf >= PCM86_LOGICALBUF` (cbus/pcm86io.c:261), so one byte short
+    // of 0x8000 is NOT full (and not empty). Without this the bench saw full only
+    // AT 0x8000 and a bit that rose a byte early passed (bench-audit mutation).
+    for (k = 0; k < 16'h7FFF; k = k + 1) write_port(P_DATA, 8'h5A);
+    read_466(v);
+    if ((v & 8'hC0) !== 8'h00) fail("0xA466 reports full (or empty) one byte short of 0x8000 (NP2kai: virbuf >= 0x8000)");
+    write_port(P_DATA, 8'h5A);
     if (dbg_count !== 16'h8000) begin
       $display("FAIL: after 0x8000 writes the count is %04x", dbg_count);
       errors = errors + 1;

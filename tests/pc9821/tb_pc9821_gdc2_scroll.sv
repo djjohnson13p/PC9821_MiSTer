@@ -789,6 +789,62 @@ module tb_pc9821_gdc2_scroll;
       if (dut.u_gdc2.gfx_win_off !== 1'b0) fail("window restored: raster 399 still off");
     end
 
+    // ---- 15. the PACKED (256-colour) walk: NP2kai vram/makegrex.c makegrphex ----
+    // Three differences from the planar walk, all NP2kai's (MAME's packed draw agrees on
+    // the first): grphput_all steps `vad = LOW16(vad + mg.pitch)` on EVERY raster line and
+    // never reads the CSRFORM line repeat; makegrphex loops `grphput(&mg, 0)` /
+    // `grphput(&mg, 4)` only, so partition 2 returns to partition 1 (the TEXTW slots are
+    // not display partitions); and the walk runs inside the slave SYNC's window
+    // (`mg.liney = dsync.grph_vbp` ... `if (mg.liney >= dsync.grphymax)`), the rest black.
+    // FAIL-FIRST (rtlrev-video): the pre-fix walk repeated each line lr times, walked into
+    // partition 3, and pc9821_system lifted the window in 256-colour mode (the window rows
+    // below were verified to fail with that exception reinstated as gfx_grph_on's term).
+    write_io(8'h6A, 8'h07); write_io(8'h6A, 8'h21); write_io(8'h6A, 8'h06);   // PEGC select
+    write_io(8'hA2, 8'h4B); write_io(8'hA0, 8'h01);    // lr = 2 (a 200-line leftover)
+    write_io(8'hA2, 8'h70);
+    write_io(8'hA0, 8'h00); write_io(8'hA0, 8'h00);    // partition 1: start 0, 100 lines
+    write_io(8'hA0, 8'h40); write_io(8'hA0, 8'h06);
+    write_io(8'hA0, 8'h00); write_io(8'hA0, 8'h10);    // partition 2: start word 0x1000, 100 lines
+    write_io(8'hA0, 8'h40); write_io(8'hA0, 8'h06);
+    write_io(8'hA0, 8'h00); write_io(8'hA0, 8'h30);    // partition 3 (TEXTW): word 0x3000
+    write_io(8'hA0, 8'h40); write_io(8'hA0, 8'h06);
+    write_io(8'hA0, 8'h00); write_io(8'hA0, 8'h38);    // partition 4 (TEXTW): word 0x3800
+    write_io(8'hA0, 8'h40); write_io(8'hA0, 8'h06);
+    next_frame();
+    next_frame();
+    check_at_line(9'd0,   16'h0000, "packed: line 0 is partition 1's start");
+    check_at_line(9'd1,   16'h0050, "packed: line 1 steps one pitch (no CSRFORM repeat)");
+    check_at_line(9'd99,  16'h1EF0, "packed: line 99 is partition 1's last");
+    check_at_line(9'd100, 16'h2000, "packed: line 100 is partition 2's start");
+    check_at_line(9'd200, 16'h0000, "packed: line 200 returns to partition 1, not 3");
+    check_at_line(9'd201, 16'h0050, "packed: line 201 is partition 1's second line");
+    // The window: slave SYNC with AL = 200 (VBP 25, the master's) - graphics on 0..199 only.
+    write_io(8'hA2, 8'h0F);
+    write_io(8'hA0, 8'h06); write_io(8'hA0, 8'h26);
+    write_io(8'hA0, 8'h03); write_io(8'hA0, 8'h11);
+    write_io(8'hA0, 8'h83); write_io(8'hA0, 8'h07);
+    write_io(8'hA0, 8'hC8); write_io(8'hA0, 8'h64);
+    next_frame();
+    next_frame();
+    begin : pkwin
+      wait (dut.u_crtc.vline == 10'd10);  @(negedge clk_sys);
+      if (dut.gfx_grph_on !== 1'b1) fail("packed window: raster 10 graphics off");
+      wait (dut.u_crtc.vline == 10'd199); @(negedge clk_sys);
+      if (dut.gfx_grph_on !== 1'b1) fail("packed window: raster 199 graphics off");
+      wait (dut.u_crtc.vline == 10'd200); @(negedge clk_sys);
+      if (dut.gfx_grph_on !== 1'b0) fail("packed window: raster 200 shows graphics past grphymax");
+      wait (dut.u_crtc.vline == 10'd399); @(negedge clk_sys);
+      if (dut.gfx_grph_on !== 1'b0) fail("packed window: raster 399 shows graphics past grphymax");
+    end
+    // restore: AL 400, lr 1, the planar view
+    write_io(8'hA2, 8'h0F);
+    write_io(8'hA0, 8'h06); write_io(8'hA0, 8'h26);
+    write_io(8'hA0, 8'h03); write_io(8'hA0, 8'h11);
+    write_io(8'hA0, 8'h83); write_io(8'hA0, 8'h07);
+    write_io(8'hA0, 8'h90); write_io(8'hA0, 8'h65);
+    write_io(8'hA2, 8'h4B); write_io(8'hA0, 8'h00);
+    write_io(8'h6A, 8'h07); write_io(8'h6A, 8'h20); write_io(8'h6A, 8'h06);
+
     // ==== VERDICT ====
     if (errors == 0) begin
       $display("TB_PC9821_GDC2_SCROLL: PASS");

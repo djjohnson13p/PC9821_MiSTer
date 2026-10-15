@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // ==== WHAT THIS PROVES ====
-// The sound path under a dense worst case -- six full-level drums overlapping with six FM channels at maximum, the SSG at maximum and the 86-PCM voice playing at full scale, with the 0xA46C write-FIFO and the OPNA register queue (WRQ) flooded at the I/O floor cadence -- with three detections running throughout: (a) no dropped write or sample: every host write presented through the real pc9821_iobus master is accepted by the buffer and lands (WRQ entries drained to the chip, 0xA46C bytes stored in SDRAM byte-exact) now that both buffers back-pressure through io_wr_wait instead of silently dropping on full (the pre-fix WRQ lost 94/160 at this cadence and the 0xA46C FIFO dropped past 4 deep under SDRAM contention), with the stall itself counted so the no-drop result cannot be vacuous; (b) no accumulator wrap: the six-drum sum is recomputed with unbounded integers from jt08_adpcm_acc's per-drum slot inputs and compared with the DUT accumulator every slot; (c) no clipped-vs-expected sample: jt08_adpcm_acc's pcm_out must equal the raw drum sum (the pre-fix 16-bit clamp there flat-topped dense overlaps before the FM mix -- the owner's drums clipping) and the output chain must equal the single-clamp saturating model of the wide FM+ADPCM junction (the ymfm clamp16 / NP2kai _saturation_s16 point) followed by the AC-coupled (zero-mean) SSG and a WIDE join with NO intermediate saturation (datapaths.md F1: the pre-fix tree flat-topped there even when the FM+SSG+PCM86 sum fit in 16 bits; the single clamp is at the final DAC), the over-16 stimulus kept non-vacuous. Phase 1 pins the 0 dB single-drum output to the same model, so the default path stays bit-identical.
+// The sound path under a dense worst case -- six full-level drums overlapping with six FM channels at maximum, the SSG at maximum and the 86-PCM voice playing at full scale, with the 0xA46C write-FIFO and the OPNA register queue (WRQ) flooded at the I/O floor cadence -- with three detections running throughout: (a) no dropped write or sample: every host write presented through the real pc9821_iobus master is accepted by the buffer and lands (WRQ entries drained to the chip, 0xA46C bytes stored in SDRAM byte-exact) now that both buffers back-pressure through io_wr_wait instead of silently dropping on full (the pre-fix WRQ lost 94/160 at this cadence and the 0xA46C FIFO dropped past 4 deep under SDRAM contention), with the stall itself counted so the no-drop result cannot be vacuous; (b) the die's drum bus: the six-drum sum is recomputed from jt08_adpcm_acc's per-drum slot inputs as the die's 16-bit two's-complement WRAP (YM2608-LLE fmopna_impl.c:5370) and compared with the DUT accumulator every slot; (c) no clipped-vs-expected sample: jt08_adpcm_acc's pcm_out must equal that wrapped round sum, never a clamped one (the pre-fix 16-bit clamp there flat-topped dense overlaps before the FM mix -- the owner's drums clipping) and the output chain must equal the single-clamp saturating model of the wide FM+ADPCM junction (the ymfm clamp16 / NP2kai _saturation_s16 point) followed by the AC-coupled (zero-mean) SSG and a WIDE join with NO intermediate saturation (datapaths.md F1: the pre-fix tree flat-topped there even when the FM+SSG+PCM86 sum fit in 16 bits; the single clamp is at the final DAC), the over-16 stimulus kept non-vacuous. Phase 1 pins the 0 dB single-drum output to the same model, so the default path stays bit-identical.
 //
 // TB_PC9821_AUDIO_CLIP: the sound path under a DENSE worst case - six full-level
 // drums overlapping with six FM channels at maximum and the SSG at maximum, the
@@ -35,9 +35,10 @@
 //   * the FM+ADPCM value and its ONE clamp16 - ymfm ym2608::clock_fm_and_adpcm
 //     (ymfm_opn.cpp:1408-1414) and NP2kai's single DAC saturation
 //     (_saturation_s16, sdl/soundmng.c:787);
-//   * the SSG/FM join ratio (psg_snd << 2, then AC-coupled to zero mean by the
-//     board's C7C1 series cap model) - the ymfm SSG amplitude table's 14-bit
-//     full scale (ymfm_ssg.cpp:175-181) over jt49's 12-bit psg_snd;
+//   * the SSG term is the DUT's own sound.ssg_ac (the join psg_snd * 33/16, then
+//     AC-coupled to zero mean by the board's C7C1 series cap model): this bench
+//     takes it as given and checks only WHERE it joins; its level is pinned
+//     against the captures by tb_pc9821_opna_ssg_level / _opna_sndtest_balance;
 //   * the single-drum amplitude ceiling - ymfm adpcm_a_channel::output
 //     (ymfm_adpcm.cpp:234-239).
 //
@@ -94,6 +95,7 @@ module tb_pc9821_audio_clip;
   reg  [11:0] rhythm_waddr = 12'd0;
   reg  [15:0] rhythm_wdata = 16'd0;
   wire [7:0] win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire sys16m_en;   // 0x043B bit 2, the 15-16 MiB system-space window
   wire a20_enable, cpu_reset_req;
   wire [15:0] unmapped_writes, unmapped_reads, last_unmapped_port;
@@ -769,7 +771,7 @@ module tb_pc9821_audio_clip;
 
     // ==== FINAL CROSS-CHECKS ====
     if (wrap_events != 0)
-      fail("the drum accumulator wrapped somewhere in the run");
+      fail("the drum accumulator diverged from the die's 16-bit wrapping model somewhere in the run");
     if (clip_events != 0)
       fail("the drum bus diverged from the die's 16-bit wrapping model somewhere in the run");
     if (chain_events != 0)

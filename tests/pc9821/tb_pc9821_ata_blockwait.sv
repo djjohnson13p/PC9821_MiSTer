@@ -174,12 +174,13 @@ module tb_pc9821_ata_blockwait;
     if (!dut.status_reg[6]) fail("drive is not ready at the start");
 
     // Select the interface's bank. 0x0432 is a WINDOW on the task file, and the
-    // machine's built-in IDE answers at bank 0x01 while bank 0x00 -- the value
-    // DOS leaves -- floats the whole block at 0x0E (measured; probes/JOY.TXT and
-    // probes/WIN.TXT). Without this the commands below reach nothing at all,
-    // which is what the first run of this bench did.
-    write_byte(16'h0432, 8'h01);
-    if (dut.status_reg !== 8'h50) fail("the task file does not answer at bank 0x01 after the bank select");
+    // hard disk answers at bank 0x00 (its fixed position, bank 0's master) while
+    // the other bank floats the whole block at 0x0E (measured at an empty bank;
+    // probes/JOY.TXT and probes/WIN.TXT). Without the disk's bank selected the
+    // commands below reach nothing at all, which is what the first run of this
+    // bench did.
+    write_byte(16'h0432, 8'h00);
+    if (dut.status_reg !== 8'h50) fail("the task file does not answer at bank 0x00 after the bank select");
 
     // ---------------------------------------------------------------
     // 1. Issue a READ SECTORS. The adapter latches it and starts its 256-word

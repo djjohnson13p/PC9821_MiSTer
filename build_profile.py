@@ -133,7 +133,7 @@ class Config:
     # the block as not the one its record renders until the configuration is re-applied.)
     # Rewrites CDROM_EN, and with it the disk OSD entries (CONF_STR_DISKS) and hps_io's slot
     # count (HPS_VDNUM): the CD-ROM's "S4" slot and its ATAPI drive (pc9821_atapi, bank 1's
-    # slave). ON in every preset (owner, 2026-10-10: "default to
+    # master; the hard disk is bank 0's master with or without it). ON in every preset (owner, 2026-10-10: "default to
     # enabling the CD across the board"); --no-cdrom is the opt-out.
     cdrom_en: bool = True
     # Rewrites CDROM_AUDIO_EN: the CD drive's CD-DA player and the cdda ring behind it. It only
@@ -152,12 +152,13 @@ class Config:
     # line is absent and the framework builds the feature as upstream ships it.
     alsa_en: bool = False
     yc_en: bool = False
-    # The managed qsf block's OPTIMIZATION_TECHNIQUE. SPEED everywhere except the debug build:
-    # 'trace' asks for AREA, a LAB wash on this design (-9/+9/-14) that buys +0.27..0.58 ns of
-    # clk_sys slack in 3/3 draws - chosen because it is not worse, not because it frees area.
-    # It breaks trace's fit parity with base (owner, 2026-09-27): re-measure the trace's cost by
-    # fitting both sides at one technique.
-    fit_technique: str = "SPEED"
+    # The managed qsf block's OPTIMIZATION_TECHNIQUE. AREA in every preset since 2026-10-12
+    # (docs/trade-candidates.md T40): on the storage-pass tree, seeds 2-7 per side, AREA placed
+    # 38,947 ALMs / 4,170 LABs mean vs SPEED's 39,337 / 4,181, clk_sys slack mean -7.23 /
+    # worst -7.44 ns, and its seed-2 RBF passed the full hardware regression on two MiSTers. The
+    # design is LAB-bound, so the technique that frees LABs is the default. SPEED stays
+    # selectable (--fit-technique SPEED) for A/Bs.
+    fit_technique: str = "AREA"
     # Further qsf assignments over the SPEED stack, as sorted (NAME, VALUE) pairs (values
     # unquoted; render_qsf_block quotes a multi-word one). Empty for every preset unless its
     # entry says otherwise; recorded in the '# Active config' JSON only when non-empty, so a
@@ -644,7 +645,7 @@ def framework_macro_lines(config: "Config") -> list[str]:
 # number and real boards at room temperature run faster); AGENTS.md's Build profiles section
 # holds the measured slack band and the hardware bound.
 _BASE_HZ = 80_000_000
-_BASE_DESCRIPTION = ("80 MHz clk_sys, SDRAM on clk_sys (80/80), production SPEED fit (no seed) - "
+_BASE_DESCRIPTION = ("80 MHz clk_sys, SDRAM on clk_sys (80/80), production AREA fit (no seed) - "
                      "the default and shipping build (past timing closure)")
 PROFILES: dict[str, Config] = {
     "base": Config(
@@ -672,8 +673,8 @@ PROFILES: dict[str, Config] = {
         clk_sys_hz=120_000_000,
     ),
     # The instruction trace: IDENTICAL to base in clock and PLL, so the trace runs at exactly the
-    # clock the shipped core does. THE DEBUG PROFILE, and since 2026-09-27 the one fit difference
-    # from base: OPTIMIZATION_TECHNIQUE AREA (see Config.fit_technique).
+    # clock the shipped core does. THE DEBUG PROFILE. It asked for OPTIMIZATION_TECHNIQUE AREA
+    # first (2026-09-27); every preset has used AREA since 2026-10-12 (see Config.fit_technique).
     "trace": Config(
         name="trace",
         description="80 MHz clk_sys, SDRAM on clk_sys (clock/PLL identical to base) + the instruction trace ring and perf log, fit with OPTIMIZATION_TECHNIQUE AREA (the debug build)",
@@ -1362,7 +1363,8 @@ def selftest() -> int:
 
     @plant("qsf: the technique row edited by hand")
     def _(root, cfg):
-        sub(root / QSF_NAME, "OPTIMIZATION_TECHNIQUE SPEED", "OPTIMIZATION_TECHNIQUE AREA")
+        other = "SPEED" if cfg.fit_technique == "AREA" else "AREA"
+        sub(root / QSF_NAME, f"OPTIMIZATION_TECHNIQUE {cfg.fit_technique}", f"OPTIMIZATION_TECHNIQUE {other}")
 
     @plant("qsf: the record's clk_sys changed (top level, PLL and SDC still the old one)")
     def _(root, cfg):

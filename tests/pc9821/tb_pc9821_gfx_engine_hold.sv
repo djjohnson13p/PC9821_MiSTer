@@ -241,7 +241,11 @@ module tb_pc9821_gfx_engine_hold;
       // The values are unchanged (EGCREAD.CSV / the machine vectors) and the +1 stays under the
       // machine's measured read cost (docs/probes/GFX2-rerun.TXT EGC3100SP: 780.3 CLK50 for 16
       // units = 48.75/unit against our ~21), which is the licence for it.
-      max_hold[8] = 15;  // was 14
+      // egc-serial: the plane-serial engine steps the four planes of each unit in turn (the
+      // loop's four steps replace the one-cycle evaluate, and a read's ready now leaves from the
+      // last step), +3 for the first unit and +2 for the second: 20 clk_sys for the dword, 400 ns
+      // at this bench's 50 MHz, against the machine's 975 ns PER 16-BIT UNIT (GFX2-rerun.TXT above).
+      max_hold[8] = 20;  // was 15 (14 before the pipelined produce)
     end
   endtask
 

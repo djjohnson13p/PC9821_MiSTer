@@ -58,7 +58,7 @@ module tb_pc9821_sdram;
   localparam integer FREQ = 50_000_000;
   localparam integer CYCLE_NS = 20;                 // 1/50MHz
   localparam integer T_RCD = 1;                     // ns_to_cycles(18) at 50 MHz = 1
-  localparam integer CAS   = 2;                     // CAS_I = 2 for FREQ <= 100MHz
+  localparam integer CAS   = 2;                     // CAS_I = 2 below 100 MHz
   // ns_to_cycles(60) at 50 MHz = 3. This was 4, taken from the FREQ<=75MHz shortcut T_RC
   // used to have; the shortcut under-counted tRC/tWR above 66.7MHz (review F6) and is gone
   // from sdram.v, so the derived ceiling is what the controller emits and what this monitor

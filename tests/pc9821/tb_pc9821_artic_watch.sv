@@ -252,6 +252,14 @@ module tb_pc9821_artic_watch;
     end
 
     // CHK-3 and CHK-4: the word the GUEST reads at 0x5E is the field the INSTRUMENT reports.
+    // PRELOAD the counter first (bench-audit 2026-10-12): ~620 clocks after reset it holds
+    // ~4 ticks, so cnt[23:8] is 0x0000 and so is EVERY other 16-bit slice above bit 2 - a
+    // dbg_artic_hi wired to the wrong half of the counter read 0x0000 = 0x0000 and passed
+    // the check the VERDICT banner says it must fail. 0x00A5C300 makes cnt[23:8] = 0xA5C3,
+    // every neighbouring slice differs, and the low byte has 256 ticks (41 k clocks) before
+    // a carry could move the word between the read and the message capture.
+    @(negedge clk);
+    dut.artic_cnt = 32'h00A5_C300;
     read_word_5e;
     if (word5e[31:16] !== dbg_artic_hi) begin
       $display("FAIL CHK-3/4 a word read at 0x5E gave 0x%04X in bits 31:16 but dbg_artic_hi is 0x%04X",

@@ -8,12 +8,16 @@
 module pc9821_audio_volume
 #(
     parameter integer NUM_CH       = 10, // number of channels
-    parameter integer SAMPLE_WIDTH = 16  // number of bits per sample
+    parameter integer SAMPLE_WIDTH = 16, // number of bits per sample
+    // Bit c set: channel c's output is consumed. Every channel still takes its slot in the
+    // NUM_CH-clock sequence (the strobe cadence is part of the contract), but a channel whose
+    // bit is clear is not multiplexed in and its samples_out field reads 0.
+    parameter [NUM_CH-1:0] USED    = {NUM_CH{1'b1}}
 )(
     input                                clk,
     input                 [NUM_CH*5-1:0] volumes_in,  // input volumes (5 bits per channel volume control)
     input      [NUM_CH*SAMPLE_WIDTH-1:0] samples_in,  // input samples (SAMPLE_WIDTH bits per channel sample)
-    output reg [NUM_CH*SAMPLE_WIDTH-1:0] samples_out, // output samples (attenuated)
+    output wire [NUM_CH*SAMPLE_WIDTH-1:0] samples_out, // output samples (attenuated)
     output reg                           valid        // samples_out valid flag
 );
 
@@ -68,7 +72,20 @@ localparam [3:0] CH_LAST = 4'(NUM_CH-1);
 /* verilator lint_off PROCASSINIT */   // the initialisers are the registers' power-up values
 reg [3:0] ch = 4'd0;
 
-wire [4:0] volume_5bit = volumes_in[5*ch +: 5];
+// The selected channel's volume and sample: an AND-OR select over the USED channels only (a
+// clear USED bit takes no select logic, and the select of an unused slot is don't-care).
+reg [4:0] volume_5bit;
+reg signed [SAMPLE_WIDTH-1:0] sample_sel;
+integer ci;
+always @* begin
+    volume_5bit = 5'd0;
+    sample_sel  = '0;
+    for (ci = 0; ci < NUM_CH; ci = ci + 1)
+        if (USED[ci] && (ch == 4'(ci))) begin
+            volume_5bit = volumes_in[5*ci +: 5];
+            sample_sel  = samples_in[SAMPLE_WIDTH*ci +: SAMPLE_WIDTH];
+        end
+end
 
 reg signed [SAMPLE_WIDTH-1:0] sample = '0;
 reg         gain_valid = 1'b0;
@@ -97,7 +114,7 @@ end
 always @(posedge clk) begin
     gain_q     <= gain_mem[volume_5bit];
     gain_valid <= 1'b1;
-    sample     <= samples_in[SAMPLE_WIDTH*ch +: SAMPLE_WIDTH];
+    sample     <= sample_sel;
 end
 
 // DSP-targeted multiply (1 x DSP block shared across all channels). The product
@@ -110,17 +127,30 @@ end
 wire signed [SAMPLE_WIDTH+16:0] gain_product = $signed({1'b0, gain}) * sample;
 /* verilator lint_on UNUSEDSIGNAL */
 
+// Each consumed channel's product is captured once, in the clock after its sample entered the
+// multiplier, and held for the ten-clock epoch. That is the value the ten-deep output shift
+// register delivered to the consumer on `valid` (a product shifts down one position per clock
+// and reaches channel c's field exactly NUM_CH-1-c clocks after the capture below, which is the
+// clock `valid` is high): the strobe is high when ch == 1, and channel c was captured at the end
+// of the clock with ch == c+1, so every field is from the same epoch. The fields hold between
+// captures, so samples_out is meaningful on `valid` and that is the only clock the mixer reads.
+// 6 of 10 fields at 20 bits is 120 flip-flops instead of the 160-bit chain (200 declared).
+reg [NUM_CH*SAMPLE_WIDTH-1:0] out_q;
+assign samples_out = out_q;
+integer oc;
 always @(posedge clk) begin
-    samples_out       <= {gain_product[SAMPLE_WIDTH+15:16], samples_out[NUM_CH*SAMPLE_WIDTH-1:SAMPLE_WIDTH]};
+    for (oc = 0; oc < NUM_CH; oc = oc + 1)
+        if (USED[oc] && (ch == 4'((oc + 1) % NUM_CH)))
+            out_q[SAMPLE_WIDTH*oc +: SAMPLE_WIDTH] <= gain_product[SAMPLE_WIDTH+15:16];
     valid             <= (ch == 0);
     ch                <= (ch == CH_LAST) ? 4'd0 : ch + 4'd1;
 end
 
-// Power-up state, part 2: the shift register and its strobe start silent.
+// Power-up state, part 2: the captured fields and the strobe start silent.
 /* verilator lint_off PROCASSINIT */   // the initialisers are the registers' power-up values
 initial begin
-    samples_out = '0;
-    valid       = 1'b0;
+    out_q = '0;
+    valid = 1'b0;
 end
 /* verilator lint_on PROCASSINIT */
 

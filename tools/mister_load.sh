@@ -20,6 +20,8 @@
 #   PC9821Z486-xe.mgl                 the other set
 #   games/PC9821/pc98pack-xe10.bin    the packs, from your own dumps
 #   games/PC9821/pc98pack-xe.bin
+#   Scripts/pc9821_cue2pcd.sh         the Scripts-menu CUE/BIN -> PCD converter, and the
+#   Scripts/.pc9821/cue2pcd.py        tools/cue2pcd.py it runs (copied with the RBF)
 #
 #   tools/mister_load.sh                 # default set: RBF + pack + MGL + image, load
 #   tools/mister_load.sh --both          # both sets' packs and MGLs
@@ -86,7 +88,7 @@ FDD1=${MISTER_FDD1:-}
 SSHP=""
 MISTER_PASS="${MISTER_PASS-1}"   # the stock MiSTer root password; MISTER_PASS= (empty) uses ssh keys
 if [ -n "$MISTER_PASS" ]; then export SSHPASS="$MISTER_PASS"; SSHP="sshpass -e"; fi
-SSHO="-o StrictHostKeyChecking=no -o LogLevel=ERROR -o ConnectTimeout=10"
+SSHO="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
 
 machine=xe10
 both=0
@@ -151,6 +153,10 @@ verify_pack_against_dumps() {
 pack_name() { echo "pc98pack-$1.bin"; }
 mgl_for()   { if [ "$1" = "xe10" ]; then echo "/media/fat/$CORE.mgl"; else echo "/media/fat/$CORE-$1.mgl"; fi; }
 
+# A fresh card has none of these directories (nothing has run a PC9821 core on it yet), and scp
+# does not create them: make them before the first copy. mkdir -p is a no-op on a used card.
+$SSHP ssh $SSHO $HOST "mkdir -p /media/fat/_Computer $GAMES /media/fat/config"
+
 MACHINES=$machine
 [ "$both" = "1" ] && MACHINES="xe10 xe"
 [ "$packs_only" = "1" ] && copy=0
@@ -184,6 +190,12 @@ if [ "$copy" = "1" ]; then
     REMOTE_SUM=$($SSHP ssh $SSHO $HOST "sha256sum '$DEST'" | awk '{print $1}')
     [ "$LOCAL_SUM" = "$REMOTE_SUM" ] || { echo "RBF checksum mismatch" >&2; exit 1; }
     echo "  RBF sha256 $LOCAL_SUM verified"
+
+    # The Scripts-menu converter travels with the core, so the card's copy matches this tree.
+    echo "copying CUE/BIN converter -> /media/fat/Scripts/pc9821_cue2pcd.sh"
+    $SSHP ssh $SSHO $HOST "mkdir -p /media/fat/Scripts/.pc9821"
+    $SSHP scp $SSHO tools/mister/pc9821_cue2pcd.sh $HOST:/media/fat/Scripts/pc9821_cue2pcd.sh
+    $SSHP scp $SSHO tools/cue2pcd.py $HOST:/media/fat/Scripts/.pc9821/cue2pcd.py
 fi
 
 # The packs are runtime inputs holding the user's own dumped firmware. Whatever goes

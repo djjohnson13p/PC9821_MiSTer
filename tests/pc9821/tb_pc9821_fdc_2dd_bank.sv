@@ -99,6 +99,7 @@ module tb_pc9821_fdc_2dd_bank;
   wire        fdc_irq10;    // slave PIC IRQ10: the SAME interrupt at its 2DD window
   wire        mouse_irq;
   wire [7:0]  win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire        sys16m_en, ide_rom_enable, top_shadow_en, bios_ram_gate;
   wire ide_ram_gate;   // 0x1E8E's IDE work-RAM gate (the iobus drives it; unused here)
   wire        a20_enable, cpu_reset_req;
@@ -442,12 +443,15 @@ module tb_pc9821_fdc_2dd_bank;
 
     // ------------------------------------------------------------------ 3: command_2dd_window
     // RECALIBRATE (0x07, one parameter) written to the 2DD data port must reach the one
-    // command decoder: the MSR goes RQM|CB|busy(unit 0) and then completes.
+    // command decoder: the MSR shows the busy bit of unit 0 (the drive the command claimed)
+    // with DIO clear, and then completes. The busy nibble is the property asserted; RQM/CB
+    // during the delay are the model's (0x11: no RQM while it cannot take a byte,
+    // tb_pc9821_fdc_conform seek_then_sis) where NP2kai shows 0x81.
     port_wr(P_DATA_2DD, 8'h07);
     port_wr(P_DATA_2DD, 8'h00);
     port_rd(P_MSR_2DD);
-    if (rd_val !== 8'h91)
-      $fatal(1, "command_2dd_window: MSR after RECALIBRATE on 0xCA reads %02x, expected 91 (RQM|CB plus the busy bit of the unit the command claimed)",
+    if ((rd_val & 8'h4F) !== 8'h01)
+      $fatal(1, "command_2dd_window: MSR after RECALIBRATE on 0xCA reads %02x, expected the busy bit of unit 0 with DIO clear",
              rd_val);
     wait_level(W_IRQ10, cyc);
     if (cyc >= WAIT_CAP)

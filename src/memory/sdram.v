@@ -3,7 +3,7 @@
 // A 32-bit low-latency controller for 32/64/128MB MiSTer SDRAM modules; a 128MB module holds
 // two complementary-CS 64MB chips. The timings below are derived from FREQ, up to 133 MHz.
 //
-// Under the legacy <=66MHz settings (CL2):
+// Latencies (CAS = 2 below 100 MHz, 3 at 100 MHz and up; CAS_I below):
 // - Read latency is T_RCD + CAS + 2*burst_cnt - 1 cycles from ACT to last data.
 // - Write latency: ACT at t0, low-half write at t=T_RCD, high-half write at t=T_RCD+2
 //   (auto-precharge on the high half), ack after T_WR+T_RP from the high half.
@@ -146,7 +146,19 @@ localparam integer T_RCD_NS = FAST_GRADE ? 18 : 20;
 localparam integer T_RC_NS = FAST_GRADE ? 60 : 67;
 localparam integer T_WR_NS = FAST_GRADE ? 12 : 15;
 
-localparam integer CAS_I   = (FREQ <= 100_000_000) ? 2 : 3;
+// CAS latency: CL2 strictly BELOW 100 MHz, CL3 at 100 MHz and up (owner decision 2026-10-13).
+// Hardware evidence (two DE10-Nano boards, source 56eadc9a, clk_sys = SDRAM = 100 MHz, the
+// disk-integrity probe): CL2 failed on one board for 9 of 11 placements; CL3 passed on both
+// boards for 4 of the first 6 placements screened (the other 2 failed on both boards, the
+// pattern of an internal-path placement failure, not the SDRAM). 95 MHz CL2 passed the full
+// 8-item regression on both boards. Timing model: tools/profile_gen.py derive_sdram_phase
+// gives a worst I/O slack of +0.246 ns at 80..95 MHz (out_hold; read capture in_setup +0.351
+// at 95) but +0.035 ns at 100 MHz (in_setup, the read capture, slow 100C corner), and at
+// 100 MHz CL2's tRCD/tRP = 2 cycles = 20 ns are exactly the -7 grade's minimum (Table 13
+// above). The datasheet's CL2 minimum tCK for the -7 part is NOT cited in this tree (the
+// strict XSDS model carries the -6 part's tCK_CL2_MIN = 10.0 ns): unverified, so this
+// cutover rests on the hardware evidence.
+localparam integer CAS_I   = (FREQ < 100_000_000) ? 2 : 3;
 // T_RC and T_WR deliberately take NO <=75MHz shortcut either (review F6). The shortcut
 // emitted 4 cycles of tRC and 1 of tWR for every FREQ <= 75MHz: at 75MHz that is 53.3ns /
 // 13.3ns against the AS4C64M8SD-7's 67ns tRC and 15ns tWR, so it broke the -7 grade (and the

@@ -2,8 +2,9 @@
 // EFFECTS and the data port, not only the values they answer with.
 //
 // The machine's window is measured in the write direction (the machine's probe results,
-// "ATA and the task file": with 0x0432 = 0x00 the whole block floats, with 0x0432 = 0x01
-// it answers) and asserted for the read values and the task-file writes by
+// "ATA and the task file": on the owner's Xe10, whose disk is a CF card in the CD connector,
+// 0x0432 = 0x00 floats the whole block and 0x0432 = 0x01 answers; the core's layout is fixed
+// with the hard disk on bank 0, so here 0x00 answers and 0x01 floats) and asserted for the read values and the task-file writes by
 // tb_pc9821_ata_blockmap. This bench covers what was left running at ANY bank:
 //
 //   A. a status poll (0x064E) at a floating bank must not swallow a pending interrupt.
@@ -207,19 +208,20 @@ module tb_pc9821_ata_bankwindow;
     end
   endtask
 
-  // The interface bank, byte for byte as tb_pc9821_ata_blockmap pins it (the machine
-  // reads 0x064E = 0x50 there, the machine's probe results).
+  // The interface bank, byte for byte as tb_pc9821_ata_blockmap pins it (bank 0, the hard
+  // disk's; the machine reads 0x064E = 0x50 at its live bank, the machine's probe results).
   task select_interface_bank;
     begin
-      write_byte(16'h0432, 8'h01);
+      write_byte(16'h0432, 8'h00);
     end
   endtask
 
   // A bank with no interface behind it: the machine floats the whole task file at
-  // 0x0E there (probes/JOY.TXT, probes/WIN.TXT, probes/R10.TXT, with 0x0432 = 0x00).
+  // 0x0E there (probes/JOY.TXT, probes/WIN.TXT, probes/R10.TXT, at the machine's empty bank);
+  // here bank 1, empty without the CD.
   task select_floating_bank;
     begin
-      write_byte(16'h0432, 8'h00);
+      write_byte(16'h0432, 8'h01);
     end
   endtask
 
@@ -257,8 +259,10 @@ module tb_pc9821_ata_bankwindow;
     select_interface_bank;
     read_byte(16'h0642, value);
     if (value !== 8'h04) fail("B: the interface bank does not answer the latched ABRT");
-    if (dut.status_reg[0] !== 1'b0)
-      fail("B: the 0x0642 read at the interface bank did not clear STATUS.ERR");
+    // And at the interface bank the read does not clear it either: the machine keeps ERR
+    // across an ERROR read (docs/probes/IDE.TXT:343,349), where NP2kai ideio_i642 clears it.
+    if (dut.status_reg[0] !== 1'b1)
+      fail("B: the 0x0642 read at the interface bank cleared STATUS.ERR (machine keeps it)");
 
     // ---- C. a 16-bit write at a floating bank must not enter the sector buffer ----
     write_byte(16'h0644, 8'd1);

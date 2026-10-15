@@ -298,7 +298,7 @@ module pc9821_fdd_media (
   // `seek_off` in a request, and a request is only reachable through ST_READY, which ST_PARSE
   // enters after the last header byte. The `ramstyle` request is a hint; the reset was the
   // blocker.
-  (* ramstyle = "M10K, no_rw_check" *) reg [31:0] trackp [0:511];
+  (* ramstyle = "M10K, no_rw_check" *) reg [21:0] trackp [0:511];   // {BIG, offset[20:0]}: see the WIDTHS note
   /* verilator lint_off UNUSEDSIGNAL */   // the MINOR nibble is the rpm/2HS selector, which
   // is Phase 2 (it needs the 0x4BE rpm register and the 2HS geometry); the major nibble is
   // the disk class and is the whole of the format test below. ONE REGISTER, not one per drive:
@@ -316,7 +316,14 @@ module pc9821_fdd_media (
   // `mnt_req`/`mnt_size` are its pending mount. `req_u` is the drive of the request in
   // flight and `mnt_u` the drive whose header is being walked, so both the FSM and the
   // byte stream stay single-instance.
-  reg  [31:0] fd_size [0:1];        // [u] the D88 header's declared image extent
+  // WIDTHS: every size this module compares or subtracts is an image extent, and an image it will
+  // serve has an extent of at most D88_MAX_EXTENT (2,000,000) bytes (a D88 by its extent test, a raw
+  // image because it matched a row of at most RAW_MAX_EXTENT = 1,720,320). Both are below 2^21, so a
+  // size is stored as its low 21 bits plus ONE "BIG" flag (any bit at or above bit 21 set, which no
+  // servable image has): a BIG value fails every test a servable one passes (<= D88_MAX_EXTENT, a
+  // raw row's exact size, a seek below the extent) and passes every "extent <= the file" test, which
+  // is all the 32-bit forms ever decided with those upper bits.
+  reg  [21:0] fd_size [0:1];        // [u] the D88 header's declared image extent {BIG, bytes[20:0]}
   reg  [ 1:0] is_d88;               // [u] the image parsed as a D88 (else a raw body)
   reg  [ 7:0] raw_tracks [0:1];     // [u] half-tracks (raw): 154..160, so a byte names the whole range
   reg  [ 7:0] raw_sects  [0:1];     // [u] sectors per track (raw): the row's own 8..26
@@ -327,7 +334,7 @@ module pc9821_fdd_media (
   // high half of the size was zero, plus the low word in `fdd_xdf.c`'s size-row match and in the
   // two ST_SEEK compares - so the 31 bits above bit 32 are not stored. The tuple survives reset
   // exactly as before: this block is the one with no reset (see its own note).
-  reg  [32:0] mnt_size [0:1];       // [u] the img_size that came WITH that mount
+  reg  [21:0] mnt_size [0:1];       // [u] the img_size that came WITH that mount {BIG, bytes[20:0]}
   // [u] and the img_readonly that came with it, latched in the same statements because it is
   // the same kind of fact (a one-bit hps_io register valid only at the mount). It must SURVIVE
   // the walk, because ST_PARSE computes the drive's protect state from it - this latch block
@@ -465,7 +472,7 @@ module pc9821_fdd_media (
   reg         rbusy;       // the fetch engine has a request outstanding
   reg  [ 9:0] foff;        // 0..511 within the block
   reg  [15:0] blk_lba;     // 16 bits: see D88_MAX_EXTENT above
-  reg  [31:0] img_left;    // bytes left in the image from the read pointer
+  reg  [20:0] img_left;    // bytes left in the image from the read pointer (<= the extent, < 2^21)
 
   wire [15:0] cur_word = blk[foff[8:1]];
   wire [7:0]  cur_byte = foff[0] ? cur_word[15:8] : cur_word[7:0];
@@ -607,10 +614,10 @@ module pc9821_fdd_media (
     // is starting IS that mount's walk (it reads the size latched here, at ST_PARSE, long
     // after this edge).
     if (mnt_ev[0])
-      begin mnt_size[0] <= {(|img_size[63:32]),  img_size[31:0]};
+      begin mnt_size[0] <= {(|img_size[63:21]),  img_size[20:0]};
             mnt_ro[0] <= img_readonly;                            mnt_req[0] <= 1'b1; end
     if (mnt_ev[1])
-      begin mnt_size[1] <= {(|img1_size[63:32]), img1_size[31:0]};
+      begin mnt_size[1] <= {(|img1_size[63:21]), img1_size[20:0]};
             mnt_ro[1] <= img_readonly;                            mnt_req[1] <= 1'b1; end
     if (walk_en)      mnt_req[walk_u] <= 1'b0;   // consumed by the walk starting now
     // ... and a walk the reset is aborting is NOT consumed-and-lost: re-arm its drive, which
@@ -634,14 +641,15 @@ module pc9821_fdd_media (
   // accepts, with the enable decoded from mcnt's low bits. Bytes shift in at the TOP, so
   // {cur_byte, tp_w} is the 32-bit little-endian word for the entry; the table is read only
   // after the walk, so a half-built entry is never observable.
-  reg [23:0] tp_w;
+  reg [20:0] tp_w;
+  reg        tp_big;       // the entry's bytes above bit 20 so far
   // trackp[drive][0] LATCHED, i.e. `trackp[mnt_u * 164]` of the drive being walked. The
   // container test below is the table's SECOND reader, and a second read address (even a
   // constant one) is a second read port, which the inference template does not have: there is
   // one variable read (`seek_off`) and the table infers only when that is all there is. This
   // register holds exactly what the walked drive's entry 0 held once its last byte landed,
   // which is what the test needs - it runs in ST_PARSE, after the walk.
-  reg [31:0] tp0;
+  reg [21:0] tp0;
 
   // request latches
   reg        rq_hdr;
@@ -671,7 +679,7 @@ module pc9821_fdd_media (
   // `scan_file_want` is at most 65535 (the header's own 16-bit field), so when it exceeds
   // img_left the image's remaining count is itself below 65536 and img_left[15:0] IS
   // img_left; otherwise scan_file_want passes through. Exact, and 16 bits wide.
-  wire [15:0] scan_file_ok   = ({16'd0, scan_file_want} > img_left) ? img_left[15:0]
+  wire [15:0] scan_file_ok   = ({5'd0, scan_file_want} > img_left) ? img_left[15:0]
                                                                   : scan_file_want;
   reg [7:0]  seen;         // headers walked on this track
   reg [15:0] skip_left;    // data bytes still to skip
@@ -739,25 +747,35 @@ module pc9821_fdd_media (
   // priced against (its WIDTH was the accident: rq_track is at most 511 - one 8-bit C
   // shifted left with H in bit 0 - so rq_track[8:0] is the whole value, never a
   // truncation, and 511 * 26 fits 16 bits).
-  wire [ 8:0] rq_track9  = rq_track[8:0];
-  wire [16:0] rq_t9e     = {8'd0, rq_track9};
+  // THE OFFSET IS FORMED FROM THE REQUEST AS IT IS ACCEPTED and latched with it (FD-a, a
+  // timing seam: the shift-add product and the N mux used to run from the rq_* latches through
+  // seek_off into ST_SEEK's bounds compares and img_left in ONE clk_sys path). raw_off is
+  // loaded on the accept edge - the edge rq_c/rq_h/rq_r/req_u load from these same live
+  // fields - from the accepting drive's raw_sects/raw_n, which nothing writes in ST_READY or
+  // ST_SEEK (only ST_PARSE does), so in ST_SEEK, its only reader (through seek_off), it holds
+  // exactly the value the combinational form of the latches held there.
+  wire [ 8:0] a_track9   = {req_c, 1'b0} | {7'd0, req_h[1:0]};   // rq_track's [8:0], live
+  wire [16:0] a_t9e      = {8'd0, a_track9};
+  wire [ 7:0] a_sects    = raw_sects[unit[0]];
+  wire [ 7:0] a_n        = raw_n[unit[0]];
   // One masked partial product per bit of the sector count, summed - correct for any byte
   // raw_sects can hold, of which the rows use 8..26.
-  wire [16:0] raw_ts     = (raw_sects[req_u][0] ? rq_t9e        : 17'd0)
-                         + (raw_sects[req_u][1] ? (rq_t9e << 1) : 17'd0)
-                         + (raw_sects[req_u][2] ? (rq_t9e << 2) : 17'd0)
-                         + (raw_sects[req_u][3] ? (rq_t9e << 3) : 17'd0)
-                         + (raw_sects[req_u][4] ? (rq_t9e << 4) : 17'd0)
-                         + (raw_sects[req_u][5] ? (rq_t9e << 5) : 17'd0)
-                         + (raw_sects[req_u][6] ? (rq_t9e << 6) : 17'd0)
-                         + (raw_sects[req_u][7] ? (rq_t9e << 7) : 17'd0);
-  wire [31:0] raw_secno  = {15'd0, raw_ts} + {24'd0, rq_r} - 32'd1;
+  wire [16:0] raw_ts     = (a_sects[0] ? a_t9e        : 17'd0)
+                         + (a_sects[1] ? (a_t9e << 1) : 17'd0)
+                         + (a_sects[2] ? (a_t9e << 2) : 17'd0)
+                         + (a_sects[3] ? (a_t9e << 3) : 17'd0)
+                         + (a_sects[4] ? (a_t9e << 4) : 17'd0)
+                         + (a_sects[5] ? (a_t9e << 5) : 17'd0)
+                         + (a_sects[6] ? (a_t9e << 6) : 17'd0)
+                         + (a_sects[7] ? (a_t9e << 7) : 17'd0);
+  wire [24:0] raw_secno  = {8'd0, raw_ts} + {17'd0, req_r} - 25'd1;   // < 13,541 + 255: the rows' tracks*sects
   // 128 << N for the rows' N in 1..3: three fixed shifts, which are wire slices. raw_n is
   // written only from the row loads (RAW_N1/2/3), so the middle arm is N=2 and every value
   // the register cannot hold.
-  wire [31:0] raw_off    = (raw_n[req_u] == RAW_N1) ? (raw_secno <<  8) :
-                           (raw_n[req_u] == RAW_N3) ? (raw_secno << 10) :
-                                                      (raw_secno <<  9);
+  wire [24:0] raw_off_a  = (a_n == RAW_N1) ? (raw_secno <<  8) :
+                           (a_n == RAW_N3) ? (raw_secno << 10) :
+                                             (raw_secno <<  9);
+  reg  [24:0] raw_off;     // raw_off_a at the accept (no reset: read only in ST_SEEK)
 
   // The start offset the request names.
   // THE TABLE'S ONE READ PORT, as a registered read (the canonical simple-dual-port template:
@@ -779,13 +797,16 @@ module pc9821_fdd_media (
   wire [7:0] tp_track = {req_c[6:0], 1'b0} | {6'd0, req_h[1:0]};
   wire       tp_unit  = ((st == ST_READY) && req) ? unit[0] : req_u;
   wire [8:0] tp_raddr = {tp_unit, (((st == ST_READY) && req) ? tp_track : rq_track[7:0])};
-  reg  [31:0] track_q;
+  reg  [21:0] track_q;
   always @(posedge clk) track_q <= trackp[tp_raddr];
 
   // THE REQUEST'S OWN DRIVE CONTEXT, from the latches `req_u` and the per-drive arrays. Every
   // read of a per-drive value below goes through these, so nothing in the FSM can consult the
   // other drive's geometry by accident.
-  wire [31:0] seek_off = is_d88[req_u] ? track_q : raw_off;
+  // A BIG track pointer is at least 2^21 > any extent, so it is carried as bit 24: it is never
+  // zero, and it fails the `< the extent` test exactly as the 32-bit pointer did. (raw_off
+  // is below 2^24 for every row: 13,541 sectors at most, shifted by 10.)
+  wire [24:0] seek_off = is_d88[req_u] ? {track_q[21], 3'd0, track_q[20:0]} : raw_off;
   assign ready = (st == ST_READY);
   assign rdy   = (st == ST_DATA) && (emit_left != 16'd0) &&
                  ((file_left == 16'd0) || bready);
@@ -800,7 +821,7 @@ module pc9821_fdd_media (
   // that mis-placed every D88 header field.
   task automatic consume();
     begin
-      if (img_left != 32'd0) img_left <= img_left - 32'd1;
+      if (img_left != 21'd0) img_left <= img_left - 21'd1;
       if (foff == 10'd511) begin
         foff    <= 10'd0;
         blk_lba <= blk_lba + 16'd1;
@@ -838,14 +859,15 @@ module pc9821_fdd_media (
   // separate a D88 from a RAW image whose first bytes happen to look like a header: the
   // declared extent must be inside the file and at least one track pointer must be live. (A
   // raw image would have to satisfy all of them at once, which its sector data does not.)
-  wire [32:0] walk_size = mnt_size[mnt_u];
-  wire [31:0] walk_fdsz = fd_size[mnt_u];   // latched byte by byte in the walk above
+  wire [21:0] walk_size = mnt_size[mnt_u];
+  wire [21:0] walk_fdsz = fd_size[mnt_u];   // latched byte by byte in the walk above
   wire        d88_major_ok = (fd_type[7:4] == 4'd0) || (fd_type[7:4] == 4'd1) ||
                              (fd_type[7:4] == 4'd2) || (fd_type[7:4] == 4'd3);
   wire d88_looks_valid = d88_major_ok &&
-                         (walk_fdsz >= 32'd688) && (walk_fdsz <= D88_MAX_EXTENT) &&
-                         (walk_fdsz <= walk_size[31:0]) &&
-                         (tp0 != 32'd0) && (tp0 < walk_fdsz);
+                         !walk_fdsz[21] && (walk_fdsz[20:0] >= 21'd688) &&
+                         (walk_fdsz[20:0] <= D88_MAX_EXTENT[20:0]) &&
+                         (walk_size[21] || (walk_fdsz[20:0] <= walk_size[20:0])) &&
+                         (tp0 != 22'd0) && !tp0[21] && (tp0[20:0] < walk_fdsz[20:0]);
 
   always @(posedge clk) begin
     if (reset) begin
@@ -883,10 +905,11 @@ module pc9821_fdd_media (
       rq_fmt       <= 1'b0;
       foff         <= 10'd0;
       blk_lba      <= 16'd0;
-      img_left     <= 32'd0;
+      img_left     <= 21'd0;
       mcnt         <= 11'd0;
-      tp_w         <= 24'd0;
-      tp0          <= 32'd0;
+      tp_w         <= 21'd0;
+      tp_big       <= 1'b0;
+      tp0          <= 22'd0;
       fd_type      <= 8'h00;
       fd_protect   <= 8'h00;
       req_u        <= 1'b0;
@@ -1027,16 +1050,27 @@ module pc9821_fdd_media (
             consume();
             if (mcnt == 11'h01A) fd_protect <= cur_byte;             // 0x1A is the protect byte
             if (mcnt == 11'h01B) fd_type <= cur_byte;               // 0x1B is fd_type
-            if ((mcnt >= 11'h01C) && (mcnt <= 11'h01F))
-              fd_size[mnt_u][8*(mcnt[1:0]) +: 8] <= cur_byte;       // 0x1C..0x1F, LE32, [u]
+            // 0x1C..0x1F, LE32, [u]: bytes 0/1 whole, byte 2's low five bits, and BIG from the rest
+            if (mcnt == 11'h01C) begin fd_size[mnt_u][7:0]  <= cur_byte; fd_size[mnt_u][21] <= 1'b0; end
+            if (mcnt == 11'h01D) fd_size[mnt_u][15:8] <= cur_byte;
+            if (mcnt == 11'h01E) begin
+              fd_size[mnt_u][20:16] <= cur_byte[4:0];
+              if (|cur_byte[7:5]) fd_size[mnt_u][21] <= 1'b1;
+            end
+            if (mcnt == 11'h01F && (|cur_byte)) fd_size[mnt_u][21] <= 1'b1;
             if ((mcnt >= 11'h020) && (mcnt < 11'h2B0)) begin
-              tp_w <= {cur_byte, tp_w[23:8]};
+              if (mcnt[1:0] == 2'd0) tp_w[7:0]   <= cur_byte;
+              if (mcnt[1:0] == 2'd1) tp_w[15:8]  <= cur_byte;
+              if (mcnt[1:0] == 2'd2) begin
+                tp_w[20:16] <= cur_byte[4:0];
+                tp_big      <= |cur_byte[7:5];
+              end
               if (mcnt[1:0] == 2'd3) begin
                 // {cur_byte, tp_w} is the 32-bit little-endian entry: tp_w holds the three
                 // bytes already shifted in, newest at its top. The drive's table is selected
                 // by the walk's own drive, so a walk of one drive can never write the other's.
-                trackp[{mnt_u, mcnt[9:2] - 8'd8}] <= {cur_byte, tp_w};
-                if (mcnt[9:2] == 8'd8) tp0 <= {cur_byte, tp_w};
+                trackp[{mnt_u, mcnt[9:2] - 8'd8}] <= {tp_big | (|cur_byte), tp_w};
+                if (mcnt[9:2] == 8'd8) tp0 <= {tp_big | (|cur_byte), tp_w};
               end
             end
             if (mcnt == 11'h2AF) st <= ST_PARSE;
@@ -1063,8 +1097,8 @@ module pc9821_fdd_media (
               // terms. TABLE ORDER IS MATCH ORDER - fdd_set_xdf takes the first size in
               // the table that matches (:120-134) - which is what resolves the one
               // double-claimed size (the DD6 arm's note above RAW_SZ_DD6).
-              if (!walk_size[32]) begin   // the high half of the latched size was zero
-                case (walk_size[31:0])
+              if (!walk_size[21]) begin   // the size is below 2^21 (every row is)
+                case ({11'd0, walk_size[20:0]})
                   RAW_SZ_HD5: begin                       // fdd_xdf.c:26-27 {0,160,15,2,2HD,0}
                     raw_tracks[mnt_u] <= RAW_T160; raw_sects[mnt_u] <= RAW_S15;
                     raw_n[mnt_u] <= RAW_N2; present[mnt_u] <= 1'b1;
@@ -1138,6 +1172,7 @@ module pc9821_fdd_media (
               rq_r   <= req_r;
               rq_n   <= req_n;
               rq_idx <= req_idx;
+              raw_off <= raw_off_a;   // the same accept edge (see raw_off_a)
               // seek_off needs the just-latched geometry, so the seek itself is one
               // state later (ST_SEEK reads the latched rq_* through the combinational
               // wires above).
@@ -1177,12 +1212,12 @@ module pc9821_fdd_media (
             // raw FORMAT's EOT is its SC, which fdd_formatinit_xdf does not test, so the raw
             // EOT test is a write's only.
             else if (is_d88[req_u]
-                  ? ((seek_off == 32'd0) || (seek_off >= fd_size[req_u]) ||
+                  ? ((seek_off == 25'd0) || (seek_off >= {4'd0, fd_size[req_u][20:0]}) ||
                      (rq_track > 32'd163) || rq_fmt)
                   : ((rq_track >= {24'd0, raw_tracks[req_u]}) || (rq_r == 8'd0) ||
                      (rq_r > raw_sects[req_u]) || (rq_n != raw_n[req_u]) ||
                      (rq_wr && !rq_fmt && (rq_idx > raw_sects[req_u])) ||
-                     (seek_off >= mnt_size[req_u][31:0]))) begin
+                     (seek_off >= {4'd0, mnt_size[req_u][20:0]}))) begin
               aerr <= 1'b1;
               st   <= ST_READY;
             end else begin
@@ -1190,7 +1225,7 @@ module pc9821_fdd_media (
                                             // the widest row's extent RAW_MAX_EXTENT; both
                                             // are guarded above
               foff     <= {1'b0, seek_off[8:0]};
-              img_left <= (is_d88[req_u] ? fd_size[req_u] : mnt_size[req_u][31:0]) - seek_off;
+              img_left <= (is_d88[req_u] ? fd_size[req_u][20:0] : mnt_size[req_u][20:0]) - seek_off[20:0];
               bready   <= 1'b0;
               bwant    <= 1'b1;
               bdirty   <= 1'b0;
@@ -1244,7 +1279,7 @@ module pc9821_fdd_media (
                 // `if (++sec >= sectors) break` (fdd_d88.c:250-252): the track's own
                 // count bounds the walk, and 40 is NP2kai's hard bound on the loop.
                 if (({8'd0, seen} + 16'd1 >= hdr_sectors) || (seen >= 8'd39) ||
-                    (img_left < 32'd16)) begin
+                    (img_left < 21'd16)) begin
                   aerr <= 1'b1;
                   st   <= ST_READY;
                 end else begin
@@ -1253,7 +1288,7 @@ module pc9821_fdd_media (
                   st        <= ST_SKIP;
                 end
               end
-            end else if (bready && (img_left != 32'd0)) begin
+            end else if (bready && (img_left != 21'd0)) begin
               hb[hi[3:0]] <= cur_byte;
               hi  <= hi + 5'd1;
               consume();
@@ -1265,7 +1300,7 @@ module pc9821_fdd_media (
 
           ST_SKIP: if (skip_left == 16'd0) begin
             st <= ST_SCAN;
-          end else if (bready && (img_left != 32'd0)) begin
+          end else if (bready && (img_left != 21'd0)) begin
             skip_left <= skip_left - 16'd1;
             consume();
           end else if (bready) begin

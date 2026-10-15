@@ -40,6 +40,7 @@ module tb_pc9821_artic_word;
   wire ide_rom_enable, bios_ram_gate;
   wire ide_ram_gate;   // 0x1E8E's IDE work-RAM gate (the iobus drives it; unused here)
   wire [7:0] win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire sys16m_en;   // 0x043B bit 2, the 15-16 MiB system-space window
   wire a20_enable, cpu_reset_req;
   wire [15:0] unmapped_writes, unmapped_reads, last_unmapped_port;
@@ -171,7 +172,18 @@ module tb_pc9821_artic_word;
     repeat (6) @(posedge clk);
     reset = 0;
     repeat (6) @(posedge clk);
+    // PRELOAD the counter (bench-audit 2026-10-12). From reset cnt[23:16] stays 0x00 for
+    // the whole bench (20 ms is ~6100 ticks), so a high byte wired to ANY zero byte - 0x5F
+    // decoded as cnt[31:24], say - passed: only "it advanced" was asserted, and the claim's
+    // cnt[23:8] layout was not. 0x00A5C300 puts a distinct byte in every lane and leaves
+    // 256 ticks before the first carry, so the first word read is exactly 0xA5C3.
+    @(negedge clk);
+    dut.artic_cnt = 32'h00A5_C300;
     read_word(16'h005E, wa1);
+    if (wa1 !== 16'hA5C3) begin
+      $display("  FAIL: the word read at 0x5E right after the preload returned %04x, not cnt[23:8] = a5c3", wa1);
+      werrors = werrors + 1;
+    end
     $display("  word read 0x5E -> D[31:16] = %04x", wa1);
       // cnt[23:8] advances every 256 ticks = 833 us = 41,667 cycles at 50 MHz. Ten
       // milliseconds (500k cycles) crosses ~12 units, far more than the one unit the
@@ -186,10 +198,15 @@ module tb_pc9821_artic_word;
     if (wa1 === 16'hxxxx || wa2 === 16'hxxxx) begin
       $display("  FAIL: the read returned unknown"); werrors = werrors + 1;
     end else if (wa1 == wa2 && wa2 == wa3) begin
-      $display("  FAIL: ax NEVER ADVANCED across two 0.26 s waits - delay()'s deadline is unreachable");
+      $display("  FAIL: ax NEVER ADVANCED across two 10 ms waits - delay()'s deadline is unreachable");
+      werrors = werrors + 1;
+    end else if (!((wa2 - wa1) inside {[16'd11:16'd13]}) || !((wa3 - wa2) inside {[16'd11:16'd13]})) begin
+      // 500 000 clk_sys at 50 MHz is 3072 ticks of 307200 Hz = 12 units of 256 ticks.
+      $display("  FAIL: ax moved %0d then %0d units per 500 000 clocks, not 12 (cnt[23:8] at 307200 Hz)",
+               wa2 - wa1, wa3 - wa2);
       werrors = werrors + 1;
     end else begin
-      $display("  PASS: ax advanced %04x -> %04x -> %04x", wa1, wa2, wa3);
+      $display("  ax advanced %04x -> %04x -> %04x", wa1, wa2, wa3);
     end
     // ==== VERDICT ====
     // The marker must be a STANDALONE literal: tools/bench.py looks for it, and a count on the

@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // ==== WHAT THIS PROVES ====
-// The 86-PCM's 0xA468 bit-3 buffer reset is AUTHORITATIVE while the buffer is RUNNING: for every one of the sample period's phases, a reset issued while the drain engine is mid-frame still leaves the byte count at zero rather than at 0xFFFE, because the engine's own rdptr/count update sits later in the same always block and otherwise subtracts a frame from a count the reset has just zeroed. And the full+write+D_DONE collision (datapaths.md F7 / buffers.md F6): a guest byte written on the EXACT cycle a draining frame completes while the ring is FULL survives as the newest byte and keeps count == wrptr - rdptr (mod 0x8000) - the write arm's drop-oldest slip and the frame advance BOTH owe the read pointer there - swept over nbyte 1, 2 and 4 and compared byte-for-byte against a golden drop-oldest/newest-survives stream.
+// The 86-PCM's 0xA468 bit-3 buffer reset is AUTHORITATIVE while the buffer is RUNNING: for every one of the sample period's phases, a reset issued while the drain engine is mid-frame still leaves the byte count at zero rather than at 0xFFFE, because the engine's own rdptr/count update sits later in the same always block and otherwise subtracts a frame from a count the reset has just zeroed. And the full+write+D_DONE collision (datapaths.md F7 / buffers.md F6): a guest byte written on the EXACT cycle a draining frame completes while the ring is FULL survives as the newest byte and keeps count == wrptr - rdptr (mod 0x8000) - in NP2kai's serialized order (the drain runs at sound_sync before the port write, cbus/pcm86io.c pcm86_oa46c), so the frame leaves first, the ring is no longer full and no slip is owed: count = 0x8000 - nbyte + 1 - swept over nbyte 1, 2 and 4 and compared byte-for-byte against that golden stream.
 //
 // The 86-PCM's 0xA468 bit-3 buffer reset is AUTHORITATIVE while the buffer is RUNNING: for every one of the sample period's phases, a reset issued while the drain engine is mid-frame still leaves the byte count at zero rather than at 0xFFFE, because the engine's own rdptr/count update sits later in the same always block and otherwise subtracts a frame from a count the reset has just zeroed.
 //
@@ -32,11 +32,11 @@
 //      the buffer is not full, whatever the engine is doing.
 //   3. (review2/datapaths.md F7 / review2/buffers.md F6) A guest byte written on
 //      the EXACT cycle a draining frame completes while the ring is FULL must
-//      survive - the block's documented "the oldest byte is dropped, the newest
-//      data survives" - and the count/pointer bookkeeping must stay coherent
-//      (count == wrptr - rdptr mod 0x8000): the write arm's drop-oldest slip and
-//      the completion's frame advance BOTH owe the read pointer there. Swept over
-//      every frame size (nbyte 1, 2, 4).
+//      survive and the count/pointer bookkeeping must stay coherent
+//      (count == wrptr - rdptr mod 0x8000), in NP2kai's serialized order: the
+//      frame leaves first, so the ring is no longer full when the byte lands and
+//      no slip is owed (count = 0x8000 - nbyte + 1). Swept over every frame size
+//      (nbyte 1, 2, 4).
 // Both sweeps are swept over every phase of one sample period, so the bench states the
 // property for all timings rather than for one.
 //
@@ -253,10 +253,11 @@ pc9821_pcm86 #(.SYS_CLOCK_HZ(CLK_HZ)) dut (
     // drain completes. That frame's bytes were read BEFORE the write can land
     // (the SDRAM reads complete in D_WAIT), so the write goes to the slot the
     // frame just vacated - the tail of the ring - and must be the NEWEST
-    // survivor: the write arm's drop-oldest slip (rdptr + 1, "the oldest byte is
-    // dropped") and the completion's frame advance (rdptr + nbyte) BOTH apply,
-    // giving rdptr += nbyte + 1 and count = 0x8000 - nbyte with
-    // count == wrptr - rdptr (mod 0x8000) still holding.
+    // survivor. NP2kai's order is serialized (its drain runs at sound_sync before
+    // the port write is handled, cbus/pcm86io.c pcm86_oa46c): the frame leaves
+    // first, the ring is then not full, and the byte joins with NO slip - rdptr
+    // += nbyte and count = 0x8000 - nbyte + 1, with count == wrptr - rdptr
+    // (mod 0x8000) still holding.
     //   The pre-fix completion overwrote the slip with its own advance and
     //   credited the write only in the non-full arm: the new byte fell OUTSIDE
     //   the managed range (dropped - the opposite of "newest survives"), count
@@ -297,22 +298,23 @@ pc9821_pcm86 #(.SYS_CLOCK_HZ(CLK_HZ)) dut (
           fail("the full+write+D_DONE collision broke the ring invariant (count != wrptr - rdptr)");
           $display("     count=%0d wrptr=%0d rdptr=%0d (nbyte=%0d)", dbg_count, dut.wrptr, dut.rdptr, nbf);
         end
-        if (dbg_count !== 16'(16'h8000 - nbf))
-          fail("the collision's count is not 0x8000 - nbyte (drop-oldest AND drain-the-frame)");
+        if (dbg_count !== 16'(16'h8000 - nbf + 1))
+          fail("the collision's count is not 0x8000 - nbyte + 1 (drain the frame, then the byte joins)");
         // (b) the newest byte survives, inside the managed range at its tail.
-        if (((x_slot - dut.rdptr) & 15'h7FFF) >= (dbg_count & 16'h7FFF))
+        // (the full 16-bit count: nbyte 1 leaves the ring exactly full again, 0x8000)
+        if (((x_slot - dut.rdptr) & 15'h7FFF) >= dbg_count)
           fail("the collision's new byte fell outside the managed range: it is dropped (newest must survive)");
         // (c) and the NEXT frame is the golden continuation: slots rdptr..rdptr+nbyte-1,
-        // which with the drop-oldest slip skips the oldest surviving byte.
+        // the oldest surviving bytes, nothing skipped.
         @(negedge clk);
         while (dut.dstate !== 2'd3) @(negedge clk);
         for (ci = 0; ci < nbf; ci = ci + 1) begin
-          want = 8'((x_slot + nbf + 1 + ci) & 15'h7FFF);
+          want = 8'((x_slot + nbf + ci) & 15'h7FFF);
           if (drain_stream[cbase + ci] !== want) begin
-            fail("the post-collision frame is not the golden stream (drop-oldest + newest-survives)");
+            fail("the post-collision frame is not the golden stream (serialized drain-then-write)");
             $display("     byte %0d: got %02x expected %02x (slot %0d)", ci,
                      drain_stream[cbase + ci], want,
-                     (x_slot + nbf + 1 + ci) & 15'h7FFF);
+                     (x_slot + nbf + ci) & 15'h7FFF);
           end
         end
         if (errors == 0) begin

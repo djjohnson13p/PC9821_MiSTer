@@ -129,6 +129,7 @@ module tb_pc9821_mouse;
   wire  [3:0] top_bank;
   wire        sound_extend;
   wire  [7:0] win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire sys16m_en;
   wire        ide_rom_enable, bios_ram_gate, a20_enable, cpu_reset_req;
   wire ide_ram_gate;   // 0x1E8E's IDE work-RAM gate (the iobus drives it; unused here)
@@ -263,11 +264,13 @@ module tb_pc9821_mouse;
 
   // One host mouse packet through hps_io's field layout (sys/hps_io.sv:368-370):
   // [24] toggles once per packet, [23:16] Y (PS/2: positive = up), [15:8] X
-  // (positive = right), [2:0] {middle, right, left}, 1 = pressed.
+  // (positive = right), [2:0] {middle, right, left}, 1 = pressed. Byte 0 carries the
+  // 9-bit deltas' sign bits (bit 5 Y, bit 4 X) as Main_MiSTer user_io_mouse builds them;
+  // every delta here is within +-127, so the sign is the byte's own bit 7.
   task automatic packet(input [7:0] dxb, input [7:0] dyb, input [2:0] btn);
     begin
       @(negedge clk);
-      ps2_mouse = {~ps2_mouse[24], dyb, dxb, 5'b00001, btn};
+      ps2_mouse = {~ps2_mouse[24], dyb, dxb, 2'b00, dyb[7], dxb[7], 1'b1, btn};
     end
   endtask
 
@@ -353,6 +356,13 @@ module tb_pc9821_mouse;
       $display("MISMATCH middle button: 7FD9 upper nibble %02x, expected A0", v[7:4]);
       errors = errors + 1;
     end
+    // L and R ALONE: the L+R pair below reads the same with the two lines swapped, so
+    // each is pressed by itself (NP2kai sdl/mousemng.h:1 `uPD8255A_LEFTBIT = 0x80,
+    // uPD8255A_RIGHTBIT = 0x20`; hps_io [0] = left, [1] = right).
+    packet(8'h00, 8'h00, 3'b001);   // left only
+    rd_is(16'h7FD9, 8'h67, "left alone clears bit 7 only (LEFTBIT 0x80)");
+    packet(8'h00, 8'h00, 3'b010);   // right only
+    rd_is(16'h7FD9, 8'hC7, "right alone clears bit 5 only (RIGHTBIT 0x20)");
     packet(8'h00, 8'h00, 3'b011);   // L+R pressed again
     rd_is(16'h7FD9, 8'h47, "buttons L+R pressed read 0100");
 

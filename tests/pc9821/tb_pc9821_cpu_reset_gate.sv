@@ -101,7 +101,21 @@ module tb_pc9821_cpu_reset_gate;
     // later. A combinational release - the old shape - is already high on the first of these.
     $display("check 2: the release is synchronous, two clocks after the last term clears");
     mem_busy = 1'b0;
-    while (!dut.release_ok) @(posedge clk);
+    // The SDRAM term EXTENDS the hold and never shortens it: the full platform hold (the
+    // same HOLD the warm class re-arms in check 3) still runs AFTER the controller leaves
+    // init, so the end of init is not itself the release. Counted from the busy drop on
+    // the DUT's ports, because the release_ok wait below is white-box and would follow a
+    // gate that released the moment init ended.
+    latency = 0;
+    while (!dut.release_ok && latency < 100) begin
+      @(posedge clk);
+      latency = latency + 1;
+    end
+    if (latency < HOLD) begin
+      $display("FAIL: the release condition came %0d clocks after SDRAM init ended, inside the %0d-clock platform hold",
+               latency, HOLD);
+      errors = errors + 1;
+    end
     check_int("cpu_reset_n on the release cycle", cpu_reset_n, 0);
     @(posedge clk);
     check_int("cpu_reset_n one clock after release", cpu_reset_n, 0);

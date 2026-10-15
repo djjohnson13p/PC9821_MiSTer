@@ -170,10 +170,10 @@ module tb_pc9821_ata_eject_abort;
     end
   endtask
 
-  // bank 0x0432/1, then one READ SECTORS of the sector at `lba` (LBA mode, unit 0)
+  // bank 0x0432/0 (the disk's), then one READ SECTORS of the sector at `lba` (LBA mode, unit 0)
   task automatic issue_read_sectors(input [27:0] lba);
     begin
-      write_byte(16'h0432, 8'h01);
+      write_byte(16'h0432, 8'h00);
       repeat (2) @(negedge clk);
       write_byte(16'h0644, 8'h01);              // sector count = 1
       write_byte(16'h0646, lba[7:0]);           // sector number

@@ -40,6 +40,7 @@ module tb_pc9821_iobus;
   wire ide_rom_enable, bios_ram_gate;
   wire ide_ram_gate;   // 0x1E8E's IDE work-RAM gate (the iobus drives it; unused here)
   wire [7:0] win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire sys16m_en;   // 0x043B bit 2, the 15-16 MiB system-space window
   // 0x043F's 0x8 nibble: the writable shadow over the 0xF8000-0xFFFFF window (r13/23).
   wire top_shadow_en;
@@ -661,6 +662,9 @@ module tb_pc9821_iobus;
       $display("FAIL 0x0461 reset value %02x, expected 08", win0_sel);
       errors = errors + 1;
     end
+    // win0_sel_moved is the window-moved flag the memory map reads (the registered
+    // `win0_sel != 8'h08`): it must follow every 0x0461 write, end to end.
+    if (win0_sel_moved !== 1'b0) fail("win0_sel_moved set out of reset (the identity 08)");
     // Measured on the machine (probes/WIN.TXT, 2026-09-13, /WIN), first touch,
     // before anything wrote either port: 0x461 reads 09 and 0x463 reads 0B --
     // the identity 0x08 and the reset 0x0A, each with bit 0 reading back set.
@@ -673,6 +677,7 @@ module tb_pc9821_iobus;
       $display("FAIL 0x0461 latch %02x", win0_sel);
       errors = errors + 1;
     end
+    if (win0_sel_moved !== 1'b1) fail("win0_sel_moved not set after 0x0461 = 0E");
     check_flush_once("window 0 move");
     // Reselecting the current value is not a mapping change (QEMU guards the
     // same way), so it must not pay for another 128 KiB invalidation.
@@ -692,8 +697,10 @@ module tb_pc9821_iobus;
     clear_flush_log();
     write_byte(16'h0461, 8'h08);
     check_flush_once("window 0 restore");
+    if (win0_sel_moved !== 1'b0) fail("win0_sel_moved still set after the 0x0461 = 08 restore");
     clear_flush_log();
     write_byte(16'h0461, 8'h09);
+    if (win0_sel_moved !== 1'b0) fail("win0_sel_moved set by 0x0461 = 09 (maps as the identity 08)");
     if (win0_sel !== 8'h08 || flush_pulses != 0) begin
       $display("FAIL 0x0461 = 09 moved the page: state=%02x flushes=%0d",
                win0_sel, flush_pulses);
@@ -708,6 +715,7 @@ module tb_pc9821_iobus;
     // an odd value reads back as itself and maps as its even neighbour.
     write_byte(16'h0461, 8'h00);
     if (win0_sel !== 8'h00) fail("0x0461 = 00 did not store page 0");
+    if (win0_sel_moved !== 1'b1) fail("win0_sel_moved not set after 0x0461 = 00");
     read_byte(16'h0461, 8'h01);              // 0461=00 rb=01
     write_byte(16'h0461, 8'h0A);
     read_byte(16'h0461, 8'h0B);              // 0461=0A rb=0B
@@ -905,16 +913,26 @@ module tb_pc9821_iobus;
       errors = errors + 1;
     end
 
-    // A20 status is readable, with bit 0 meaning masked: the ITF reads it back
-    // before restoring the previous state, so open bus broke that restore.
-    // 0xF6 is the A20 strap byte as the real machine reports it: 0x5E with the
-    // line released, 0x5F with it masked (measured with probe2 before anything
-    // wrote the port). QEMU models the same 0x5E base; the old model returned a
-    // bare 0x00/0x01, which no reference produced.
+    // 0xF6 reads the machine's 0x5E whether the line is released OR masked: the a20map
+    // probe masks with `out 0xF6,0x03` (its a20_mask) and then reads "after masking:
+    // F6=5E F2=FF" while its masked reads wrap bit 20 (docs/probes/A20MAP-XE10.TXT:9,19);
+    // "initial A20: F6=5E" with the line open (:2). The mask state is visible at 0xF2
+    // only. NP2kai cpuio_if6 and MAME a20_ctrl_w report bit 0 = masked; the capture
+    // outranks both. The old bench expected 0x5F masked, a value never measured.
     read_byte(16'h00F6, 8'h5E);         // 0xF2 above released the line
-    write_byte(16'h00F6, 8'h03);        // mask (read-modify-write form)
-    read_byte(16'h00F6, 8'h5F);
+    write_byte(16'h00F6, 8'h03);        // mask
+    read_byte(16'h00F6, 8'h5E);
+    // Only 0x02 and 0x03 move the gate: NP2kai cpuio_of6 `switch(dat) { case 0x02: ...
+    // case 0x03: ... }` and MAME pc9801.cpp a20_ctrl_w (`if(data == 0x02) ... else if
+    // (data == 0x03) ... else logerror(...unmapped data write...)`). A read-modify-write
+    // of the 0x5E it reads back, or any other byte with bit 1 set, leaves it alone.
+    write_byte(16'h00F6, 8'h5E);
+    if (a20_enable) fail("0xF6 = 0x5E (bit 1 set, not 0x02) released A20");
     write_byte(16'h00F6, 8'h02);        // release again
+    write_byte(16'h00F6, 8'h07);
+    if (!a20_enable) fail("0xF6 = 0x07 (bit 1 set, not 0x03) masked A20");
+    write_byte(16'h00F6, 8'hFF);
+    if (!a20_enable) fail("0xF6 = 0xFF (not 0x03) masked A20");
     read_byte(16'h00F6, 8'h5E);
     // 0xF2 reads TRACK the A20 state: NP2kai's cpuio_if2 returns
     // 0xFF - bit20(CPU_ADRSMASK), i.e. 0xFE released / 0xFF masked
@@ -1475,10 +1493,9 @@ module tb_pc9821_iobus;
       ur0 = unmapped_reads;
       uw0 = unmapped_writes;
 
-      // 0x09A8: the register beside the 0x9A0 extended-video flip-flop. The
-      // machine reads 0x00 (probes/R10.TXT snapshot `09A8=00 09A9=FF` and
-      // probes/PORTS.TXT `09A8 00`). One machine state was captured; the read is
-      // a constant with that caveat.
+      // 0x09A8: the 24/31 kHz select latch beside 0x9A0. Its power-up read is the
+      // machine's 0x00 (probes/R10.TXT snapshot `09A8=00 09A9=FF` and
+      // probes/PORTS.TXT `09A8 00`); the write round-trip is tb_pc9821_readback_sysports'.
       read_byte(16'h09A8, 8'h00);
       // 0x98D7: the mouse IRQ register (Linux pc98 std_resources.c reserves it
       // as "mouse irq"). The machine reads 0x0D, twice, with no writes

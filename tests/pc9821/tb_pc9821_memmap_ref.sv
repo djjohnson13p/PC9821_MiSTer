@@ -35,6 +35,7 @@ module tb_pc9821_memmap_ref;
   reg  [1:0] ems_state = 2'd0;
   reg [31:0] ems_page_base = 32'h0214_8000;    // pack_base + PACK_BYTES + 0x48000
   reg [7:0]  win0_sel = 8'h08;
+  wire       win0_sel_moved = (win0_sel != 8'h08);   // pc9821_iobus's registered compare
   reg [31:0] pack_base = 32'h0200_0000;
   reg [31:0] guest_ram_bytes = 32'h0200_0000;
   reg        peg_window = 1'b0;
@@ -155,7 +156,7 @@ module tb_pc9821_memmap_ref;
       .ide_ram_gate(ide_ram_gate),
       .bios_ram_gate(bios_ram_gate), .top_shadow_en(top_shadow_en),
       .fw_shadow_dirty(fw_shadow_dirty), .fw_shadow_base(fw_shadow_base),
-      .ems_state(ems_state), .ems_page_base(ems_page_base), .win0_sel(win0_sel),
+      .ems_state(ems_state), .ems_page_base(ems_page_base), .win0_sel(win0_sel), .win0_sel_moved(win0_sel != 8'h08),
       .pack_base(pack_base), .guest_ram_bytes(guest_ram_bytes),
       .peg_window(peg_window), .peg_base(peg_base),
       .pegc_256(pegc_256), .pegc_plane(pegc_plane),
@@ -164,7 +165,7 @@ module tb_pc9821_memmap_ref;
       .pegc_nc(pegc_nc),
       .gvram_window(gvram_window), .gvram_win_plane(gvram_win_plane),
       .gvram_win_offset(gvram_win_offset),
-      .cpu_addr(cpu_addr), .cpu_din(cpu_din), .cpu_dout(map_cpu_dout),
+      .cpu_addr(cpu_addr), .cpu_addr_raw(cpu_addr), .xl_low20(1'b0), .xl_peg(1'b0), .cpu_din(cpu_din), .cpu_dout(map_cpu_dout),
       .cpu_line_dout(map_cpu_line_dout), .cpu_be(cpu_be),
       .cpu_burstcount(cpu_burstcount), .cpu_line_read(cpu_line_read),
       .cpu_valid(cpu_valid), .cpu_write(cpu_write),
@@ -204,7 +205,7 @@ module tb_pc9821_memmap_ref;
   wire        dma_ready, dma_resp_valid;
   wire [31:0] dma_dout;
 /* verilator lint_on UNUSEDSIGNAL */
-  // The GDC draw engine's visit (item 63 slice 1) is not this bench's subject: tied
+  // The GDC draw engine's visit (the GDC2 WRITE slice) is not this bench's subject: tied
   // off, so the CPU side permanently owns the GVRAM port share.
   wire        gdc_mem_valid = 1'b0;
   wire        gdc_mem_write = 1'b0;
@@ -625,8 +626,11 @@ module tb_pc9821_memmap_ref;
     // in VRAM2.TXT:153-154). The core routes it to the registered open-bus responder
     // (pc9821_memory_subsystem.sv's tram_gap), so this note's expectation is met
     // rather than recorded as a divergence (it was a DIVERGE note before the M1 fix).
-    route_note(1'b1, 32'h000A_5000, R_OPEN, "0xA5000 (text VRAM tail)",
-               "QEMU window-1 tvram 0x8000 covers A0000-A7FFF / MEAS: nothing decodes there");
+    // ASSERTED, not noted: the machine's capture decides it (it outranks QEMU), so a
+    // regression that routed the tail anywhere else would only have turned this row into
+    // an uncounted DIVERGE line.
+    route_case(1'b1, 32'h000A_5000, R_OPEN, 32'h0, "0xA5000 (text VRAM tail)",
+               "MEAS VRAM.TXT:141-142 nothing decodes there (outranks QEMU window-1 tvram 0x8000)");
     // 0x0463 (window 1 at 0xA0000-0xBFFFF) has NO mapping effect in this core: iobus
     // latches it and the register is not an input of either DUT. qemu maps it (0x0a = the
     // vram overlays, any other value = the RAM page); NP2kai has no such register at all;
@@ -881,6 +885,13 @@ module tb_pc9821_memmap_ref;
   // ==== VERDICT ====
     $display("TB_PC9821_MEMMAP_REF: %0d reference cases, %0d mismatches, %0d reported divergences",
              cases, errors, diverge);
+    // The divergence report is PINNED: the seven reported rows are each a recorded
+    // judgement, so a decode change that adds one (an asserted-agreeing note row turning
+    // into a DIVERGE) or removes one must fail here and be re-adjudicated, not scroll by.
+    if (diverge != 7) begin
+      $display("FAIL     the reported divergences changed: %0d, the adjudicated set is 7", diverge);
+      errors = errors + 1;
+    end
     if (errors == 0) begin
       $display("TB_PC9821_MEMMAP_REF: PASS");
       $finish;

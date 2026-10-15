@@ -15,7 +15,7 @@
 // session's timing.
 
 module tb_pc9821_sdram_gd;
-  localparam integer CAS = 2;                        // CAS_I = 2 for FREQ <= 100 MHz
+  localparam integer CAS = 2;                        // CAS_I = 2 below 100 MHz
   localparam integer GK = 4;                         // the session size under test
   localparam integer GENT_W = 27 + 32 + 4;
 

@@ -37,7 +37,7 @@ DEFAULT_MGL=/media/fat/PC9821Z486.mgl
 SSHP=""
 MISTER_PASS="${MISTER_PASS-1}"   # the stock MiSTer root password; MISTER_PASS= (empty) uses ssh keys
 if [ -n "$MISTER_PASS" ]; then export SSHPASS="$MISTER_PASS"; SSHP="sshpass -e"; fi
-SSHO="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+SSHO="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
 run() { $SSHP ssh $SSHO $HOST "$@"; }
 
 # The pack path an MGL names: the <file ...> entry with type="f" (F0 -> file type f at

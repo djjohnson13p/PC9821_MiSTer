@@ -439,7 +439,7 @@ module tb_pc9821_ata_throughput;
     img_mounted = 0;
     while (ata.current_cylinders !== 16'd735) @(negedge clk);
     phase = P_CMD;
-    tf_write(16'h0432, 8'h01);
+    tf_write(16'h0432, 8'h00);
 
     // the realistic latency band at an ideal 1 clk/word stream
     scenario(0, 0,   1, 8'd1);

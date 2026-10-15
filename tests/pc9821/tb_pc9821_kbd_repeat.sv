@@ -175,6 +175,20 @@ module tb_pc9821_kbd_repeat;
     expect_quiet(700, "right Win (KBEX_NONREP)");
     send_key(1'b0, 1'b1, 8'h27);  read_byte(8'hF8);   // right Win break
 
+    // ---- 6. Both ends of the F1-F10 row and CTRL: keystat.tbl kbexflag rows 60h/68h
+    //         (`0x80` under f.1..f10, 0x62-0x6B) and 70h (SFT..CTRL, 0x70-0x74). Only
+    //         LShift and RWIN were held above, so a table that dropped F10 or CTRL
+    //         from the non-repeat set passed. ----
+    send_key(1'b1, 1'b0, 8'h05);  read_byte(8'h62);   // F1 make
+    expect_quiet(700, "F1 (KBEX_NONREP)");
+    send_key(1'b0, 1'b0, 8'h05);  read_byte(8'hE2);
+    send_key(1'b1, 1'b0, 8'h09);  read_byte(8'h6B);   // F10 make
+    expect_quiet(700, "F10 (KBEX_NONREP)");
+    send_key(1'b0, 1'b0, 8'h09);  read_byte(8'hEB);
+    send_key(1'b1, 1'b0, 8'h14);  read_byte(8'h74);   // left Ctrl make (NEC CTRL)
+    expect_quiet(700, "CTRL (KBEX_NONREP)");
+    send_key(1'b0, 1'b0, 8'h14);  read_byte(8'hF4);
+
     // ==== VERDICT ====
     if (errors == 0) begin
       $display("TB_PC9821_KBD_REPEAT: PASS");

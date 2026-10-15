@@ -123,5 +123,33 @@
       "max_diff": 14.0,
       "by_s": 100
     }
+  },
+  "flamezap": {
+    "_comment": "EGC-heavy (sprite blits through the EGC); needs the EMS boot profile (config_default 2 = emm386 on the example disk): on noemm it fails with 'Palloc error'.",
+    "boot_wait": 40,
+    "steps": [
+      [
+        "type",
+        "cd \\GAMES\\FLAMEZAP\n"
+      ],
+      [
+        "type",
+        "!start\n"
+      ],
+      [
+        "wait",
+        30
+      ]
+    ],
+    "run": 120,
+    "shot_every": 10,
+    "max_static_s": 60,
+    "min_changes": 3,
+    "config_default": 2,
+    "known_frame": {
+      "ref": "flamezap-title.png",
+      "max_diff": 14.0,
+      "by_s": 100
+    }
   }
 }

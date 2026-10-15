@@ -171,10 +171,12 @@ localparam [1:0] IO_LATENCY_PROFILE = 2'd0;
 // unchanged - the measured free LABs (the feature costs 26-50 against ~40 free) are why it must
 // be opt-in rather than always on.
 localparam MPU_EN = 1'b0;
-// ONE IDE HARD DISK. The second disk (bank 0's master, OSD "Mount HDD1", hps_io slot 3) was
+// ONE IDE HARD DISK, always bank 0's master (IDE unit 0) whatever CDROM_EN says (the fixed layout,
+// owner 2026-10-11). The second disk (OSD "Mount HDD1", hps_io slot 3) was
 // removed by the owner on 2026-10-08; slot 3 stays an
 // unused hps_io index so the CD keeps slot 4 and the MGLs that name it stay valid.
-// THE CD-ROM (ATAPI on the built-in IDE, bank 1's slave: src/pc9821/storage/pc9821_atapi.sv).
+// THE CD-ROM (ATAPI on the built-in IDE, always bank 1's master: src/pc9821/storage/pc9821_atapi.sv;
+// without it bank 1 is empty).
 // With 1 the OSD offers slot 4 ("S4,ISOPCD,CD-ROM"), hps_io
 // declares it and pc9821_system builds the drive; with 0 none of it exists. The OSD entries and
 // the slot count are their own profile-rewritten LINES (CONF_STR_DISKS - FDD2's mount, plus the
@@ -250,7 +252,7 @@ localparam CONF_STR = {
 	// drives carry the PC-98's own names, FDD1 and FDD2 - hps_io slot 1 is FDD1 and slot 2 is
 	// FDD2; only the LABELS changed, the slot indices (S0/S1/S2, and S4 for the CD) did not.
 	"S0,IMG,Mount HDD;",
-	// The floppy image slots: one per drive, as the machine has. Phase 1 of item 59 is the
+	// The floppy image slots: one per drive, as the machine has. Phase 1 of the floppy work was the
 	// first drive's slot; the second drive is the same medium with its own image, its own track
 	// register (NP2kai fdc.treg[us]) and its own position. The extension list is a hint to
 	// the file browser; the media module decides from the CONTENT (a D88 whose fd_type
@@ -1525,7 +1527,9 @@ wire  [4:0] vol_mt32_r = vol_midi_r;
 // CLK_AUDIO with NO synchroniser. That is intentional: it is the standard MiSTer convention for
 // OSD settings, which are quasi-static levels, and the worst case is one sample taken mid-change
 // - a click, not corruption. The guest-audible bus (sample_86_l/r) crosses on a handshake instead.
-pc9821_audio_volume #(.NUM_CH(10), .SAMPLE_WIDTH(20)) audio_volume_inst (
+// USED = channels 9..6 (master L/R, -86 L/R) and 3..2 (CD L/R): the OPL and MT32 slots have no source
+// and their outputs are unread below, so the stage does not multiplex or hold them (10'h3CC).
+pc9821_audio_volume #(.NUM_CH(10), .SAMPLE_WIDTH(20), .USED(10'h3CC)) audio_volume_inst (
 	.clk(CLK_AUDIO),
 	.volumes_in({vol_master_l, vol_master_r,
 	             vol_voice_l,  vol_voice_r,

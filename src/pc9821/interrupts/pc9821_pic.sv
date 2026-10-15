@@ -251,8 +251,9 @@ module pc9821_pic #(
             rotate_on_aeoi <= 1'b0;
           end else if (din[3]) begin
             // OCW3: A0=0, D4=0, D3=1
-            // RIS selects the ISR only when RR is set as well (NP2kai and QEMU both
-            // gate it); applying it unconditionally is out of contract.
+            // RIS selects the ISR only when RR is set as well (QEMU hw/intc/i8259.c and
+            // MAME gate it; NP2kai does NOT - io/pic.c:315-318 `if (!(dat & PIC_OCW3_RR))`
+            // keeps an RIS written without RR - a divergence tb_pc9821_pic_ref waives).
             if (din[1]) read_irr <= ~din[0];
             // ESMM (D6) gates the SMM write; with ESMM=0 SMM keeps its old value
             // (NP2kai io/pic.c:319-322, QEMU hw/intc/i8259.c:252-254).

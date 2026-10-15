@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // ==== WHAT THIS PROVES ====
-// TB_PC9821_FDC_READY_CHANGE: a floppy media change raises NP2kai's ready-change interrupt (fdd/diskdrv.c): every mount event of an equipped drive - an eject, an insert, an eject of an empty drive - leaves ST0 = AI|NR|drv (0xC8|u) for SENSE INTERRUPT STATUS and raises the interrupt at once, ungated; an insert keeps the drive NOT READY (ST3 RDY clear, a READ DATA answering the IC0|NR class) for DISK_DELAY = 20 guest frames and then, only when the 0xBE register's bit 2 is clear or the DOR's motor bit 0x08 is set, leaves ST0 = AI|drv (0xC0|u) and raises the interrupt again, with the drive READY; a medium that parses after the delay is announced when it parses; and a mount event while the controller is held in reset raises nothing (fdc_reset zeroes fdc.stat). FAIL-FIRST: the base controller had no ready-change interrupt at all (no media_chg/frame_tick seam).
+// TB_PC9821_FDC_READY_CHANGE: a floppy media change raises NP2kai's ready-change interrupt (fdd/diskdrv.c): every mount event of an equipped drive - an eject, an insert, an eject of an empty drive - leaves ST0 = AI|NR|drv (0xC8|u) for SENSE INTERRUPT STATUS and raises the interrupt at once, ungated; an insert keeps the drive NOT READY (ST3 RDY clear, a READ DATA answering the IC0|NR class) for DISK_DELAY = 20 guest frames and then, only when the 0xBE register's bit 2 is clear or the DOR's motor bit 0x08 is set, leaves ST0 = AI|drv (0xC0|u) and raises the interrupt again, with the drive READY, while a ready held back by that gate is announced (AI|drv) when the DOR's motor bit later rises with 0xBE bit 2 set (NP2kai io/fdc.c fdc_o94); a medium that parses after the delay is announced when it parses; and a mount event while the controller is held in reset raises nothing (fdc_reset zeroes fdc.stat). FAIL-FIRST: the base controller had no ready-change interrupt at all (no media_chg/frame_tick seam).
 //
 // THE EXPECTED VALUES ARE NP2kai's (commit 5939e0c6):
 //   eject/insert:  diskdrv_setfddex, fdd/diskdrv.c:256-284 -
@@ -192,6 +192,16 @@ module tb_pc9821_fdc_ready_change;
     check_irq(1'b0, "R3 no ready interrupt with chgreg bit 2 set and the motor off");
     sense_is(8'h80, "R3 nothing pending");
     st3_is(2'd1, 8'h39, "R3 drive 1 READY all the same (fdd_set runs ungated)");
+
+    // R3b: the gated ready is DEFERRED, not lost: NP2kai fdc_o94 announces every ready drive
+    // when the motor bit then rises with 0xBE bit 2 set - `if (fdc.chgreg & 4) { if ((fdc.ctrlreg
+    // ^ dat) & 0x08) { if (dat & 0x08) { for (i...) if (fdd_diskready(i)) { fdc.int_stat[i] =
+    // FDCRLT_AI | i; fdc.int_timer[i] = FDC_INT_DELAY; ...` (io/fdc.c).
+    wr8(3'd2, 8'h08);
+    repeat (3) @(negedge clk);
+    check_irq(1'b1, "R3b the motor bit's rise announces the drive that became ready while gated");
+    sense_is(8'hC1, "R3b motor on: AI|drv for the ready drive 1");
+    wr8(3'd2, 8'h00);
 
     // R4: the gate OPENED by the motor bit (DOR 0x08: bit 4/bit 7 unchanged, no controller reset).
     wr8(3'd2, 8'h08);

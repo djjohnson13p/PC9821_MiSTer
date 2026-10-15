@@ -77,7 +77,19 @@ module pc9821_pegc (
   // kept; the pattern block above them is L3's). Plain bytes, no masking on the
   // way in except 0xE0100's bit-0 mask (NP2kai memvgaio_wr8).
   reg [7:0] mio1 [0:3];
-  reg [7:0] mio2 [0:31];
+
+  // mio2 (32 bytes) is held as 8 dwords in one block RAM. Nothing consumes mio2 but the
+  // read-back and the two bits exported below (kept in their own flops), so the bytes
+  // need no reset of their own: a per-dword `dirty` flop stands for "reads as zero", and a
+  // store merges into the dword's old value (0 while clean), which is exactly the
+  // reset-to-zero + byte-store result. The RAM's read address is cpu_addr
+  // presented every cycle; the answer is used in S_ACCEPT, one cycle after S_IDLE saw
+  // cpu_valid, where the old text read the byte array combinationally.
+  (* ramstyle = "M10K, no_rw_check" *) reg [31:0] mio2_ram [0:7];
+  reg [7:0]  mio2_dirty;
+  reg [31:0] mio2_q;
+  reg        plane_mode_r, vram_en_r;
+  always @(posedge clk) mio2_q <= mio2_ram[cpu_addr[4:2]];
 
   wire [14:0] req_addr = cpu_addr & 15'h7FFC;   // the access's dword-aligned base
 
@@ -86,10 +98,14 @@ module pc9821_pegc (
   function automatic [7:0] rd8(input [14:0] off);
     begin
       if      (off[14:2] == 13'd1) rd8 = mio1[off[1:0]];
-      else if (off[14:5] == 10'd8) rd8 = mio2[off[4:0]];
       else                         rd8 = 8'h00;
     end
   endfunction
+
+  // The dword read: mio1 bytes, the RAM's dword (clean = 0), or 0.
+  wire [31:0] mio2_dw = mio2_dirty[req_addr[4:2]] ? mio2_q : 32'h0000_0000;
+  wire [31:0] rd_dword = (req_addr[14:2] == 13'd1) ? {rd8(req_addr + 15'd3), rd8(req_addr + 15'd2), rd8(req_addr + 15'd1), rd8(req_addr + 15'd0)}
+                       : (req_addr[14:5] == 10'd8) ? mio2_dw : 32'h0000_0000;
 
   // ---- the registered responder (the pc9821_open_bus shape) ----
   localparam S_IDLE = 2'd0, S_ACCEPT = 2'd1,
@@ -102,28 +118,39 @@ module pc9821_pegc (
   wire write_accept = (state == S_ACCEPT) && request_write;
 
   // ---- the byte write: NP2kai memvgaio_wr8's store per byte lane ----
+  wire        mio2_sel = (req_addr[14:5] == 10'd8);
+  wire [2:0]  mio2_idx = req_addr[4:2];
+  // 0xE0100 keeps bit 0 only (NP2kai: `value &= 0x1` under SUPPORT_PEGC).
+  wire [31:0] mio2_din = {cpu_din[31:8], cpu_din[7:1] & {7{(mio2_idx != 3'd0)}}, cpu_din[0]};
+  wire [3:0]  mio2_be  = cpu_be & {4{mio2_sel}};
+  wire        mio2_wr  = write_accept && (|mio2_be);
+  // Read-modify-write on one 32-bit port: mio2_q already holds this dword (read in S_IDLE,
+  // the address held since), and a clean dword's old value is 0.
+  wire [31:0] mio2_old = mio2_dirty[mio2_idx] ? mio2_q : 32'h0000_0000;
+  wire [31:0] mio2_new = {mio2_be[3] ? mio2_din[31:24] : mio2_old[31:24],
+                          mio2_be[2] ? mio2_din[23:16] : mio2_old[23:16],
+                          mio2_be[1] ? mio2_din[15:8]  : mio2_old[15:8],
+                          mio2_be[0] ? mio2_din[7:0]   : mio2_old[7:0]};
+  always @(posedge clk) if (mio2_wr) mio2_ram[mio2_idx] <= mio2_new;
+
   integer lane;
   always @(posedge clk) begin
     if (reset) begin
       for (lane = 0; lane < 4; lane = lane + 1) mio1[lane] <= 8'h00;
-      for (lane = 0; lane < 32; lane = lane + 1) mio2[lane] <= 8'h00;
+      mio2_dirty <= 8'h00;
+      plane_mode_r <= 1'b0;
+      vram_en_r <= 1'b0;
     end else if (write_accept) begin
       for (lane = 0; lane < 4; lane = lane + 1) begin : wr_lane
-        // The lane's byte offset: a named-block temporary, so the clocked block
-        // carries no module-level blocking assignment.
-        reg [14:0] lane_off;
-        lane_off = req_addr + lane[14:0];
-        if (cpu_be[lane]) begin
-          if (lane_off[14:2] == 13'd1)
-            mio1[lane_off[1:0]] <= cpu_din[lane*8 +: 8];
-          else if (lane_off[14:5] == 10'd8) begin
-            // 0xE0100 keeps bit 0 only (NP2kai: `value &= 0x1` under SUPPORT_PEGC).
-            if (lane_off[4:0] == 5'd0) mio2[5'd0] <= {7'h00, cpu_din[lane*8]};
-            else                       mio2[lane_off[4:0]] <= cpu_din[lane*8 +: 8];
-          end
-          // every other offset: the store is dropped (memvgaio_wr8 falls through)
-        end
+        if (cpu_be[lane] && (req_addr[14:2] == 13'd1))
+          mio1[lane] <= cpu_din[lane*8 +: 8];
       end
+      if (mio2_wr) begin
+        mio2_dirty[mio2_idx] <= 1'b1;
+        if (mio2_idx == 3'd0 && mio2_be[0]) plane_mode_r <= cpu_din[0];
+        if (mio2_idx == 3'd0 && mio2_be[2]) vram_en_r    <= cpu_din[16];
+      end
+      // every other offset: the store is dropped (memvgaio_wr8 falls through)
     end
   end
 
@@ -151,8 +178,7 @@ module pc9821_pegc (
           // The read data is captured ON the accept edge, so the response cycle
           // carries a settled value (the responder contract's separate cycles).
           if (!request_write) begin
-            cpu_dout <= {rd8(req_addr + 15'd3), rd8(req_addr + 15'd2),
-                         rd8(req_addr + 15'd1), rd8(req_addr + 15'd0)};
+            cpu_dout <= rd_dword;
           end
           state <= request_write ? S_HOLD : S_RESPONSE;
         end
@@ -176,8 +202,8 @@ module pc9821_pegc (
 
   assign bank_a     = mio1[0][3:0];
   assign bank_b     = mio1[2][3:0];
-  assign plane_mode = mio2[0][0];
-  assign vram_en    = mio2[2][0];
+  assign plane_mode = plane_mode_r;
+  assign vram_en    = vram_en_r;
 
 endmodule
 

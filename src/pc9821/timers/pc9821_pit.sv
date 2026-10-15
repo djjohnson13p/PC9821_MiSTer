@@ -1,5 +1,6 @@
 // 8253 PIT - PC-9821 MiSTer core. 3 independent 16-bit down-counters, modes 0
-// (interrupt), 2 (rate generator) and 3 (square wave), with a latched count readback.
+// (interrupt), 2 (rate generator) and 3 (square wave), the one-shots 1 and 4/5, with a
+// latched count readback.
 //
 // PC-9821 ports: 0x71 channel 0 (timer tick -> IRQ 0), 0x73 channel 1, 0x75 channel 2,
 // 0x77 control word. The input clock is 2.4576 MHz, which is load-bearing rather than
@@ -37,7 +38,17 @@ module pc9821_pit #(
   reg [15:0] count[0:2];  // current countdown value
   reg [15:0] reload[0:2];  // programmed reload value
   reg [1:0] rw_mode[0:2];  // read/write format (0=latch, 1=LSB, 2=MSB, 3=LB+MB)
-  reg [2:0] mode[0:2];  // operating mode (0-5)
+  reg [2:0] mode[0:2];  // operating mode (0-5; a written 6/7 is stored as 2/3)
+  // The control word's bits the behaviour does not need but the read-back status returns
+  // verbatim (NP2kai io/pit.c pit_setflag: `pitch->ctrl = (UINT8)((value & 0x3f) | ...)`,
+  // latched whole as the status): mode_hi[ch] says a 6/7 was written, bcd[ch] is bit 0.
+  reg mode_hi[0:2];
+  reg bcd[0:2];
+  // Modes 1/4/5 are one-shots: one OUT event per count write (NP2kai io/pit.c systimer
+  // re-arms PIT_FLAG_I only for `(pitch->ctrl & 0x0c) == 0x04`, modes 2/3). armed[ch] is set
+  // by a count load and cleared by the terminal-count event, so the counter can wrap and keep
+  // counting (8254 mode 4: no reload) without a second strobe.
+  reg armed[0:2];
   reg running[0:2];  // channel is counting
   reg lsb_written[0:2];  // for 16-bit access: LSB written, waiting for MSB
   reg output_ff[0:2];  // output flip-flop (for square-wave mode)
@@ -127,6 +138,17 @@ module pc9821_pit #(
     end
   endfunction
 
+  // The counting element of each channel, formed once and selected by the three consumers below
+  // (the read-back latch command, the control-word latch and the live read mux), so the
+  // mode-3 `2*c - 1` decrement exists three times, not once per consumer.
+  wire [15:0] elem0 = count_element(count[0], reload[0][0], mode[0], output_ff[0]);
+  wire [15:0] elem1 = count_element(count[1], reload[1][0], mode[1], output_ff[1]);
+  wire [15:0] elem2 = count_element(count[2], reload[2][0], mode[2], output_ff[2]);
+  wire [15:0] elem_ri [0:2];
+  assign elem_ri[0] = elem0;
+  assign elem_ri[1] = elem1;
+  assign elem_ri[2] = elem2;
+
   // Single next-count calculation for the tick path.
   // Replaces separate 9-way muxes across mode 0, mode 2, mode 3, and default.
   function automatic [15:0] pit_tick_next(
@@ -142,10 +164,12 @@ module pc9821_pit #(
         pit_tick_next = mode3_half(rld, ~out_ff);
       end else if (cnt == 16'd0) begin
         pit_tick_next = 16'hFFFF;
-      end else if (md == 3'd0) begin
-        pit_tick_next = 16'd0;
-      end else begin
+      end else if (md == 3'd2) begin
         pit_tick_next = rld;
+      end else begin
+        // Modes 0, 1, 4 and 5 do not reload: the counter reaches 0 and wraps
+        // (8254 datasheet, modes 0/1/4/5).
+        pit_tick_next = 16'd0;
       end
     end
   endfunction
@@ -174,6 +198,11 @@ module pc9821_pit #(
   reg t_out_val [0:2];
   reg w_out_ev  [0:2];
   reg w_out_val [0:2];
+  // armed[ch]'s events, merged once at the bottom (R4): a count load arms, a mode-set
+  // disarms, the terminal-count strobe disarms. A load in the strobe's own cycle is a new
+  // count and wins, exactly as its count[ch] assignment does.
+  reg arm_load  [0:2];
+  reg arm_clear [0:2];
   // R7 deferred level: a reload that collides with a tick OUT transition owes
   // its idle level for the next cycle without one (defer, not lose).
   reg out_pend     [0:2];
@@ -186,6 +215,8 @@ module pc9821_pit #(
       t_out_val[ch] = 1'b0;
       w_out_ev[ch]  = 1'b0;
       w_out_val[ch] = 1'b0;
+      arm_load[ch]  = 1'b0;
+      arm_clear[ch] = 1'b0;
     end
     if (!rst_n) begin
       for (ch = 0; ch < 3; ch = ch + 1) begin
@@ -193,6 +224,9 @@ module pc9821_pit #(
         reload[ch]       <= 16'h0;
         rw_mode[ch]      <= 2'd3;
         mode[ch]         <= 3'd0;
+        mode_hi[ch]      <= 1'b0;
+        bcd[ch]          <= 1'b0;
+        armed[ch]        <= 1'b0;
         running[ch]      <= 1'b0;
         lsb_written[ch]  <= 1'b0;
         output_ff[ch]    <= 1'b0;
@@ -217,7 +251,7 @@ module pc9821_pit #(
           if (running[ch]) begin
             count[ch] <= pit_tick_next(count[ch], reload[ch], mode[ch], output_ff[ch]);
             case (mode[ch])
-              3'd0: begin  // interrupt on terminal count
+              3'd0, 3'd1: begin  // interrupt on terminal count; mode 1 counted from the load
                 // Mode 0 keeps counting past the terminal count (wraps through
                 // 0 to 0xFFFF and down) with OUT latched high - QEMU
                 // (s->count - d) & 0xffff (hw/timer/i8254-pc98.c:97) and
@@ -237,9 +271,15 @@ module pc9821_pit #(
                   t_out_ev[ch] = 1'b1; t_out_val[ch] = ~output_ff[ch];
                 end
               end
-              default: begin
-                if (count[ch] == 16'd1) begin
-                  t_out_ev[ch] = 1'b1; t_out_val[ch] = ~output_ff[ch];
+              default: begin  // modes 4/5: one low strobe of one CLK at terminal count
+                // 8254 mode 4: "When the initial count expires, OUT will go low for
+                // one CLK pulse and then go high again"; the counter wraps and does
+                // not strobe again until a new count is written (armed).
+                if ((count[ch] == 16'd1) && armed[ch]) begin
+                  t_out_ev[ch] = 1'b1; t_out_val[ch] = 1'b0;
+                  arm_clear[ch] = 1'b1;
+                end else if ((count[ch] == 16'd0) && !output_ff[ch]) begin
+                  t_out_ev[ch] = 1'b1; t_out_val[ch] = 1'b1;
                 end
               end
             endcase
@@ -298,8 +338,7 @@ module pc9821_pit #(
                   // (PIT_FLAG_R), and the Xe10's latch does not restore the
                   // read pointer either.
                   read_latched[ri]   <= 1'b1;
-                  read_latch[ri]     <= count_element(count[ri], reload[ri][0],
-                                                     mode[ri], output_ff[ri]);
+                  read_latch[ri]     <= elem_ri[ri];
                   read_latch_2nd[ri] <= 1'b0;
                 end
                 if (!din[4]) begin
@@ -311,7 +350,8 @@ module pc9821_pit #(
                   // same way (hw/timer/i8254.c:150-155, `pit_get_out(...) << 7`).
                   read_stat_pend[ri] <= 1'b1;
                   read_status[ri]    <= {output_ff[ri], null_count[ri],
-                                         rw_mode[ri], mode[ri], 1'b0};
+                                         rw_mode[ri], mode[ri][2] | mode_hi[ri],
+                                         mode[ri][1:0], bcd[ri]};
                 end
               end
             end
@@ -324,12 +364,14 @@ module pc9821_pit #(
               // consumed in whatever order the byte phase is in, which is what
               // the Xe10 shows (its latch does not restore the read pointer).
               read_latched[ch]   <= 1'b1;
-              read_latch[ch]     <= count_element(count[ch], reload[ch][0],
-                                                 mode[ch], output_ff[ch]);
+              read_latch[ch]     <= elem_ri[ch];
               read_latch_2nd[ch] <= 1'b0;
             end else begin
               rw_mode[ch] <= din[5:4];
               mode[ch] <= (din[3:1] >= 3'd6) ? (din[3:1] - 3'd4) : din[3:1];
+              mode_hi[ch] <= din[3] && din[2];
+              arm_clear[ch] = 1'b1;
+              bcd[ch] <= din[0];
               lsb_written[ch] <= 1'b0;
               // A mode-set control word is the ONLY thing that resets the
               // word-read byte phase (NP2kai's pit_setflag clears
@@ -347,10 +389,11 @@ module pc9821_pit #(
               // channel that is still counting. The real part continues the
               // count in progress until a new count is written, and NP2kai's
               // pit_setflag (pit.c:244-254) does not stop the channel either.
-              // Modes 2 and 3 idle high; mode 0 starts low.
+              // Only mode 0 starts low; modes 1-5 set OUT high on the control word
+              // (8254 datasheet: "After the Control Word is written, OUT is high"
+              // for modes 1, 4 and 5; modes 2 and 3 likewise).
               w_out_ev[ch]  = 1'b1;
-              w_out_val[ch] = (din[3:1] == 3'd2) || (din[3:1] == 3'd3) ||
-                              (din[3:1] == 3'd6) || (din[3:1] == 3'd7);
+              w_out_val[ch] = (din[3:1] != 3'd0);
             end
           end
         end else begin
@@ -384,6 +427,7 @@ module pc9821_pit #(
           // Single reload path across all write arms
           if (write_load) begin
             running[ch] <= 1'b1;
+            arm_load[ch] = 1'b1;
             // The load is complete (an LSB-only/MSB-only byte, or the MSB of an
             // LSB+MSB pair - the first byte of a pair never reaches this path):
             // NULL COUNT clears, exactly as NP2kai pit_setcount does at the end
@@ -401,7 +445,10 @@ module pc9821_pit #(
             // write landing in the low half into a phantom IRQ0 edge - master.lib's
             // BGM handler rewrites the ch0 count on every tick
             // (tb_pc9821_pit_reload_edge).
-            if (mode[ch] == 3'd0) begin
+            // Mode 1 is counted from the load (NP2kai has no gate and fires one IRQ0
+            // after the count; the 8254 drives OUT low at the trigger), so it starts
+            // its one-shot the same way.
+            if ((mode[ch] == 3'd0) || (mode[ch] == 3'd1)) begin
               w_out_ev[ch] = 1'b1; w_out_val[ch] = 1'b0;
             end
           end
@@ -420,6 +467,7 @@ module pc9821_pit #(
       // count[ch] above; a deferred level already met by the transition is
       // cancelled.
       for (ch = 0; ch < 3; ch = ch + 1) begin
+        armed[ch] <= arm_load[ch] || (armed[ch] && !arm_clear[ch]);
         if (t_out_ev[ch]) begin
           output_ff[ch] <= t_out_val[ch];
           if (w_out_ev[ch]) begin
@@ -460,7 +508,7 @@ module pc9821_pit #(
         // counter's counting-element value, taking the byte(s) the programmed
         // access mode asks for.
         read_w = (read_latched[addr] || read_latch_2nd[addr]) ? read_latch[addr]
-                : count_element(count[addr], reload[addr][0], mode[addr], output_ff[addr]);
+                : elem_ri[addr];
         case (rw_mode[addr])
           2'd1:    dout_reg = read_w[7:0];    // LSB only
           2'd2:    dout_reg = read_w[15:8];   // MSB only

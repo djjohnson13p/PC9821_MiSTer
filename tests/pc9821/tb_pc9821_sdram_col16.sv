@@ -16,8 +16,9 @@
 //    set rd_col_base=0. The shipped form is the arithmetic identity
 //    {rd_col_base,1'b0}+rd_issued (segment 1) and rd_issued-rd_seg_halfs (segment 2,
 //    since rd_seg_halfs is even).
-//  * FREQ = 100 MHz, the clock the built controller runs on (z486_mister.sv's
-//    clock_sdram), so the timing table takes the CAS_I = 2 branch the design uses.
+//  * FREQ = 100 MHz (mediumoc), so the timing table takes the CL3 branch (sdram.v CAS_I,
+//    CL3 at 100 MHz and up since the 2026-10-13 hardware cutover); the column arithmetic is
+//    latency-independent, and the shipping 80 MHz CL2 path is tb_pc9821_sdram_sync's.
 //  * A wrong segment-1 base or segment-2 offset moves the CAS column and reads a
 //    different cell, so this bench -- and the readback benches beside it -- fail on
 //    any such mutation.
@@ -25,7 +26,7 @@
 module tb_pc9821_sdram_col16;
   localparam integer FREQ = 100_000_000;
   localparam integer CYCLE_NS = 10;                  // 1/100MHz
-  localparam integer CAS = 2;                        // CAS_I = 2 for FREQ <= 100MHz
+  localparam integer CAS = 3;                        // CL3 at 100 MHz and up (sdram.v CAS_I, the 2026-10-13 hardware cutover)
 
   // 64 MB geometry (the DE10 default shape): bank addr[25:24], row addr[23:11],
   // column addr[10:2]. All three bursts below sit in bank 0/1 so row+1 is right

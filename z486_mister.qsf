@@ -25,8 +25,8 @@ set_global_assignment -name TIMEQUEST_MULTICORNER_ANALYSIS OFF
 # Active profile: base
 # Active clock rate: 80_000_000 Hz (clk_sys, the SDRAM's clock too)
 # Active SDRAM phase: 8652 ps (derived)
-# Active config: {"alsa_en":false,"cdrom_audio_en":true,"cdrom_en":true,"cdrom_log_en":false,"clk_sys_hz":80000000,"fit_technique":"SPEED","io_latency_profile":0,"mpu_en":false,"name":"base","perf_log_en":false,"preset":null,"sdram_phase_ps":8652,"sdram_phase_source":"derived","trace_en":false,"yc_en":false}
-# 80 MHz clk_sys, SDRAM on clk_sys (80/80), production SPEED fit (no seed) - the default and shipping build (past timing closure)
+# Active config: {"alsa_en":false,"cdrom_audio_en":true,"cdrom_en":true,"cdrom_log_en":false,"clk_sys_hz":80000000,"fit_technique":"AREA","io_latency_profile":0,"mpu_en":false,"name":"base","perf_log_en":false,"preset":null,"sdram_phase_ps":8652,"sdram_phase_source":"derived","trace_en":false,"yc_en":false}
+# 80 MHz clk_sys, SDRAM on clk_sys (80/80), production AREA fit (no seed) - the default and shipping build (past timing closure)
 set_global_assignment -name OPTIMIZE_POWER_DURING_FITTING OFF
 set_global_assignment -name FINAL_PLACEMENT_OPTIMIZATION ALWAYS
 set_global_assignment -name FITTER_EFFORT "AUTO FIT"
@@ -39,7 +39,7 @@ set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_EFFORT EXTRA
 set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_DUPLICATION ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_RETIMING ON
-set_global_assignment -name OPTIMIZATION_TECHNIQUE SPEED
+set_global_assignment -name OPTIMIZATION_TECHNIQUE AREA
 set_global_assignment -name MUX_RESTRUCTURE ON
 set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON
 set_global_assignment -name AUTO_DELAY_CHAINS_FOR_HIGH_FANOUT_INPUT_PINS ON

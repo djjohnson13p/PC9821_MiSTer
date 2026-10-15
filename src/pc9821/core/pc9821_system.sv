@@ -127,7 +127,7 @@ module pc9821_system (
     output        fdd1_wr,
     input         fdd1_ack,
     output [15:0] fdd1_buff_din,
-    // The CD-ROM (hps_io slot 4, CDROM_EN): bank 1's ATAPI slave (pc9821_atapi). Read-only, so
+    // The CD-ROM (hps_io slot 4, CDROM_EN): bank 1's ATAPI master (pc9821_atapi). Read-only, so
     // the slot has no write leg; its CD-DA stream goes to the top level's cdda ring.
     input         cd_mounted,
     input  [63:0] cd_size,
@@ -305,8 +305,8 @@ parameter [1:0] IO_LATENCY_PROFILE = 2'd0;
 // always was. See pc9821_mpu.sv for what the card is.
 parameter MPU_EN = 1'b0;
 // THE CD-ROM (z486_mister.sv's CDROM_EN, build_profile.py's cdrom_en): pc9821_atapi as bank 1's
-// slave. With 0 the instance does not exist, its read-mux arm and IRQ term are constant 0 and the
-// IDE path is the pre-change logic. CDROM_AUDIO_EN adds the CD-DA player (PLAY/PAUSE/SUB-CHANNEL
+// master. With 0 the instance does not exist, its read-mux arm and IRQ term are constant 0 and
+// bank 1 is an empty connector (port 0xF0 bit 6 set); the hard disk is bank 0's master either way. CDROM_AUDIO_EN adds the CD-DA player (PLAY/PAUSE/SUB-CHANNEL
 // and the audio stream); it is meaningful only with CDROM_EN.
 parameter CDROM_EN = 1'b0;
 parameter CDROM_AUDIO_EN = 1'b0;
@@ -443,6 +443,7 @@ wire mouse_irq;
 wire ide_rom_enable, ide_ram_gate, a20_enable, cpu_reset_req;
 wire [1:0] d8_bank;
 wire [7:0] win0_sel;
+wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
 wire bios_ram_gate;
 // 0x043F's 0x8 nibble, the 0xF8000-0xFFFFF window's writable-shadow enable. Latched in
 // pc9821_iobus, consumed by pc9821_memory_subsystem.
@@ -576,7 +577,7 @@ end
 // under `default_nettype none`. The two stored terms are assigned in the device-select
 // block below, where their inputs are declared.
 wire cal_irq, cal_cdat;
-// A drive on the bank-0 IDE connector (IDE unit 0): the port 0xF0 strap reports it
+// A drive on the bank-0 IDE connector (IDE unit 0, the hard disk): the port 0xF0 strap reports it
 // (pc9821_iobus's ide_unit0_present). Assigned beside the ATA.
 wire ide_unit0_present;
 wire device_rd_wait;
@@ -589,7 +590,8 @@ wire device_wr_wait;
 // one source.
 wire sdip_seed_pulse;
 
-pc9821_iobus #(.SYS_CLOCK_HZ(SYS_FREQ), .IO_LATENCY_PROFILE(IO_LATENCY_PROFILE)) iobus (
+pc9821_iobus #(.SYS_CLOCK_HZ(SYS_FREQ), .IO_LATENCY_PROFILE(IO_LATENCY_PROFILE),
+               .IDE_UNIT2_PRESENT(CDROM_EN)) iobus (
       .ide_unit0_present(ide_unit0_present),
     .clk(clk_sys), .reset(reset || !cpu_run),
     // The OSD's Machine field: which port-0xF0 machine-ID strap to answer. See the port
@@ -637,6 +639,7 @@ pc9821_iobus #(.SYS_CLOCK_HZ(SYS_FREQ), .IO_LATENCY_PROFILE(IO_LATENCY_PROFILE))
     .bios_ram_gate(bios_ram_gate),
     .top_shadow_en(top_shadow_en),
     .win0_sel(win0_sel),
+    .win0_sel_moved(win0_sel_moved),
     .sys16m_en(sys16m_en),
     .a20_enable(a20_enable), .cpu_reset_req(cpu_reset_req),
     // The CPU's own shutdown is the same CPU-reset class as 0xF0/0x534; the
@@ -679,7 +682,7 @@ pc9821_iobus #(.SYS_CLOCK_HZ(SYS_FREQ), .IO_LATENCY_PROFILE(IO_LATENCY_PROFILE))
 // translated address on a window store - not a fork one. The real
 // machine's window cacheability (KEN#) is uncaptured. Cost: accesses through a
 // moved window are uncached.
-wire win0_unmapped = (win0_sel != 8'h08);
+wire win0_unmapped = win0_sel_moved;   // == (win0_sel != 8'h08) every cycle (pc9821_iobus)
 
 // ---- the CPU throttle (OSD CPU Speed) ----
 // z486 has no speed input: a slower CPU is the same CPU seeing fewer clock edges. cpu_throttle
@@ -927,7 +930,7 @@ wire         gvram_gr_owned, gvram_eg_owned, gvram_pw_owned;
 // Farland Story draws with (see the arbiter's dbg_pw_owned).
 wire         gvram_access_page, gvram_scan_page_q;
 /* verilator lint_on UNUSEDSIGNAL */
-// The graphics GDC's draw-engine visit (item 63 slice 1): pc9821_gdc2's WRITE path
+// The graphics GDC's draw-engine visit (the GDC2 WRITE slice): pc9821_gdc2's WRITE path
 // takes its turn on the GVRAM's CPU-side port share inside the memory subsystem, so
 // its writes travel the same GRCG/EGC tile path the machine routes them through.
 wire         gdc_mem_valid, gdc_mem_ready, gdc_mem_write;
@@ -952,6 +955,7 @@ pc9821_memory_subsystem #(.SYS_CLOCK_HZ(SYS_FREQ), .GATHER_K(GATHER_K)) memory (
     .bios_ram_gate(bios_ram_gate),
     .top_shadow_en(top_shadow_en),
     .win0_sel(win0_sel),
+    .win0_sel_moved(win0_sel_moved),
     .sys16m_en(sys16m_en),
     // The PEGC MMIO view select (pc9821_crtc's mode2_256col): with it up the
     // 0xE0000 window is the PEGC register file and the packed windows replace the
@@ -978,7 +982,7 @@ pc9821_memory_subsystem #(.SYS_CLOCK_HZ(SYS_FREQ), .GATHER_K(GATHER_K)) memory (
     .egc_access(egc_access), .egc_fgbg(egc_fgbg), .egc_ope(egc_ope),
     .egc_fg(egc_fg), .egc_mask(egc_mask), .egc_bg(egc_bg),
     .egc_sft(egc_sft), .egc_leng(egc_leng), .egc_shift_we(egc_shift_we),
-    // The graphics GDC's WRITE engine (item 63 slice 1) draws on the same port share.
+    // The graphics GDC's WRITE engine (the GDC2 WRITE slice) draws on the same port share.
     .gdc_mem_valid(gdc_mem_valid), .gdc_mem_ready(gdc_mem_ready),
     .gdc_mem_write(gdc_mem_write),
     .gdc_mem_route_egc(gdc_mem_route_egc),
@@ -1398,13 +1402,16 @@ wire [31:0] ata_dbg_lba;
 wire [15:0] ata_dbg_sec;
 /* verilator lint_on UNUSEDSIGNAL */
 
-// The one hard disk sits on bank 1 (docs/probes/IDE.TXT), so bank 0's connector is empty -
-// unless the CD-ROM is built: then the CD is bank 1's master and the disk moves to bank 0,
-// and port 0xF0 bit 5 reports it so the ITF's IDE drive bitmap includes slot 0 and the IDE
-// ROM probes and boots it.
-assign ide_unit0_present = CDROM_EN && hdd_mounted;
+// THE IDE LAYOUT IS FIXED (owner, 2026-10-11): the one hard disk (hps_io slot 0) is ALWAYS bank
+// 0's master (IDE unit 0) and the CD-ROM, when built, ALWAYS bank 1's master (unit 2); with the
+// CD left out bank 1 is empty. That is the stock CD-equipped Xe10's layout and NP2kai's default
+// (HDD at unit 0, CD at unit 2); the owner's Xe10 has its disk on bank 1 only because a CF card
+// sits in its CD connector. Port 0xF0 bit 5 reports the disk (so the ITF's IDE drive bitmap
+// includes unit 0 and the IDE ROM probes and boots it) and bit 6 the CD build (the iobus's
+// IDE_UNIT2_PRESENT); neither moves with a CD mount or eject.
+assign ide_unit0_present = hdd_mounted;
 
-pc9821_ata #(.HDD_BANK0(CDROM_EN)) ata (
+pc9821_ata ata (
     .clk(clk_sys), .rst_n(!(reset || !cpu_run)),
     .io_rd(device_io_rd && ata_cs), .io_wr(device_io_wr && ata_cs),
     .io_addr(device_io_addr), .io_din(device_io_din), .io_dout(ata_io_dout),
@@ -1423,7 +1430,7 @@ pc9821_ata #(.HDD_BANK0(CDROM_EN)) ata (
 );
 
 // ------------------------------------------------------------------ the CD-ROM (CDROM_EN)
-// pc9821_atapi is bank 1's master (the one hard disk moves to bank 0) and owns hps_io slot 4. Its
+// pc9821_atapi is bank 1's master (the hard disk is bank 0's) and owns hps_io slot 4. Its
 // task-file reads win the IDE read mux while it is the selected device (`cd_io_own`); its IRQ
 // shares the IDE line (IRQ9) with the hard disks. The task file resets with the ATA (held until
 // cpu_run); the medium and its host transfers are the slot's and survive a reset (the module's
@@ -1441,7 +1448,7 @@ pc9821_hps_slot_demux hps_demux (
     .cd_buff_wr(cd_buff_wr), .cd_buff_addr(cd_buff_addr), .cd_buff_dout(cd_buff_dout)
 );
 generate if (CDROM_EN) begin : g_cdrom
-pc9821_atapi #(.AUDIO_EN(CDROM_AUDIO_EN), .AS_MASTER(1'b1), .LOG_EN(CDROM_LOG_EN && !PERF_LOG_EN),
+pc9821_atapi #(.AUDIO_EN(CDROM_AUDIO_EN), .LOG_EN(CDROM_LOG_EN && !PERF_LOG_EN),
                .LOG_CLK_HZ(SYS_FREQ)) atapi (
     .clk(clk_sys), .rst_n(!(reset || !cpu_run)),
     .io_rd(device_io_rd && ata_cs), .io_wr(device_io_wr && ata_cs),
@@ -1611,7 +1618,6 @@ wire        gdc_pix_h_active, gdc_pix_v_active;
 // vram/sdraw.mcr:199-243 p_2i - see pc9821_crtc's v_mode1_200).
 wire        gdc_gfx_odd_line;
 wire        gdc_mode16;
-wire        gdc_gfx_disp;   // GDC2's display latch: the compositor's grph_disp
 wire [31:0] gdc_dig;
 // The analogue palette table's CPU write port, from pc9821_gdc_text to pc9821_gfx_palette
 // inside the mixer (#2).
@@ -1669,7 +1675,7 @@ wire        crtc_o_v_row0_stale;
 wire [9:0]  crtc_o_vline;
 wire [9:0]  crtc_o_vtotal;
 wire [5:0]  crtc_o_vbp;
-wire        gdc_gfx_win_off;
+wire        gdc_gfx_grph_on;   // GDC2's START latch AND the slave SYNC window: grph_disp
 wire [9:0]  crtc_o_hdot;
 wire        crtc_o_frame_end, crtc_o_cfg_snap, crtc_o_cfg_pending, crtc_o_display_page;
 wire        crtc_o_stat_blank, crtc_o_stat_vsync;
@@ -1732,7 +1738,7 @@ pc9821_gdc2 u_gdc2 (
     .vline(crtc_o_vline), .vtotal(crtc_o_vtotal), .m_vbp(crtc_o_vbp),
     .display_page(crtc_o_display_page),
     .stat_blank(crtc_o_stat_blank), .stat_vsync(crtc_o_stat_vsync),
-    // The draw path's route gates and its GVRAM visits (item 63 slice 1): the route is
+    // The draw path's route gates and its GVRAM visits (the GDC2 WRITE slice): the route is
     // latched per draw from these two gates exactly as NP2kai's gdcpset_prepare picks
     // its pset functions once (io/gdc_pset.c:117-137).
     .egc_mem_gate(gdc_egc_mem_gate), .grcg_cg_gate(mem_grcg_expand),
@@ -1746,7 +1752,10 @@ pc9821_gdc2 u_gdc2 (
     .mem_be(gdc_mem_be),
     .mem_resp(gdc_mem_resp), .mem_rdata(gdc_mem_rdata),
     .gfx_line_addr(gdc_gfx_line_addr), .gfx_walk_page(gdc_gfx_walk_page),
-    .gfx_disp(gdc_gfx_disp), .gfx_win_off(gdc_gfx_win_off)
+    /* verilator lint_off PINCONNECTEMPTY */   // gfx_disp/gfx_win_off are gfx_grph_on's two terms, read by the benches only
+    .gfx_disp(), .gfx_win_off(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .gfx_grph_on(gdc_gfx_grph_on), .pegc_256(gdc_pegc_256)
 );
 
 pc9821_cg u_cg (
@@ -1797,9 +1806,9 @@ assign gdc_io_dout =
 // and not a hard wire because that rule is a model, not a measurement
 // M4 replaces this constant when it lands.
 localparam [1:0] COMP_RULE = 2'b00;
-// The graphics display enable IS the slave GDC's START/STOP latch. It was a
+// The graphics display enable is the slave GDC's START/STOP latch AND its SYNC window. It was a
 // localparam tied low, with a note saying the 0xA2 command that sets it went
-// undecoded; pc9821_gdc_text decodes it now and exports it as gdc_gfx_disp, so
+// undecoded; pc9821_gdc2 decodes it now and exports it as gdc_gfx_grph_on, so
 // the compositor follows the guest instead of a constant. Reset leaves it off,
 // so a guest that never issues START still paints black where a graphics pixel
 // would be, which is what the tied-low constant did.
@@ -1820,17 +1829,16 @@ pc9821_video_mixer video_mixer (
     .pal_wr_chan(gdc_pal_wr_chan), .pal_wr_data(gdc_pal_wr_data),
     .pal_commit(gdc_pal_commit),
     // The PEGC arm: the 256-colour write port (the crtc's widened palette
-    // decode), the mode mux, and the fold seam. packed_idx stays tied to 0 until
-    // the packed scanout (row 3) lands; fold_bypass/pegc_256 are the same view
-    // select the map's window arms take.
+    // decode), the mode mux, and the fold seam. packed_idx is pc9821_pegc_scan's
+    // packed dot; fold_bypass/pegc_256 are the same view select the map's window
+    // arms take.
     .pegc_256(gdc_pegc_256),
     .fold_bypass(gdc_pegc_256), .packed_idx(peg_packed_idx),
     .pal256_wr_en(gdc_pal256_wr_en), .pal256_wr_idx(gdc_pal256_wr_idx),
     .pal256_wr_chan(gdc_pal256_wr_chan), .pal256_wr_data(gdc_pal256_wr_data),
-    // Outside the slave SYNC's graphics window the 16-colour plane is black (NP2kai
-    // dispsync_renewalvertical; pc9821_gdc2's gfx_win_off). The packed 256-colour view is left
-    // as it was: its scan-out (makegrex) is not in the in-repo reference.
-    .comp_rule(COMP_RULE), .grph_disp(gdc_gfx_disp && !(gdc_gfx_win_off && !gdc_pegc_256)),
+    // Outside the slave SYNC's graphics window the graphics plane is black in BOTH modes
+    // (NP2kai dispsync_renewalvertical and makegrex.c makegrphex; pc9821_gdc2's gfx_grph_on).
+    .comp_rule(COMP_RULE), .grph_disp(gdc_gfx_grph_on),
     .r_out(video_r), .g_out(video_g), .b_out(video_b)
 );
 // The mixer is pc9821_gvram's scanout read-port reader; pc9821_gvram owns the line fetch,

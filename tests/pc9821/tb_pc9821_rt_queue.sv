@@ -41,6 +41,7 @@ module tb_pc9821_rt_queue;
   // load/arbitration, and the shadow's routing has its own bench (tb_pc9821_shadow_romsum).
   reg top_shadow_en = 0;
   reg [7:0] win0_sel = 8'h08;
+  wire       win0_sel_moved = (win0_sel != 8'h08);   // pc9821_iobus's registered compare
   // 0x043B bit 2, the 15-16 MiB system-space window. The machine's reset value is ON,
   // so these benches drive the same state the card comes up in.
   reg  sys16m_en = 1'b1;
@@ -181,7 +182,7 @@ module tb_pc9821_rt_queue;
   wire        dma_ready, dma_resp_valid;
   wire [31:0] dma_dout;
 /* verilator lint_on UNUSEDSIGNAL */
-  // The GDC draw engine's visit (item 63 slice 1) is not this bench's subject: tied
+  // The GDC draw engine's visit (the GDC2 WRITE slice) is not this bench's subject: tied
   // off, so the CPU side permanently owns the GVRAM port share.
   wire        gdc_mem_valid = 1'b0;
   wire        gdc_mem_write = 1'b0;

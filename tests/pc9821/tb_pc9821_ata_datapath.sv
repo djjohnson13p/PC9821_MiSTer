@@ -345,7 +345,7 @@ module tb_pc9821_ata_datapath;
     // 200000 sectors of image so every LBA below is in range.
     mount(64'd200000 * 64'd512, 1'b0);
     while (ata.current_cylinders !== 16'd1470) @(negedge clk);
-    write_byte(16'h0432, 8'h01);           // the bank the built-in interface is on
+    write_byte(16'h0432, 8'h00);           // the bank the built-in interface is on
 
     // ---- (a) full 512-byte PIO sector read, byte-exact ----
     // READ SECTORS (NP2kai ideio_o64e case 0x20 -> readsec) presents the sector the

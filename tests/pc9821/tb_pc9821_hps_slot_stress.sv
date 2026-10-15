@@ -109,7 +109,7 @@ module hps_stress_cluster #(parameter DEMUX = 1) (
   // hps_io samples the din of the slot it is serving; the engine drives the same value on all
   assign sd_buff_din = a_ack ? a_din : b_ack ? b_din : c_din;
 
-  pc9821_atapi #(.AUDIO_EN(1'b1), .AS_MASTER(1'b1)) cd (
+  pc9821_atapi #(.AUDIO_EN(1'b1)) cd (
       .clk(clk), .rst_n(rst_n),
       .io_rd(io_rd), .io_wr(io_wr), .io_addr(io_addr), .io_din(io_din), .io_dout(cd_dout),
       .io_own(cd_own), .irq(cd_irq),

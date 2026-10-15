@@ -483,7 +483,7 @@ module tb_pc9821_ata_th5load;
     @(negedge clk);
     img_mounted = 0;
     while (ata.current_cylinders !== 16'd735) @(negedge clk);
-    tf_write(16'h0432, 8'h01);
+    tf_write(16'h0432, 8'h00);
 
     // ==== the TH5 scene, command shape A: one command per file_read (0x20) ====
     run_scene(8'h20, 0);

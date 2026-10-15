@@ -35,6 +35,7 @@ module tb_pc9821_fill_beat_uniform;
   reg bios_ram_gate = 0;
   reg top_shadow_en = 0;
   reg [7:0] win0_sel = 8'h08;
+  wire       win0_sel_moved = (win0_sel != 8'h08);   // pc9821_iobus's registered compare
   reg  sys16m_en = 1'b1;
   reg [31:0] pack_base = 32'h01F8_0000;
   reg [31:0] guest_ram_bytes = 32'h0200_0000;

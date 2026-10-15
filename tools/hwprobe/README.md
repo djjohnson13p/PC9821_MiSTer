@@ -30,6 +30,7 @@ Each tool lives in its own folder: `<tool>/<tool>.s`, an optional `<tool>_decode
 | `idelat` | IDE READ latency: command -> first DRQ, per-sector PIO, throughput, poll cost; read-only on disk; self-checks its two time bases | `IDELAT*.TXT` |
 | `gfxbench` | raw VRAM/TRAM window bandwidth (`rep stosw`/`rep lodsw`) | `GFXB.TXT` |
 | `gfxbenc2` | per-operation GVRAM drawing latency: plane writes, GRCG, EGC, text, net of loop-shell controls | `GFX2*.TXT` |
+| `egcplane` | EGC time vs enabled planes: 0x4A0 set to 1/2/3/4 planes on fill, ROP-feed, put and shifted-copy shapes, net of loop-shell controls; decides plane-serial vs plane-parallel (`egcplane_decode.py`) | `EGCP.TXT` |
 | `irqwd` | whether a masked 8259 request is withdrawn or held after the device is acked (keyboard, IDE, OPNA, calendar, PIT) | `IRQWD.TXT` |
 | `opnapro` | PC-9801-86 OPNA register read-back | `OPNA.TXT` |
 | `sndtest` | the OPNA audio-calibration stimulus: fixed segments of known register state (FM/SSG level and frequency sweeps, rhythm) paced by the ARTIC counter; record the line-out while it runs. `tools/sndtest_check.py` checks a transcript, `tools/sndtest_balance.py` measures recordings | `SNDTEST-*.txt` |

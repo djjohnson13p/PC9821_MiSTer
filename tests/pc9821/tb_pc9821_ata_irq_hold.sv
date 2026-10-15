@@ -258,13 +258,13 @@ module tb_pc9821_ata_irq_hold;
     @(negedge clk);
     rst_n = 1;
     while (dut.current_cylinders !== 16'd735) @(negedge clk);
-    write_byte(16'h0432, 8'h01);
+    write_byte(16'h0432, 8'h00);
 
     // The negative control the machine fingerprint (0433300) supports directly:
     // 0x0433 is the DRIVE's connect state, not an IRQ-pending sample (readbacks.md P5,
       // NP2kai ideio_i433), so it already reads the connect flag before any command: 0x02
       // with this bench's drive present - which is exactly what discriminates it from the
-      // IRQ-form (0x00 here). The machine fingerprint 0433300's 0x00 was read at bank 0x00
+      // IRQ-form (0x00 here). The machine fingerprint 0433300's 0x00 was read at the machine's empty bank 0x00
       // (no drive selected), which this same form answers 0x00.
     read_byte(16'h0433, value);
     if (value !== 8'h02)

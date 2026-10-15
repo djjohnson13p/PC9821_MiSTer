@@ -129,6 +129,7 @@ module pc9821_gdc_text_dut (
   wire [9:0]  crtc_o_htotal;
   wire [9:0]  crtc_o_vtotal;
   wire [5:0]  crtc_o_vbp;
+  wire        gfx_grph_on;   // START && the window, the compositor's enable; benches read it hierarchically
   wire        gfx_win_off;   // the slave SYNC window gate; benches read it hierarchically
   wire        crtc_o_frame_end, crtc_o_cfg_snap, crtc_o_cfg_pending, crtc_o_display_page;
   wire        crtc_o_stat_blank, crtc_o_stat_vsync;
@@ -191,7 +192,8 @@ module pc9821_gdc_text_dut (
       .display_page(crtc_o_display_page),
       .stat_blank(crtc_o_stat_blank), .stat_vsync(crtc_o_stat_vsync),
       .gfx_line_addr(gfx_line_addr), .gfx_walk_page(gfx_walk_page),
-      .gfx_disp(gfx_disp), .gfx_win_off(gfx_win_off)
+      .gfx_disp(gfx_disp), .gfx_win_off(gfx_win_off),
+      .gfx_grph_on(gfx_grph_on), .pegc_256(gfx_pegc_256)
   );
 
   pc9821_cg u_cg (

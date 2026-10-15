@@ -120,7 +120,8 @@ def roundtrip_ok(text, sig, expr):
     for kw in ("wire", "assign"):
         if "%s %s = %s;" % (kw, sig, expr) in flat:
             return True
-    return False
+    # a ranged declaration (`wire [W-1:0] sig = ...`), which DECL_RE also accepts
+    return re.search(r"wire \[[^\]]*\] ?%s = %s;" % (re.escape(sig), re.escape(expr)), flat) is not None
 
 
 def identifiers(expr):

@@ -27,6 +27,7 @@ module tb_pc9821_window_coverage;
     // shape - tb_pc9821_memory_subsystem and tb_pc9821_memory_map pin it.
   reg        bios_ram_gate = 0;
   reg  [7:0] win0_sel = 8'h08;
+  wire       win0_sel_moved = (win0_sel != 8'h08);   // pc9821_iobus's registered compare
   reg  [31:0] pack_base = 32'h01F8_0000;
   reg  [31:0] guest_ram_bytes = 32'h0200_0000;
   reg  [31:0] gvram_base = 32'h0300_0000;
@@ -76,6 +77,11 @@ module tb_pc9821_window_coverage;
 
   reg  [1:0] d8_bank = 2'b00;
 
+  wire addr_ge_ram;   // the map's shared compare output, unused here
+  // No translation in front of the map here: the untranslated address IS cpu_addr.
+  wire [31:0] cpu_addr_raw = cpu_addr;
+  wire        xl_low20 = 1'b0;
+  wire        xl_peg = 1'b0;
   pc9821_memory_map dut (.*);
 
   integer errors = 0;

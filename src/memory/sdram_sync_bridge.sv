@@ -158,11 +158,26 @@ assign resp_valid0 = ctrl_resp0;
 localparam integer REQ_PAYLOAD_W = 1 + 27 + 32 + 32 + 1 + 441 + 4 + 4;
 wire [3:0] req_valid = {valid3, valid2, valid1, valid0};
 wire [3:0] req_ready = {ready3, ready2, ready1, ready0};
+// Port 0's two payload fields that only some requests read are qualified here, because the
+// controller reads them only then: din0_hi is the second word of a two-word write (burst 2, not
+// a gather), and gath0_extra entry j (1..) is read only for j < burst_cnt0 of a gather (sdram.v's
+// slot maps count entries below mn_ns, and its row contract checks the same range). A requester
+// may leave the unread slots unqualified (pc9821_pegc_storebuf's head window does), so a move in
+// an unread slot is not a moved payload.
+reg [440:0] gath0_extra_used;
+always @* begin : gath0_used
+    integer gj;
+    gath0_extra_used = 441'd0;
+    for (gj = 1; gj < 8; gj = gj + 1)
+        if (gath0 && (4'(gj) < ((burst_cnt0 == 4'd0) ? 4'd1 : burst_cnt0)))
+            gath0_extra_used[(gj-1)*63 +: 63] = gath0_extra[(gj-1)*63 +: 63];
+end
+wire [31:0] din0_hi_used = (wr0 && !gath0 && (burst_cnt0 == 4'd2)) ? din0_hi : 32'd0;
 wire [3:0][REQ_PAYLOAD_W-1:0] req_payload = {
     {wr3, addr3, din3, 32'd0, 1'b0, 441'd0, be3, burst_cnt3},
     {wr2, addr2, din2, 32'd0, 1'b0, 441'd0, be2, burst_cnt2},
     {wr1, addr1, din1, 32'd0, 1'b0, 441'd0, be1, burst_cnt1},
-    {wr0, addr0, din0, din0_hi, gath0, gath0_extra, be0, burst_cnt0}};
+    {wr0, addr0, din0, din0_hi_used, gath0, gath0_extra_used, be0, burst_cnt0}};
 reg [3:0]                     waiting;   // valid seen, ready not yet delivered
 reg [3:0][REQ_PAYLOAD_W-1:0]  held_payload;
 always @(posedge clk) begin

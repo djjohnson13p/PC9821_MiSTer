@@ -1,9 +1,7 @@
 `timescale 1ns/1ps
 
 // ==== WHAT THIS PROVES ====
-// The graphics GDC's WRITE command executes against the ITF's own GVRAM pattern test: the exact BANK4@0xFA70F stream (GRCG TDW tiles 0x33/0x55, VECTW then CSRW 00 40 08, WRITE FF FF) reads back the tile words 0x3333 at 0xA8000 and 0x5555 at 0xB0000 exactly as the Xe10 does - the test that SETS BIOS work-area 0000:054D bit 6, the FLAMEZAP boot check - and with the GRCG never armed those tile words are ABSENT, so the bit becomes correct because the test genuinely passes and never because it is forced. The write's data path is the machine's own WDAT_WORD/GDCWG rows: the uPD7220's internal bit order lands per-byte bit-reversed in CPU VRAM (GDCCURS's MASK_0001 reads expected-cpu=0080), CURS.WG - bit 3 of CSRW's third byte - selects the WDAT word directly or the 7220's bit-0 replication of it, and the four ROPs paint the mask bits with the pattern exactly as the STRICT capture rows say (W_0_FFFF_0000_0001 lands FF7F, W_2_FFFF_0001_A55A lands 5AA5, which refutes NP2kai gdcsub_write's clear formula; the capture wins) - fifteen capture vectors replayed byte for byte. Multi-unit draws walk ONE DOT along the VECTW direction per unit and advance the cursor, exactly WDAT_STEP's observed pixels (dir 0 paints word 0x0800 and leaves the cursor at 0x0828 = +40 words, dir 1 paints (0x0800,D7) and (0x0828,D8), dir 2 paints D7 then D8 inside word 0x0800, dir 3 paints (0x0800,D7) and (0x07D8,D8)), with the cursor write-back readable over CSRR's first two bytes (the raw_curd EAD the machine reports); a second draw queued while the first walks lands its own capture outcome and nothing is dropped. The GRCG-RMW and EGC routes carry each unit as ONE store visit on the GVRAM port share - the route latched per draw exactly as NP2kai's gdcpset_prepare latches its pset functions (io/gdc_pset.c:117-137) - and are checked DIFFERENTIALLY against the CPU path's own store of the same word, so no expected pixel is ever derived from this repo's RTL. It does not cover the FIFO/drawing-busy timing (item 63's FIFO_TURN/STATE rows), the CURD read-back's five-byte shape, or the FIGD/line/rect/arc command space.
-
-// The graphics GDC's WRITE command executes against the ITF's own GVRAM pattern test: the exact BANK4@0xFA70F stream (GRCG TDW tiles 0x33/0x55, VECTW then CSRW 00 40 08, WRITE FF FF) reads back the tile words 0x3333 at 0xA8000 and 0x5555 at 0xB0000 exactly as the Xe10 does - the test that SETS BIOS work-area 0000:054D bit 6, the FLAMEZAP boot check - and with the GRCG never armed those tile words are ABSENT, so the bit becomes correct because the test genuinely passes and never because it is forced. The write's data path is the machine's own WDAT_WORD/GDCWG rows: the uPD7220's internal bit order lands per-byte bit-reversed in CPU VRAM (GDCCURS's MASK_0001 reads expected-cpu=0080), CURS.WG - bit 3 of CSRW's third byte - selects the WDAT word directly or the 7220's bit-0 replication of it, and the four ROPs paint the mask bits with the pattern exactly as the STRICT capture rows say (W_0_FFFF_0000_0001 lands FF7F, W_2_FFFF_0001_A55A lands 5AA5, which refutes NP2kai gdcsub_write's clear formula; the capture wins) - fifteen capture vectors replayed byte for byte. Multi-unit draws walk ONE DOT along the VECTW direction per unit and advance the cursor, exactly WDAT_STEP's observed pixels (dir 0 paints word 0x0800 and leaves the cursor at 0x0828 = +40 words, dir 1 paints (0x0800,D7) and (0x0828,D8), dir 2 paints D7 then D8 inside word 0x0800, dir 3 paints (0x0800,D7) and (0x07D8,D8)), with the cursor write-back readable over CSRR's first two bytes (the raw_curd EAD the machine reports); a second draw queued while the first walks lands its own capture outcome and nothing is dropped. The GRCG-RMW and EGC routes carry each unit as ONE store visit on the GVRAM port share - the route latched per draw exactly as NP2kai's gdcpset_prepare latches its pset functions (io/gdc_pset.c:117-137) - and are checked DIFFERENTIALLY against the CPU path's own store of the same word, so no expected pixel is ever derived from this repo's RTL. It does not cover the FIFO/drawing-busy timing (item 63's FIFO_TURN/STATE rows), the CURD read-back's five-byte shape, or the FIGD/line/rect/arc command space.
+// The graphics GDC's WRITE command executes against the ITF's own GVRAM pattern test: the exact BANK4@0xFA70F stream (GRCG TDW tiles 0x33/0x55, VECTW then CSRW 00 40 08, WRITE FF FF) reads back the tile words 0x3333 at 0xA8000 and 0x5555 at 0xB0000 exactly as the Xe10 does - the test that SETS BIOS work-area 0000:054D bit 6, the FLAMEZAP boot check - and with the GRCG never armed those tile words are ABSENT, so the bit becomes correct because the test genuinely passes and never because it is forced. The write's data path is the machine's own WDAT_WORD/GDCWG rows: the uPD7220's internal bit order lands per-byte bit-reversed in CPU VRAM (GDCCURS's MASK_0001 reads expected-cpu=0080), CURS.WG - bit 3 of CSRW's third byte - selects the WDAT word directly or the 7220's bit-0 replication of it, and the four ROPs paint the mask bits with the pattern exactly as the STRICT capture rows say (W_0_FFFF_0000_0001 lands FF7F, W_2_FFFF_0001_A55A lands 5AA5, which refutes NP2kai gdcsub_write's clear formula; the capture wins) - fifteen capture vectors replayed byte for byte. Multi-unit draws walk ONE DOT along the VECTW direction per unit and advance the cursor, exactly WDAT_STEP's observed pixels (dir 0 paints word 0x0800 and leaves the cursor at 0x0828 = +40 words, dir 1 paints (0x0800,D7) and (0x0828,D8), dir 2 paints D7 then D8 inside word 0x0800, dir 3 paints (0x0800,D7) and (0x07D8,D8); directions 4-7 and the three-unit draws replay the same capture's STEP_DC01_D4..D7 and STEP_DC02_D1..D7 rows), with the cursor write-back readable over CSRR's first two bytes (the raw_curd EAD the machine reports); a second draw queued while the first walks lands its own capture outcome and nothing is dropped. The GRCG-RMW and EGC routes carry each unit as ONE store visit on the GVRAM port share - the route latched per draw exactly as NP2kai's gdcpset_prepare latches its pset functions (io/gdc_pset.c:117-137) - and are checked DIFFERENTIALLY against the CPU path's own store of the same word, so no expected pixel is ever derived from this repo's RTL. It does not cover the FIFO/drawing-busy timing (the conformance capture's FIFO_TURN/STATE rows), the CURD read-back's five-byte shape, or the FIGD/line/rect/arc command space.
 
 module tb_pc9821_gdc2_write;
   reg clk_sys = 0;
@@ -73,7 +71,7 @@ module tb_pc9821_gdc2_write;
       .mem_page(gdc_mem_page), .mem_plane(gdc_mem_plane),
       .mem_offset(gdc_mem_offset), .mem_din(gdc_mem_din), .mem_be(gdc_mem_be),
       .mem_resp(gdc_mem_resp), .mem_rdata(gdc_mem_rdata),
-      .gfx_line_addr(gfx_line_addr), .gfx_disp(gfx_disp)
+      .gfx_line_addr(gfx_line_addr), .gfx_disp(gfx_disp), .pegc_256(1'b0)
   );
 
   pc9821_gvram_dut dut (
@@ -385,6 +383,56 @@ module tb_pc9821_gdc2_write;
       off0[1] = 16'h0800; val0[1] = 16'h0001;
       step_case("STEP_DC01_D3", 3'd3, 16'h0001, 16'h0080, 16'h8800,
                 2, off0, val0, 16'h87B0);
+      // Directions 4-7, and the three-unit DC02 rows (bench-audit 2026-10-12): the same
+      // capture holds them (docs/probes/gdc-conformance/xe10-2.5MHz, the WDAT_STEP rows
+      // STEP_DC01_D4..D7 and STEP_DC02_*), and with only directions 0-3 replayed a
+      // direction table that stepped dir 6 like dir 7 still passed this bench.
+      off0[0] = 16'h07D8; val0[0] = 16'h0001;
+      off0[1] = 16'h0800; val0[1] = 16'h0001;
+      step_case("STEP_DC01_D4", 3'd4, 16'h0001, 16'h0080, 16'h8800,
+                2, off0, val0, 16'h87B0);
+      off0[0] = 16'h07D8; val0[0] = 16'h0002;
+      off0[1] = 16'h0800; val0[1] = 16'h0001;
+      step_case("STEP_DC01_D5", 3'd5, 16'h0001, 16'h0080, 16'h8800,
+                2, off0, val0, 16'h87B0);
+      off0[0] = 16'h0800; val0[0] = 16'h0003;
+      step_case("STEP_DC01_D6", 3'd6, 16'h0001, 16'h0080, 16'h8800,
+                1, off0, val0, 16'h8800);
+      off0[0] = 16'h0800; val0[0] = 16'h0001;
+      off0[1] = 16'h0828; val0[1] = 16'h0002;
+      step_case("STEP_DC01_D7", 3'd7, 16'h0001, 16'h0080, 16'h8800,
+                2, off0, val0, 16'h8850);
+      off0[0] = 16'h0800; val0[0] = 16'h0001;
+      off0[1] = 16'h0828; val0[1] = 16'h8000;
+      off0[2] = 16'h0850; val0[2] = 16'h4000;
+      step_case("STEP_DC02_D1", 3'd1, 16'h0002, 16'h0080, 16'h8800,
+                3, off0, val0, 16'h8878);
+      off0[0] = 16'h0800; val0[0] = 16'hC001;
+      step_case("STEP_DC02_D2", 3'd2, 16'h0002, 16'h0080, 16'h8800,
+                1, off0, val0, 16'h8800);
+      off0[0] = 16'h07B0; val0[0] = 16'h4000;
+      off0[1] = 16'h07D8; val0[1] = 16'h8000;
+      off0[2] = 16'h0800; val0[2] = 16'h0001;
+      step_case("STEP_DC02_D3", 3'd3, 16'h0002, 16'h0080, 16'h8800,
+                3, off0, val0, 16'h8788);
+      off0[0] = 16'h07B0; val0[0] = 16'h0001;
+      off0[1] = 16'h07D8; val0[1] = 16'h0001;
+      off0[2] = 16'h0800; val0[2] = 16'h0001;
+      step_case("STEP_DC02_D4", 3'd4, 16'h0002, 16'h0080, 16'h8800,
+                3, off0, val0, 16'h8788);
+      off0[0] = 16'h07B0; val0[0] = 16'h0004;
+      off0[1] = 16'h07D8; val0[1] = 16'h0002;
+      off0[2] = 16'h0800; val0[2] = 16'h0001;
+      step_case("STEP_DC02_D5", 3'd5, 16'h0002, 16'h0080, 16'h8800,
+                3, off0, val0, 16'h8788);
+      off0[0] = 16'h0800; val0[0] = 16'h0007;
+      step_case("STEP_DC02_D6", 3'd6, 16'h0002, 16'h0080, 16'h8800,
+                1, off0, val0, 16'h8800);
+      off0[0] = 16'h0800; val0[0] = 16'h0001;
+      off0[1] = 16'h0828; val0[1] = 16'h0002;
+      off0[2] = 16'h0850; val0[2] = 16'h0004;
+      step_case("STEP_DC02_D7", 3'd7, 16'h0002, 16'h0080, 16'h8800,
+                3, off0, val0, 16'h8878);
     end
 
     // ---- Section 5: a second draw queued while the first walks (the one-deep pend) ----

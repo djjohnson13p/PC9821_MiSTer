@@ -29,7 +29,7 @@
 
 // ==== WHAT THIS PROVES ====
 // TB_PC9821_ATA_DBG:
-// The ATA's two diagnostic bytes, which the watchdog prints as the telemetry's A, K, X and Z fields and from which a MiSTer was diagnosed, are asserted for the first time: the state byte packs {device_present, mounted, channel_reg[0], xfer_state, BSY, DRQ} and reads the owner's captured 0x40 on a card with an image mounted and no bank selected, selecting the IDE bank raises device_present and so bit 7, the command word packs {aborts, last_cmd, commands, reason} and is zero on a card that has issued nothing, an accepted command increments only the command count while a rejected one increments both and carries its reason, and the IDENTIFY state is visible in the packed xfer_state field with DRQ set and BSY clear.
+// The ATA's two diagnostic bytes, which the watchdog prints as the telemetry's A, K, X and Z fields and from which a MiSTer was diagnosed, are asserted for the first time: the state byte packs {device_present, mounted, channel_reg[0], xfer_state, BSY, DRQ} and reads 0xC0 with an image mounted and the bank at its power-up 0x00 - the disk's bank 0 since the layout was fixed (the owner's historical A=0x40 is the same byte with the disk on bank 1) - selecting bank 0x01 drops device_present (0x60) and re-selecting bank 0x00 raises it again and so bit 7, the command word packs {aborts, last_cmd, commands, reason} and is zero on a card that has issued nothing, an accepted command increments only the command count while a rejected one increments both and carries its reason, and the IDENTIFY state is visible in the packed xfer_state field with DRQ set and BSY clear.
 
 module tb_pc9821_ata_dbg;
 
@@ -133,11 +133,15 @@ module tb_pc9821_ata_dbg;
     //    the ITF stalls. Two fields carry the meaning -- mounted=1 says the host has the
     //    image, device_present=0 says the guest has not selected the interface -- and
     //    they are deliberately different facts.
-    expect_state(1'b0, 1'b1, 1'b0, 3'd0, 1'b0, 1'b0,
-                 "mounted, bank unprogrammed: the owner's captured A=0x40");
-    if (dbg_state !== 8'h40) begin
-      $display("       wanted 40, got %02x", dbg_state);
-      fail("that combination is 0x40, the byte the card reported");
+    //    SINCE THE LAYOUT WAS FIXED (owner, 2026-10-11) the disk is bank 0's master, so the
+    //    unprogrammed bank 0x00 IS the disk's bank and the same card now reads 0xC0: the
+    //    capture's 0x40 was the old layout, the disk on bank 1. Step 3 makes the 0x40-shaped
+    //    case (mounted, not present) at bank 0x01, where it now lives.
+    expect_state(1'b1, 1'b1, 1'b0, 3'd0, 1'b0, 1'b0,
+                 "mounted, bank unprogrammed (0x00, the disk's bank)");
+    if (dbg_state !== 8'hC0) begin
+      $display("       wanted C0, got %02x", dbg_state);
+      fail("that combination is 0xC0");
     end
 
     // 2. AND THE COUNTERS ARE ZERO, which is the same capture's K=0, X=0, Z=0. The
@@ -149,12 +153,16 @@ module tb_pc9821_ata_dbg;
       fail("a card that issued no command reports a zero command word");
     end
 
-    // 3. The bank select is what turns a mounted image into a present device, and bit 7
-    //    is the only field that may move. channel_reg[0] follows it because bit 0 IS the
-    //    connection test (measured: bank 0x00 floats, bank 0x01 answers).
+    // 3. The bank select is what turns a mounted image into a present device. channel_reg[0]
+    //    follows it because bit 0 IS the connection test: the disk answers at bank 0x00 and
+    //    bank 0x01 (the CD's, or an empty connector) has no disk.
     write_byte(16'h0432, 8'h01);
-    expect_state(1'b1, 1'b1, 1'b1, 3'd0, 1'b0, 1'b0,
-                 "bank selected: device_present rises with channel_reg[0]");
+    expect_state(1'b0, 1'b1, 1'b1, 3'd0, 1'b0, 1'b0,
+                 "bank 0x01 selected: device_present clear (0x60)");
+    if (dbg_state !== 8'h60) fail("mounted at the other bank is 0x60");
+    write_byte(16'h0432, 8'h00);
+    expect_state(1'b1, 1'b1, 1'b0, 3'd0, 1'b0, 1'b0,
+                 "bank 0x00 selected: device_present rises as channel_reg[0] clears");
 
     // 4. An ACCEPTED command increments the command count and nothing else. FLUSH CACHE
     //    is used because it completes without a data phase, so the state stays X_IDLE and
@@ -162,7 +170,7 @@ module tb_pc9821_ata_dbg;
     //    does not disturb the packed state.
     write_byte(16'h064E, 8'hE7);
     expect_cmd(8'd0, 8'hE7, 8'd1, 4'd0, "an accepted command counts one command");
-    expect_state(1'b1, 1'b1, 1'b1, 3'd0, 1'b0, 1'b0,
+    expect_state(1'b1, 1'b1, 1'b0, 3'd0, 1'b0, 1'b0,
                  "an accepted command leaves the packed state idle");
 
     // 5. A REJECTED command increments BOTH counters and carries its reason. This is the
@@ -178,7 +186,7 @@ module tb_pc9821_ata_dbg;
     //    flag bits below it. A swapped BSY/DRQ, a shifted state field or a reordered
     //    concatenation all fail here rather than in decode_telemetry.py.
     write_byte(16'h064E, 8'hEC);
-    expect_state(1'b1, 1'b1, 1'b1, 3'd2, 1'b0, 1'b1,
+    expect_state(1'b1, 1'b1, 1'b0, 3'd2, 1'b0, 1'b1,
                  "IDENTIFY: xfer_state=2 with DRQ set and BSY clear");
     expect_cmd(8'd1, 8'hEC, 8'd3, 4'd8, "IDENTIFY counts a command and no abort");
 
@@ -190,7 +198,7 @@ module tb_pc9821_ata_dbg;
     //    ends a data phase and publishes READY, rather than staying stuck in it.
     write_byte(16'h074C, 8'h04);
     write_byte(16'h074C, 8'h00);
-    expect_state(1'b1, 1'b1, 1'b1, 3'd0, 1'b0, 1'b0,
+    expect_state(1'b1, 1'b1, 1'b0, 3'd0, 1'b0, 1'b0,
                  "soft reset returns the IDENTIFY data phase to idle");
 
     // 8. A mount change is one of the few paths that rewrites status_reg, and the module
@@ -199,16 +207,16 @@ module tb_pc9821_ata_dbg;
     //    task file cannot disagree about whether a device is there.
     mounted = 0;
     repeat (3) @(negedge clk);
-    expect_state(1'b0, 1'b0, 1'b1, 3'd0, 1'b0, 1'b0,
+    expect_state(1'b0, 1'b0, 1'b0, 3'd0, 1'b0, 1'b0,
                  "unmounted: device_present and mounted both clear");
     mounted = 1;
     repeat (3) @(negedge clk);
-    expect_state(1'b1, 1'b1, 1'b1, 3'd0, 1'b0, 1'b0,
+    expect_state(1'b1, 1'b1, 1'b0, 3'd0, 1'b0, 1'b0,
                  "remounted: the device returns with the image");
 
     // A status read acknowledges the pending IRQ; it must not disturb the byte.
     read_byte(16'h064E, ignored);
-    expect_state(1'b1, 1'b1, 1'b1, 3'd0, 1'b0, 1'b0,
+    expect_state(1'b1, 1'b1, 1'b0, 3'd0, 1'b0, 1'b0,
                  "a status read leaves the diagnostic byte alone");
 
     // The else is load-bearing: Verilator's $finish returns from the current process

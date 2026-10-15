@@ -64,6 +64,7 @@ module tb_pc9821_ata_iowait;
   wire        ide_rom_enable, bios_ram_gate;
   wire ide_ram_gate;   // 0x1E8E's IDE work-RAM gate (the iobus drives it; unused here)
   wire [7:0]  win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire        sys16m_en;
   wire        a20_enable, cpu_reset_req;
   wire [15:0] unmapped_writes, unmapped_reads, last_unmapped_port;
@@ -334,11 +335,11 @@ module tb_pc9821_ata_iowait;
     repeat (2) @(posedge clk);
 
     // ---- 1. the interface's own registers: the bank select and the task file ----
-    // 0x0432 bit 0 connects the interface (pc9821_ata's bank_has_interface); without it
-    // the task file floats and every access would be measured on the float path.
-    write_byte(16'h0432, 8'h01);
+    // 0x0432 bit 0 CLEAR connects the hard disk (pc9821_ata's bank_has_interface: bank 0);
+    // at bank 1 the task file floats and every access would be measured on the float path.
+    write_byte(16'h0432, 8'h00);
     read_byte(16'h0432, status);
-    if (status !== 8'h01) fail("the bank select did not read back");
+    if (status !== 8'h00) fail("the bank select did not read back");
 
     // The task file is the same class as the data port: one access, one floor.
     io_access(16'h0644, 4'b0001, 1'b1, 32'd1, tf_dout, tf_waited, tf_stall);

@@ -49,6 +49,7 @@ module tb_pc9821_cache_flush;
   wire ide_rom_enable, bios_ram_gate;
   wire ide_ram_gate;   // 0x1E8E's IDE work-RAM gate (the iobus drives it; unused here)
   wire [7:0] win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire sys16m_en;
   wire top_shadow_en;
   wire        fdc_irq;

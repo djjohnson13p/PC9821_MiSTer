@@ -74,13 +74,13 @@ module tb_pc9821_grcg_cpu;
   pc9821_memory_map map_dut (
       .top_bank(4'd8), .ide_rom_enable(1'b0), .d8_bank(2'b00),
       .ide_ram_gate(1'b1),
-      .bios_ram_gate(1'b0), .win0_sel(8'h08),
+      .bios_ram_gate(1'b0), .win0_sel(8'h08), .win0_sel_moved(1'b0),
       .ems_state(2'd0), .ems_page_base(32'd0),
       .pack_base(PACK_BASE), .guest_ram_bytes(PACK_BASE),
       .peg_window(1'b0), .peg_base(32'd0),
       .gvram_window(gvram_window), .gvram_win_plane(gvram_win_plane),
       .gvram_win_offset(gvram_win_offset),
-      .cpu_addr(bus_addr), .cpu_din(32'd0), .cpu_dout(),
+      .cpu_addr(bus_addr), .cpu_addr_raw(bus_addr), .xl_low20(1'b0), .xl_peg(1'b0), .cpu_din(32'd0), .cpu_dout(),
       .cpu_line_dout(), .cpu_be(4'h0),
       .cpu_burstcount(8'd1), .cpu_line_read(1'b0),
       // The map's own responder is unused here: the bench serves ordinary RAM

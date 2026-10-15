@@ -226,11 +226,20 @@ module tb_pc9821_calendar_rollover;
     if (d !== 8'h01 || mw[7:4] !== 4'h2)
       fail("2026-01-31 did not roll to February 1");
 
-    set_time(at_midnight(8'h31, 8'h04, 8'h26, 8'h05));             // 2026-04-30
+    // Day 30, NOT 31: this case used to load April 31, which rolls to May 1 under a
+    // 31-day April too, so it could not see the 30-day month it names.
+    set_time(at_midnight(8'h30, 8'h04, 8'h26, 8'h05));             // 2026-04-30
     tick_once;
     read_clock(s, m, h, d, mw, y);
     if (d !== 8'h01 || mw[7:4] !== 4'h5)
       fail("2026-04-30 (30-day month) did not roll to May 1");
+
+    // ...and the 30th of a 31-day month does NOT roll (the other side of the same table).
+    set_time(at_midnight(8'h30, 8'h07, 8'h26, 8'h05));             // 2026-07-30
+    tick_once;
+    read_clock(s, m, h, d, mw, y);
+    if (d !== 8'h31 || mw[7:4] !== 4'h7)
+      fail("2026-07-30 (31-day month) did not advance to July 31");
 
     set_time(at_midnight(8'h28, 8'h02, 8'h26, 8'h05));             // 2026-02-28
     tick_once;
@@ -243,6 +252,22 @@ module tb_pc9821_calendar_rollover;
     read_clock(s, m, h, d, mw, y);
     if (d !== 8'h29 || mw[7:4] !== 4'h2)
       fail("2024-02-28 (leap year: 2024 mod 4 = 0) did not roll to February 29");
+
+    // The leap test is on the BCD year's DECIMAL value: 2024 and 2026 read the same
+    // as binary 0x24 (36) and 0x26 (38), so a rule that tests the raw byte's low bits
+    // passes both. 2012 (0x12 = 18 binary, mod 4 = 2) and 2018 (0x18 = 24, mod 4 = 0)
+    // are the years where the two rules disagree.
+    set_time(at_midnight(8'h28, 8'h02, 8'h12, 8'h05));             // 2012-02-28
+    tick_once;
+    read_clock(s, m, h, d, mw, y);
+    if (d !== 8'h29 || mw[7:4] !== 4'h2)
+      fail("2012-02-28 (leap year: 2012 mod 4 = 0, BCD 0x12) did not roll to February 29");
+
+    set_time(at_midnight(8'h28, 8'h02, 8'h18, 8'h05));             // 2018-02-28
+    tick_once;
+    read_clock(s, m, h, d, mw, y);
+    if (d !== 8'h01 || mw[7:4] !== 4'h3)
+      fail("2018-02-28 (not a leap year: 2018 mod 4 = 2, BCD 0x18) did not roll to March 1");
 
     set_time(at_midnight(8'h29, 8'h02, 8'h24, 8'h05));             // 2024-02-29
     tick_once;

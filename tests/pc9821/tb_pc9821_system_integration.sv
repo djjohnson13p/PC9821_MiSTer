@@ -42,6 +42,7 @@ module tb_pc9821_system_integration;
   wire ide_rom_enable, bios_ram_gate;
   wire ide_ram_gate;   // 0x1E8E's IDE work-RAM gate (the iobus drives it; unused here)
   wire [7:0] win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire sys16m_en;
   wire a20_enable, cpu_reset_req;
   wire [15:0] unmapped_writes, unmapped_reads, last_unmapped_port;
@@ -123,7 +124,7 @@ module tb_pc9821_system_integration;
   wire [1:0] d8_bank;   // 0x063C bits 1-0 (the 0xD8000 bank select); unused here
 
   pc9821_iobus #(.SDIP_WRITES_ENABLED(1)) dut (
-      .ide_unit0_present(ide_two_disks),.*);
+      .ide_unit0_present(1'b0),.*);
 
   // The device decode, driven independently of the fabric's own decode so the two can
   // be compared.

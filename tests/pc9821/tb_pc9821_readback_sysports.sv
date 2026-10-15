@@ -75,6 +75,10 @@
 // 0x40/0xF0 constants (and lose the mode write's Port C reset), the printer
 // ports answer 0x00/0x94/0x81 constants (and the DC1 burst never moves 0x42),
 // 0x11 is a constant 0x00 that clears nothing, and 0x00BE/0x00BF answer 0xFF.
+// The rtlrev-video pass added two capture rows that fail on its pre-fix tree:
+// 0x9A0 index 0x0B answered NP2kai's 0x01 where the machine reads 0xFF, and
+// 0x9A8 answered a constant 0x00 where the machine round-trips the write
+// (docs/probes/RDBACK.TXT).
 
 module tb_pc9821_readback_sysports;
   reg [3:0]  bios_set = 4'd0;      // OSD BIOS set: 0 = PC-9821Xe10 (the default strap)
@@ -113,6 +117,7 @@ module tb_pc9821_readback_sysports;
   wire  [3:0] top_bank;
   wire        sound_extend;
   wire  [7:0] win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire sys16m_en;
   wire        ide_rom_enable, bios_ram_gate, a20_enable, cpu_reset_req;
   wire ide_ram_gate;   // 0x1E8E's IDE work-RAM gate (the iobus drives it; unused here)
@@ -261,7 +266,12 @@ module tb_pc9821_readback_sysports;
     wr(16'h09A0, 8'h08); rd_is(16'h09A0, 8'h00, "P1 index 8 = mode2[3], clear");
     wr(16'h09A0, 8'h09); rd_is(16'h09A0, 8'h00, "P1 index 9 = clock[0], clear");
     wr(16'h09A0, 8'h0A); rd_is(16'h09A0, 8'h00, "P1 index 0x0A = analog-256, clear (the machine's write-then-read 00)");
-    wr(16'h09A0, 8'h0B); rd_is(16'h09A0, 8'h01, "P1 index 0x0B is the constant-1 bit");
+    // Index 0x0B is NOT NP2kai's constant-1 bit on this machine: the Xe10 reads 0xFF
+    // there (docs/probes/RDBACK.TXT `port=09A0 before=01 wrote=0B after=FF back=00`; the
+    // same row's `back=00` is the index-1 answer, so the protocol was live). The capture
+    // outranks NP2kai gdc_i9a0's `case 0x0b: ret = 1`.
+    wr(16'h09A0, 8'h0B); rd_is(16'h09A0, 8'hFF, "P1 index 0x0B reads FF on the machine (RDBACK.TXT)");
+    wr(16'h09A0, 8'h01); rd_is(16'h09A0, 8'h00, "P1 RDBACK.TXT's restore: index 1 reads back=00");
     wr(16'h09A0, 8'h0C); rd_is(16'h09A0, 8'h00, "P1 index 0x0C is unlisted: 0");
     wr(16'h09A0, 8'h0D); rd_is(16'h09A0, 8'h00, "P1 index 0x0D = analog-256E, clear");
     // ...and it is a QUERY: the same index answers the BIT, not a constant.
@@ -275,10 +285,22 @@ module tb_pc9821_readback_sysports;
     wr(16'h09A0, 8'h0D); rd_is(16'h09A0, 8'h01, "P1 index 0x0D follows analog-256E live");
     // gdc.clock bit 1 ORs into EVERY answer (NP2kai `ret |= (gdc.clock & 2)`).
     gdc_ff2_state = 11'h100;
-    wr(16'h09A0, 8'h0B); rd_is(16'h09A0, 8'h03, "P1 clock bit 1 ORs into the answer");
+    wr(16'h09A0, 8'h01); rd_is(16'h09A0, 8'h02, "P1 clock bit 1 ORs into the answer");
     wr(16'h09A0, 8'h0A); rd_is(16'h09A0, 8'h02, "P1 clock bit 1 with the indexed bit clear");
     wr(16'h09A0, 8'h00); rd_is(16'h09A0, 8'hFF, "P1 index 0 stays FF under the clock bit");
     gdc_ff2_state = 11'd0;
+
+    // ==== 0x9A8: a LATCH, not a constant (todo item 3) =====================
+    // The machine reads 00, then 01 after writing 01, then 00 after the restore
+    // (docs/probes/RDBACK.TXT `port=09A8 before=00 wrote=01 after=01 back=00`).
+    // NP2kai gdc_o9a8/gdc_i9a8 (SUPPORT_CRT31KHZ) keep bit 0 only: `return((gdc.display
+    // >> GDCDISP_31) & 1)`, so a write of 0xFF reads 0x01 there (the machine has not been
+    // asked about the high bits - the item's open width question).
+    rd_is(16'h09A8, 8'h00, "9A8 power-up reads 00 (RDBACK.TXT before=00)");
+    wr(16'h09A8, 8'h01); rd_is(16'h09A8, 8'h01, "9A8 write 01 reads 01 (RDBACK.TXT after=01)");
+    wr(16'h09A8, 8'h00); rd_is(16'h09A8, 8'h00, "9A8 restore 00 reads 00 (RDBACK.TXT back=00)");
+    wr(16'h09A8, 8'hFF); rd_is(16'h09A8, 8'h01, "9A8 keeps bit 0 only (NP2kai gdc_i9a8)");
+    wr(16'h09A8, 8'h00);
 
     // ==== P4: 0x043B echoes the live bit-2 request ========================
     // The firmware writes 0x00 (hole on); the machine reads 0xFB there.

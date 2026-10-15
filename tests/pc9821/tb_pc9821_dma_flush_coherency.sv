@@ -75,6 +75,7 @@ module tb_pc9821_dma_flush_coherency;
   wire        fdc_irq10;
   wire        mouse_irq;
   wire [7:0]  win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire        sys16m_en, ide_rom_enable, top_shadow_en, bios_ram_gate;
   wire        ide_ram_gate;
   wire        a20_enable, cpu_reset_req;

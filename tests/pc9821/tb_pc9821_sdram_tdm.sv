@@ -8,8 +8,7 @@
 // RTL's own constants and the machine's measured bandwidth and said so: nothing had been built or
 // run. This bench is that run. It drives the REAL controller (src/memory/sdram.v) at 100 MHz,
 // which is the clock the arithmetic says the schedule needs -- at 50 MHz a 4-way rotation leaves
-// the scanout under 5%, and at 125 MHz CAS steps from 2 to 3 and the latency gets WORSE, not
-// better. What follows is the provenance of each load-bearing number.
+// the scanout under 5%. What follows is the provenance of each load-bearing number.
 //
 //  * THE BUDGET: 2014 clk_sys CYCLES PER RASTER LINE. PROVEN from the raster constants
 //    (src/pc9821/video/pc9821_gdc_text.sv: VTOTAL 440, 56.42 Hz) -> the line rate is
@@ -30,10 +29,13 @@
 //    the font fetches 40 dwords a line (~4 MB/s) and the 86-PCM one dword per 44.1 kHz frame
 //    (~0.2 MB/s), so neither is a bandwidth competitor.
 //
-//  * WHY 100 MHz AND NOT 50: sdram.v's own timing table takes the CAS_I = 2 branch for
-//    FREQ <= 100 MHz and T_RCD = ns_to_cycles(18) = 2 there, so a single-dword read is a handful
-//    of cycles; at 50 MHz the same rotation spans twice as many clk_sys cycles and does not fit
-//    the line budget. The bench runs at 100 MHz for exactly that reason.
+//  * WHY 100 MHz AND NOT 50: sdram.v's own timing table has T_RCD = 2 there, so a single-dword
+//    read is a handful of cycles; at 50 MHz the same rotation spans twice as many clk_sys cycles
+//    and does not fit the line budget. The bench runs at 100 MHz for exactly that reason.
+//    Since the 2026-10-13 CAS cutover (two DE10-Nano boards: CL2 at 100 MHz failed on hardware)
+//    sdram.v runs CL3 at 100 MHz, one cycle more per read, and the schedule still holds with
+//    room: worst line 935 of 2014 clk_sys and 56.1 MB/s CPU (849 and 61.8 MB/s under the old
+//    CL2), so the bench keeps its 100 MHz grid and its model follows the controller to CL3.
 //
 //  * WHAT THIS DOES NOT PROVE, stated so nobody over-reads it: this bench runs the controller and
 //    its four requesters in ONE clock domain. The built design has the consumers on clk_sys (50
@@ -44,7 +46,7 @@ module tb_pc9821_sdram_tdm;
   // The controller runs at 100 MHz. FREQ is a PARAMETER, so the timing table follows it.
   localparam integer FREQ = 100_000_000;
   localparam integer CYCLE_NS = 10;                 // 1/100MHz
-  localparam integer CAS = 2;                        // CAS_I = 2 for FREQ <= 100MHz
+  localparam integer CAS = 3;                        // CL3 at 100 MHz and up (sdram.v CAS_I, the 2026-10-13 hardware cutover)
   localparam integer LINE_COLS = 80;
   // The raster line budget is 2014 clk_sys (50 MHz) cycles; the bench's grid is 100 MHz, so the
   // same wall-clock budget is twice as many bench cycles.

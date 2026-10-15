@@ -94,8 +94,58 @@ cannot resolve them) and fit-checked for LABs, since the device is full.
    `bus_unit`, and AND the configuration bits on the platform side. Removes 2-3 LUT levels from every
    P0 path and spends ~1 level of `ext_addr_r`'s +0.8..+1.7 ns D-side margin; ~8 flops.
 
+**Measured after P0-c (3b134fe4, seeds 2-7, census):** C7 (`ext_addr_r` -> the GVRAM M10K write
+port, 2,231 endpoints within 1 ns of WNS) set WNS in 5 of 6 seeds; C5 had fallen to +1.8 ns behind.
+Two cycle-identical cuts landed on that cone (lane timing-cones): `pc9821_memory_map` decodes every
+window flag on both candidate addresses and lets `win0_moved` pick the finished flag
+(`region_dec`, proven by `tools/check_memmap_addr_equiv.py`), and `pc9821_gvram_arb` forms the
+first live lane, the any-live test and the merge class on each `lane_live` arm with `cap_arm` as
+the last select (proven by `tools/check_seq_equiv.py`). Over seeds 2-7 against bf1b6650: C7 limiter
+5/6 -> 2/6, mean gap +0.19 -> +0.82 ns, endpoints within 1 ns 2,231 -> 220; WNS mean -7.41 ->
+-7.25, worst -7.96 -> -7.55 ns. The next tier is the CPU's (C4/C4x, D2/D2s, TB) and V1.
+
+**Measured after V1-a + FD-a + P0-d (lane plat-timing, on ad9ed84c, seeds 2-7, census).** V1-a
+landed in two halves: the roots (8*x, y, HACTIVE, VACTIVE, the block copy) registered on the
+frame-boundary edge from the block as it arrives, and every other compare operand registered
+each clk_sys from them, one clk_sys behind (harmless at the one dot it lags, proven by
+`tools/equiv/crtc_geom_lag.sv`). A first form that registered the whole field map on the edge
+moved the 16-level chain to `sync_live -> geom_r` and made V1 worse (-8.3..-9.4 ns): register the
+roots, not the function. FD-a latches `raw_off` at the accept. P0-d gives the map the raw address
+and eff_addr's arm, so the region flags and the RAM-bound compare select the translation last.
+Against 895fb31c (RTL-identical base, census): V1 limiter 4/6 (worst -7.1..-8.4 ns) -> absent
+from the 4,000 worst endpoints in every seed; FD -4.4..-4.8 ns -> absent; C7's worst paths no
+longer start at `ext_addr_r -> eff_addr` (they start at `win0_sel != 8'h08` or the GRCG's
+CPU-datum compare). C4 (CPU) now sets WNS in 6/6 seeds; with it gone (cpu-c4) the platform
+tier is C7 and TB, ~0.3-1.3 ns behind.
+
+**Measured after TB + C7-head (lane tb-c7, on b9c0cb06, 80 MHz, seeds 2-7, census).** TB: the
+GVRAM arbiter's CPU response (`cpu_resp_valid`, `cpu_dout`, the line strobe) is routed by the
+strobes themselves instead of the live owner mux, so the dispatch decode (`gvr_write`/`gdc_own_q`
+-> `cc_owns_grcg_comb` -> `own_grcg` -> `cc_owns_plain`) left `z_din`; every term is now a register.
+The plain and GRCG strobes imply their owner and the EGC strobe is never beside them
+(`tools/check_arb_resp_inv.py`, induction over the real share/arbiter/GRCG/EGC; the routing's
+identity under those facts is `tools/equiv/arb_resp_route.sv`). The one state where it differs
+from the old mux (an EGC strobe while the live owner has left the EGC) is unreachable under the
+bus handshake: z486 holds its request through the ready edge (src/z486/bus_unit.sv
+`if (ready) begin`) and the throttle bridge's hold is registered (pc9821_cpu_bus_bridge.sv
+`assign p_valid = c_valid && !acc_pend;`), so pc9821_gvram_share cannot grant a GDC visit before
+the strobe's cycle. The cut is therefore cycle-identical to the old mux in every legal execution;
+`tb_pc9821_egc_resp_owner` guards the routing with a visit granted behind the EGC read. C7-head: pc9821_iobus registers
+`win0_sel != 8'h08` (`win0_sel_moved`) on the edges `win0_sel` is written (proven equal every cycle
+by `tools/check_win0_moved_inv.py`; the map's outputs by `tools/check_memmap_addr_equiv.py`).
+Boot golden unchanged (930544). Against b9c0cb06 (same seeds): WNS mean -5.43 -> -5.27, worst
+-5.82 -> -5.66 ns (inside the placer's noise); TB gap to WNS mean +0.65 -> +1.07 ns (absent from
+the 4,000 worst endpoints in one seed), endpoints within 1 ns 41 -> 4, and its worst path now
+starts at `u_egc|cpu_resp_valid` (a flop) with only the `z_din` mux before the bridge; C7 limiter
+1/6 -> 0/6, gap unchanged (+0.48 -> +0.46), its head moved from `win0_sel` to the arbiter's live
+dispatch (`line_read -> cc_owns_egc_comb -> own_grcg`, the request side, which cannot be registered
+without a cycle) and the GRCG's CPU-datum compare (`bus_unit dout -> gvr_din -> u_grcg Equal1`). No
+platform cone sets WNS in any seed (limiters: C4 x2, C4x, D2s, S2, other CPU). ALMs needed 36,377
+-> 36,353, LABs mean 4,127 -> 4,133 (worst 4,148 -> 4,152). The datum compare's cut is a CPU
+change (register the byte-is-00/FF flags beside `ext_*_dout_r` in `bus_unit`, fork first).
+
 Recommended order: P0-c + S2-a together, then V1-a + FD-a if LABs allow, then P0-b if the P0 rung
 remains. Beyond about +0.4 ns the next tier is the CPU's, and its cuts cost cycles: the trades
 (registering the store buffer's drain decision, registering `z_ready`, the EX-view forward interlock,
-the issue/stall stage, the GRCG presentation register of todo item 113) are in
+the issue/stall stage, the GRCG presentation register, T28) are in
 [`trade-candidates.md`](trade-candidates.md).

@@ -183,7 +183,7 @@ module tb_pc9821_ata_identify;
     // The divider needs two 32-clock passes after reset/capacity, so wait well
     // past both before the first IDENTIFY.
     repeat (80) @(posedge clk);
-    write_byte(16'h0432, 8'h01);   // select the bank the interface is on
+    write_byte(16'h0432, 8'h00);   // select the bank the interface is on
 
     // ---- 1. the captured page (default 8 heads / 17 sectors) ----
     write_byte(16'h064E, 8'hEC);   // IDENTIFY DEVICE

@@ -226,7 +226,7 @@ module tb_pc9821_irq_withdraw;
   // reference's.
   task automatic ata_raise_via_abort;
     begin
-      write_port(16'h0432, 8'h01);   // the bank whose window has the interface
+      write_port(16'h0432, 8'h00);   // the bank whose window has the interface
       write_port(16'h064C, 8'h4F);   // LBA mode, LBA[27:24] = 0xF
       write_port(16'h0644, 8'hFF);   // sector count
       write_port(16'h0646, 8'hFF);

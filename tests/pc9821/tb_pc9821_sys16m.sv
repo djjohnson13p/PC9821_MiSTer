@@ -24,6 +24,7 @@ module tb_pc9821_sys16m;
     // shape - tb_pc9821_memory_subsystem and tb_pc9821_memory_map pin it.
   reg        bios_ram_gate = 0;
   reg [7:0]  win0_sel = 8'h08;
+  wire       win0_sel_moved = (win0_sel != 8'h08);   // pc9821_iobus's registered compare
   // 0x043B bit 2, the 15-16 MiB system-space window. ON is the machine's reset
   // value and the value qemu's pc98_mem_reset leaves (`s->sys16m = 1`).
   reg        sys16m_en = 1'b1;
@@ -158,7 +159,7 @@ module tb_pc9821_sys16m;
   wire        dma_ready, dma_resp_valid;
   wire [31:0] dma_dout;
 /* verilator lint_on UNUSEDSIGNAL */
-  // The GDC draw engine's visit (item 63 slice 1) is not this bench's subject: tied
+  // The GDC draw engine's visit (the GDC2 WRITE slice) is not this bench's subject: tied
   // off, so the CPU side permanently owns the GVRAM port share.
   wire        gdc_mem_valid = 1'b0;
   wire        gdc_mem_write = 1'b0;
@@ -342,6 +343,30 @@ module tb_pc9821_sys16m;
     if (!(mem_valid === 1'b0 && tram_we === 1'b0 && cg_win_rd === 1'b0)) begin
       $display("FAIL CHK-5c window hole: 0xF80000 must reach no route, got mem_valid=%b tram_we=%b cg_win_rd=%b",
                mem_valid, tram_we, cg_win_rd);
+      errors = errors + 1;
+    end
+
+    // CHK-5d: ...and the hole is the WHOLE 128 KiB, not just its first 64 KiB block: its
+    // last byte 0xF9FFFF reaches no route either (qemu-pc98 pc98-mem.c: nothing is
+    // decoded between the 0xf00000 PEGC POST store's 0x80000 and sys16m_mirror's 0xfa0000).
+    drive_addr(32'h00F9_FFFF, 1'b1);
+    if (!(mem_valid === 1'b0 && tram_we === 1'b0 && cg_win_rd === 1'b0)) begin
+      $display("FAIL CHK-5d window hole top: 0xF9FFFF must reach no route, got mem_valid=%b mem_addr=%08x",
+               mem_valid, mem_addr);
+      errors = errors + 1;
+    end
+
+    // CHK-7a: WINDOW ON, the mirror's BASE: 0xFA0000 reaches exactly what 0xA0000 reaches
+    // (qemu sys16m_mirror aliases lowmem[0xa0000..] AT 0xfa0000), and is not identity RAM.
+    // CHK-7 below only probes the top, which a mirror starting one block late also passes.
+    drive_addr(32'h000A_0000, 1'b1);
+    ref_mem_addr  = mem_addr;
+    ref_mem_valid = mem_valid;
+    drive_addr(32'h00FA_0000, 1'b1);
+    if (!(mem_valid === ref_mem_valid && (!mem_valid || mem_addr === ref_mem_addr)) ||
+        (mem_valid === 1'b1 && mem_addr === 32'h00FA_0000)) begin
+      $display("FAIL CHK-7a mirror base: 0xFA0000 must alias 0xA0000, got mem_valid=%b mem_addr=%08x (0xA0000: mem_valid=%b mem_addr=%08x)",
+               mem_valid, mem_addr, ref_mem_valid, ref_mem_addr);
       errors = errors + 1;
     end
 

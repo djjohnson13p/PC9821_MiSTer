@@ -15,6 +15,8 @@
 #   PC9821Z486.mgl                  - the MGL descriptor (menu entry "PC9821")
 #   games/PC9821/pc98pack-xe10.bin  - firmware pack, from your dumps (F0,BIN)
 #   games/PC9821/hdd.img            - your PC-98 HDD image (S0,IMG)
+#   Scripts/pc9821_cue2pcd.sh       - Scripts-menu entry: CUE/BIN -> PCD on the card
+#   Scripts/.pc9821/cue2pcd.py      - the converter it runs (tools/cue2pcd.py)
 #
 # setname PC9821 makes MiSTer resolve file paths relative to the PC9821/
 # games folder, so the pack and image live there.
@@ -47,6 +49,10 @@ fi
 
 cp -f "$rbf"  "$deploy/_Computer/PC9821Z486.rbf"
 cp -f "$pack" "$games/pc98pack-xe10.bin"
+# The Scripts-menu CUE/BIN converter (tools/mister/pc9821_cue2pcd.sh runs .pc9821/cue2pcd.py).
+mkdir -p "$deploy/Scripts/.pc9821"
+cp -f tools/mister/pc9821_cue2pcd.sh "$deploy/Scripts/pc9821_cue2pcd.sh"
+cp -f tools/cue2pcd.py "$deploy/Scripts/.pc9821/cue2pcd.py"
 
 # CONF_STR: "F0,BIN,Load ROM pack;" and "S0,IMG,Mount HDD;".
 # F0 -> file type f at index 0; S0 -> mount type s at index 0.

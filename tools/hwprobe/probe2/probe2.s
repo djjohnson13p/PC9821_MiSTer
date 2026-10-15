@@ -9123,7 +9123,7 @@ pitsec_end:
     ret
 
 /* ------------------------------------------------------------------ */
-/* section: /VSYNC - VSYNC/IRQ2 delivery (item 11, and frame drops)    */
+/* section: /VSYNC - VSYNC/IRQ2 delivery (and frame drops)            */
 /* ------------------------------------------------------------------ */
 /* IRQ2 (INT 0Ah) is the CRTC's VSYNC interrupt and the vector OP.COM and
  * CLABLOGO.EXE pace their frames on. The 2026-09-23 run of this
@@ -9140,7 +9140,7 @@ pitsec_end:
  * writes whatever AL holds, NP2kai's gdc_o64 (io/gdc.c) ignores dat, and this
  * core's arm decode is address-only (pc9821_system.sv gdc_vsync_arm).
  *
- *   - item 11: is a VSYNC that arrives while IRQ2 is in service delivered at the
+ *   - is a VSYNC that arrives while IRQ2 is in service delivered at the
  *     EOI (the 8259A's one-bit IRR latch holds the edge - this core's model,
  *     pc9821_pic.sv `pending = ir_latch & ~imr & ~isr_block`) or NOT delivered at
  *     the EOI? NP2kai does not hold it: its in-service arm is a SIBLING of the imr
@@ -9494,7 +9494,7 @@ vs_bit2_done:
     mov     ax, [vs_frames]
     mov     [vs_frB], ax
 
-    /* Phase C: the forced edge-during-in-service case (item 11). vs_noeoi makes
+    /* Phase C: the forced edge-during-in-service case. vs_noeoi makes
      * the handler count and re-arm but NOT send an EOI, so the sync edge itself
      * leaves IRQ2 in service. The main loop is not suspended by that (the 8259
      * blocks bit 2 while it is in service - the condition under test), so it
@@ -11909,7 +11909,7 @@ msg_pitsec_skip:  .asciz "  -> the divisor scan was not coherent, or failed the 
 msg_end_pitsec:   .asciz "END:PIT\r\n"
 
 msg_begin_vsyncsec: .asciz "BEGIN:VSYNC\r\n"
-msg_vsyncsec_hdr: .asciz "  VSYNC/IRQ2 delivery (item 11) and the dropped-frame count f_drop. Clears master IMR bit 2 (IRQ2)\r\n  for the window, puts it back from the save, and restores INT 0Ah. Its own boot: it\r\n  reprograms interrupt state. sync_irqs=1 (the sync edge) is normal, 2 means a driver\r\n  had a request latched when the mask cleared.\r\n"
+msg_vsyncsec_hdr: .asciz "  VSYNC/IRQ2 delivery and the dropped-frame count f_drop. Clears master IMR bit 2 (IRQ2)\r\n  for the window, puts it back from the save, and restores INT 0Ah. Its own boot: it\r\n  reprograms interrupt state. sync_irqs=1 (the sync edge) is normal, 2 means a driver\r\n  had a request latched when the mask cleared.\r\n"
 msg_vsyncsec_af64:  .asciz "  as-found 0064="
 msg_vsyncsec_064:   .asciz " 0064="
 msg_vsyncsec_afimr: .asciz " imr="

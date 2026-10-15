@@ -14,13 +14,13 @@
 //    mem_burstcount (and cpu_line_read to mem_line_read), and split_sdram_backend forwards it to
 //    the controller, so the L1's 4 is the number the controller sees.
 //  * FREQ = clk_sys (`TB_SDRAM_FREQ, sdram_sync_bench.svh): the controller runs on clk_sys in
-//    every build, and the timing table takes the CAS_I = 2 branch the design uses (<= 100 MHz).
+//    every build, and the timing table takes the CAS_I = 2 branch the design uses (below 100 MHz).
 
 `default_nettype none
 
 module tb_pc9821_cpu_line_burst;
   localparam integer SYS_NS   = 20;      // 50 MHz clk_sys
-  localparam integer CAS      = 2;       // CAS_I = 2 for FREQ <= 100MHz
+  localparam integer CAS      = 2;       // CAS_I = 2 below 100 MHz
   // One single transaction retires well inside this; a fixed settle is used instead of a
   // busy-based wait that could sample before busy rises.
   localparam integer SETTLE   = 40;

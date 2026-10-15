@@ -1,5 +1,5 @@
 // PC-9821 GVRAM CPU-side port share: the CPU's plane-window access and the graphics
-// GDC's draw-engine visit, one at a time (item 63, slice 1).
+// GDC's draw-engine visit, one at a time (the GDC2 WRITE slice).
 //
 // The GVRAM cluster (pc9821_gvram_arb + the GRCG and EGC store paths) has ONE CPU-side
 // port - the dispatch it runs is the CPU transaction's, not a bus arbiter's ("there is

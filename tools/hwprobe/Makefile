@@ -1,4 +1,4 @@
-TOOLS := gfxbenc2 gfxbench idelat ideprobe ioprobe irqwd opnapro pegcwatch probe2 sndtest memmap a20map d8bank integ
+TOOLS := gfxbenc2 egcplane gfxbench idelat ideprobe ioprobe irqwd opnapro pegcwatch probe2 sndtest memmap a20map d8bank integ
 
 # Build the DOS .COM probe binaries from their assembly sources.
 #

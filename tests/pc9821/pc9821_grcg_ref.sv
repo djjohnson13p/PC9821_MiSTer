@@ -82,10 +82,9 @@ module pc9821_grcg_ref #(
       dout = 32'hFFFF_FFFF;
       if (!wr) begin
         // memvram0/1_rd8/16/32: the addressed window's plane, byte k at off+k for each
-        // enabled CPU byte lane. The mode-0x80 READ is memtcr (the tile-compare read) in
-        // NP2kai, which the RTL does not have; tcr_read() models it and the bench records
-        // the difference as a deviation, so the differential read path here is the plain
-        // one the RTL answers.
+        // enabled CPU byte lane. A read with the GRCG armed at mode 0x80 is NP2kai's
+        // memtcr (the tile-compare read), modelled by tcr_read() below; the bench sends
+        // those reads there (tb_pc9821_grcg_ops.sv run_rd_tcr), so this is the plain path.
         for (k = 0; k < 4; k = k + 1)
           dout[8 * k +: 8] = be[k] ? mem[pg][plane][off + k] : 8'h00;
       end else begin
@@ -121,8 +120,8 @@ module pc9821_grcg_ref #(
   // NP2kai's memtcr0_rd8/16/32 -- the tile-compare read the mode bit7|bit6 = 10 dispatch
   // (vacctbl index 8/9) selects. A 16-bit unit compares 16-bit WORDS and tile[].w is
   // {tile,tile} because crtc_o7e writes both byte halves; an 8-bit unit compares bytes
-  // and returns one. The RTL has no such path, so the bench only uses this to state the
-  // reference value it does not produce.
+  // and returns one. memtcr*_rd32 is two rd16 halves (mem/memvram.c:240-243). The bench's
+  // section 9 asserts the RTL's TCR reads against this, byte for byte.
   task automatic tcr_read(input pg, input [1:0] plane, input [14:0] off,
                           input [3:0] be, output [31:0] dout);
     integer k, p;

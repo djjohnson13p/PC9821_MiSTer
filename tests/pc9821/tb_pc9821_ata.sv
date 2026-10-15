@@ -223,12 +223,13 @@ module tb_pc9821_ata;
     read_byte(16'h0430, value);
     if (value !== 8'h41) fail("0x0430 connection report (measured 0x41)");
     // The task file is a window on the interface at the selected bank: it
-    // answers at the bank the machine's built-in IDE is on (0x01) and floats at
-    // a bank with nothing behind it (0x00, measured; probes/JOY.TXT and
-    // probes/WIN.TXT show 0x0432 = 0x00 with the whole block at 0x0E). The bank
+    // answers at the hard disk's bank (0x00: bank 0's master, the core's fixed layout)
+    // and floats at a bank with nothing behind it (0x01 without the CD; the owner's
+    // machine shows an empty bank's whole block at 0x0E in probes/JOY.TXT and
+    // probes/WIN.TXT). The bank
     // values, the float, and the command-after-bank-select case are asserted by
     // tests/pc9821/tb_pc9821_ata_blockmap.sv through ports only.
-        write_byte(16'h0432, 8'h01);
+    write_byte(16'h0432, 8'h00);
     read_byte(16'h064E, value);
     if (value !== 8'h50) fail("reset status is not DRDY|DSC");
 
@@ -453,26 +454,26 @@ module tb_pc9821_ata;
     if (dut.status_reg !== 8'h41 || dut.error_reg !== 8'h04)
       fail("invalid CHS request was not rejected");
 
-    // The single emulated drive answers at the bank the machine's built-in IDE
-    // is on (0x01, measured: 0x064E = 0x50 there) and the task file floats at
-    // every other bank (measured at bank 0x00: the whole block reads 0x0E). The
+    // The single emulated drive answers at bank 0 (the fixed layout; the measured
+    // live-bank 0x064E = 0x50) and the task file floats at every bank with channel
+    // bit 0 set (the measured empty-bank float: the whole block reads 0x0E). The
     // unit is 0x064C bit 4, not a bank value, and a real single-drive channel
     // answers for the addressed unit: 0xFF here is bit 7 = BSY, which is exactly
     // the answer the disk BIOS probe loops on for its whole timeout, so the old
     // "absent slave floats 0xFF" expectation encoded the P0 bug as the contract; the absent
     // unit now reads the ATA-3 0x00 instead (below).
-    write_byte(16'h0432, 8'h01);   // the bank the interface is on
+    write_byte(16'h0432, 8'h00);   // the bank the interface is on
     read_byte(16'h064E, value);
     // 0x0432 selects the IDE bank and must NOT rewrite the drive status: the
     // abort above left DRDY|ERR (0x41, DSC clear) and it stays 0x41 here. The old
     // expectation of 0x50 depended on that rewrite, which erased the
     // {ERROR,STATUS} snapshot the authentic ISR classifies from.
     if (value !== 8'h41) fail("0x0432 write clobbered the drive status");
-    write_byte(16'h0432, 8'h02);   // a bank with no interface
+    write_byte(16'h0432, 8'h03);   // a bank with no interface
     read_byte(16'h064E, value);
-    if (value !== 8'h0E) fail("bank 0x02 did not float at the measured 0x0E");
+    if (value !== 8'h0E) fail("bank 0x03 did not float at the measured 0x0E");
     write_byte(16'h064C, 8'hB0);   // discarded: the task file is not connected
-    write_byte(16'h0432, 8'h01);
+    write_byte(16'h0432, 8'h00);
     read_byte(16'h064E, value);
     if (value !== 8'h41) fail("a floating-bank write changed the drive state");
     // Unit selection is 0x064C bit 4, at the connected bank. Device 1 is ABSENT, and an absent
@@ -484,9 +485,12 @@ module tb_pc9821_ata;
     write_byte(16'h064C, 8'hB0);
     read_byte(16'h064E, value);
     if (value !== 8'h00) fail("an absent unit 1 did not read STATUS 0x00 (ATA-3 s.9.5.1)");
+    // Re-selecting device 0 shows the master's status as it was left: the abort's 0x41.
+    // A device/head write does not rewrite STATUS on the machine (docs/probes/IDE.TXT:349,
+    // 'pre/final status = 51 58' after `out 0x064C,0xA0` following an abort).
     write_byte(16'h064C, 8'hA0);
     read_byte(16'h064E, value);
-    if (value !== 8'h50) fail("primary master did not return READY");
+    if (value !== 8'h41) fail("primary master's status was rewritten by the device select");
 
     // An abort must honour nIEN (0x74C bit 1): a guest doing polled I/O must
     // not be interrupted by a rejected command. No existing case covered this,
@@ -523,11 +527,11 @@ module tb_pc9821_ata;
     // phase and every word reads 0x0E/0xFF instead of the sector. That is the P0
     // these two checks are the negative control for; the port-level form of the
     // same bracket is asserted by tests/pc9821/tb_pc9821_ata_blockmap.sv.
-    write_byte(16'h0432, 8'h01);
+    write_byte(16'h0432, 8'h00);
     write_byte(16'h0432, 8'h80);          // the park write
     read_byte(16'h0432, value);           // es:0x2075 <- the read-back
-    if (value !== 8'h01) fail("the 0x80 park write was latched");
-    write_byte(16'h0432, 8'h01);          // es:0x2077, the drive's bank byte
+    if (value !== 8'h00) fail("the 0x80 park write was latched");
+    write_byte(16'h0432, 8'h00);          // es:0x2077, the drive's bank byte
     write_byte(16'h0644, 8'h01);
     write_byte(16'h0646, 8'h05);
     write_byte(16'h0648, 8'h00);
@@ -556,8 +560,8 @@ module tb_pc9821_ata;
     // derives from words 1/3/6 (BANK3@0x8A6B) nonsense and leaves the failure to
     // the READ below.
     write_byte(16'h0432, 8'h80);          // park
-    read_byte(16'h0432, value);           // the saved value (0x01)
-    write_byte(16'h0432, 8'h01);
+    read_byte(16'h0432, value);           // the saved value (0x00)
+    write_byte(16'h0432, 8'h00);
     write_byte(16'h064E, 8'hEC);          // IDENTIFY
     write_byte(16'h0433, 8'h01);          // acknowledge
     write_byte(16'h0432, value);          // restore

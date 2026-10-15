@@ -19,6 +19,17 @@ import pathlib
 import sys
 
 BENCHES = {
+    'artic_atomic': (
+        'TB_PC9821_ARTIC_ATOMIC',
+        "TB_PC9821_ARTIC_ATOMIC: a word read of the ARTIC counter at 0x5E (the firmware delay() helper's `in ax,5Eh`, cnt[23:8]) returns ONE instant's value even when a 307.2 kHz tick carries out of bit 15 between its two byte lanes: swept across every phase of the tick around cnt = 0x00FFFF, the word is always 0x00FF or 0x0100 - never the torn 0x01FF that reads 65,536 ticks (213 ms) ahead and lets a `now - start >= n` delay loop exit early - matching both references' single snapshot per access (NP2kai io/artic.c artic_r16: `cnt = artic_getcnt(); if (port & 2) cnt >>= 8; return((UINT16)cnt);`; MAME src/mame/nec/pc9801.cpp timestamp_r returns `total_cycles() >> (8 * offset)` for the whole 16-bit access).",
+        [
+            'src/pc9821/storage/pc9821_fdc.sv',
+            'src/pc9821/input/pc9821_mouse.sv',
+            'src/pc9821/core/pc9821_ports_pkg.sv',
+            'src/pc9821/core/pc9821_dmac.sv',
+            'src/pc9821/core/pc9821_iobus.sv',
+        ],
+    ),
     'artic_word': (
         'TB_PC9821_ARTIC_WORD',
         'The ARTIC timestamp counter read the way the FIRMWARE reads it - as a 16-bit word at port 0x5E - returns cnt[23:8] on the data lines the guest expects (0x5E mirror of 0x5D in the low byte and 0x5F cnt[23:16] in the high byte) and ADVANCES every 256 ticks, so the deadline the option ROM delay() helper spins on is reachable in 833 us per unit rather than the 213 ms the old four-independent-byte layout produced. Every other bench in this tree drives one byte enable at a time, so the word path the firmware actually uses had no test.',
@@ -39,7 +50,7 @@ BENCHES = {
     ),
     'sdram_strict': (
         'TB_PC9821_SDRAM_STRICT',
-        "The platform's SDRAM controller, at the platform's OWN settings (FREQ 80 MHz - clk_sys, which the controller runs on - HAS_DQM=0 with ADQM=1 so the byte mask rides A11/A12, FAST_GRADE=0, a 128 MB module, GATHER_K=4 and PRE_ACT on), is driven against the MiSTer community's STRICT XSDS module model - the two-chip AS4C32M16SB-6TIN board, with CHE indact to VCC and DQML/DQMH strapped to A11/A12 - and the MODULE ITSELF is the judge: every command it sees is decoded against the CONTROLLER_GUIDE's protocol and AC-timing rules, every AUTO REFRESH is recorded per chip, and a single violation anywhere in the run fails this bench through the model's own error count rather than through anything this bench believes. The traffic is a real one: the power-up hold the model requires, a dword write/read-back walk across BOTH chips and across rows and banks, byte-masked writes (the mask-on-address path the XSDS board forces), a burst read spanning a row boundary, and a port-0 gather session. The module is clocked the MiSTer way - by the forwarded SDRAM_CLK, lagging the controller clock by the pin-clock lead the configuration's STA I/O model implies, with read data returning through the FPGA's I/O path - so the controller's DQ capture register samples the module where the fit's STA places that capture, about 1 ns before the module's CAS-latency edge.",
+        "The platform's SDRAM controller, at the platform's OWN settings (FREQ 80 MHz - clk_sys, which the controller runs on - HAS_DQM=0 with ADQM=1 so the byte mask rides A11/A12, FAST_GRADE=0, a 128 MB module, GATHER_K=4 and PRE_ACT on), is driven against the MiSTer community's STRICT XSDS module model - the two-chip AS4C32M16SB-6TIN board, with CHE indact to VCC and DQML/DQMH strapped to A11/A12 - and the MODULE ITSELF is the judge: every command it sees is decoded against the CONTROLLER_GUIDE's protocol and AC-timing rules, every AUTO REFRESH is recorded per chip, and a single violation anywhere in the run fails this bench through the model's own error count rather than through anything this bench believes. The traffic is a real one: the power-up hold the model requires, a dword write/read-back walk across BOTH chips and across rows and banks, byte-masked writes (the mask-on-address path the XSDS board forces), a burst read spanning a row boundary, and a port-0 gather session. The module is clocked the MiSTer way - by the forwarded SDRAM_CLK, lagging the controller clock by the pin-clock lead the configuration's STA I/O model implies, with read data returning through the FPGA's I/O path - so the controller's DQ capture register samples the module where the fit's STA places that capture, about 1 ns before the module's CAS-latency edge. Each chip's AUTO REFRESH commands, read off the module's own pins (RAS#/CAS#/WE# = 0/0/1, the chip by Cs1_n), arrive at least twice in the run and never more than 64 ms / 8192 = 7812.5 ns apart (nor that long before the run ends), since the model only warns on tREFI.",
         [
             'src/memory/sdram.v',
             'tests/pc9821/xsds_128mbyte_sdram_model.sv',
@@ -47,7 +58,7 @@ BENCHES = {
     ),
     'sdram_sync': (
         'TB_PC9821_SDRAM_SYNC',
-        "TB_PC9821_SDRAM_SYNC: the SDRAM backend - split_sdram_backend over sdram_sync_bridge, the controller on clk_sys at FREQ = clk_sys, the only build since the split-clock configuration was removed - keeps its requester-side contract at EVERY preset clock, 80 MHz (base, the shipping build), 100 MHz (mediumoc), 120 MHz (heavyoc, the CAS-3 branch, at the SDRAM part's limit) and 50 MHz (the clock the other bridge benches run), each driven by the SAME requester program against sdram_chip_model at the deployed module settings (HAS_DQM=0, ADQM=1, FAST_GRADE=0, GATHER_K=4): every ready is one clk_sys cycle and answers a presented request, every read answers exactly one resp_valid per dword on the port that asked and nowhere else, a write answers none, every word read back is the word written (single dwords, 4-dword line fills, byte-masked stores, 8/10-dword bursts), port 0's dout holds its last word between its own pulses while ports 1-3 answer in between (the hold the controller does not keep and the bridge must), and all four ports are served while they contend. The single-dword read/write round trip, the 4-dword line fill, the posted-store and line-fill stream rates and the byte-store cost are MEASURED at each clock in clk_sys cycles and ns and REPORTED, not asserted. FAIL-FIRST: a bare pass-through without port 0's hold fails the dout0 hold check.",
+        "TB_PC9821_SDRAM_SYNC: the SDRAM backend - split_sdram_backend over sdram_sync_bridge, the controller on clk_sys at FREQ = clk_sys, the only build since the split-clock configuration was removed - keeps its requester-side contract at EVERY preset clock, 80 MHz (base, the shipping build), 95 MHz (the fastest CL2 clock), 100 MHz (mediumoc), 120 MHz (heavyoc, at the SDRAM part's limit) and 50 MHz (the clock the other bridge benches run), each driven by the SAME requester program against sdram_chip_model at the deployed module settings (HAS_DQM=0, ADQM=1, FAST_GRADE=0, GATHER_K=4): every ready is one clk_sys cycle and answers a presented request, every read answers exactly one resp_valid per dword on the port that asked and nowhere else, a write answers none, every word read back is the word written (single dwords, 4-dword line fills, byte-masked stores, 8/10-dword bursts), port 0's dout holds its last word between its own pulses while ports 1-3 answer in between (the hold the controller does not keep and the bridge must), and all four ports are served while they contend. The single-dword read/write round trip, the 4-dword line fill, the posted-store and line-fill stream rates and the byte-store cost are MEASURED at each clock in clk_sys cycles and ns and REPORTED, not asserted. Every MODE REGISTER SET the controller issues programs the CAS latency the hardware requires - CL2 below 100 MHz (80, 95, 50), CL3 at 100 MHz and up (100, 120), the cutover two DE10-Nano boards set on 2026-10-13 - and the device model returns read data at that latency, so a controller reading at the CL2 edge at 100 MHz also fails the data checks. FAIL-FIRST: a bare pass-through without port 0's hold fails the dout0 hold check. FAIL-FIRST: with CL2 kept at 100 MHz (the old FREQ <= 100 MHz rule) the 100 MHz harness fails its MRS and read-data checks.",
         [
             'src/memory/split_sdram_backend.sv',
             'src/memory/sdram_sync_bridge.sv',
@@ -436,7 +447,7 @@ BENCHES = {
     ),
     'fdc_read': (
         'TB_PC9821_FDC_READ',
-        "pc9821_fdc's Phase-1 data path against NP2kai io/fdc.c: with media mounted, READ DATA (0x02/0x06/0x0C and their MF variants) takes its eight parameters, walks R..EOT, and is ended either by the DMA engine's TERMINAL COUNT (which NP2kai forces R=1 into the result for, with C unchanged) or by EOT (which advances C), always answering the seven-byte result {ST0,ST1,ST2,C,H,R,N}; with MT the head flips and the other side of the SAME cylinder is read before C advances; a missing sector answers ST0 IC0 with ST1 ND; a write against this read-only medium answers IC0 with ST1 NW; READ ID reports the crcn-th header of the track with C from the track register and R/N from the header; the MSR carries RQM|DIO|CB with the drive-busy bit and NDM through the transfer and returns to idle at the result drain; and a drive with NO media keeps the probe subset's deferred answer, which is why media_present is part of the contract. The DMA model strobes one byte per DRQ with TC coincident with the final strobe, exactly pc9821_dmac's S_DEV.",
+        "pc9821_fdc's Phase-1 data path against NP2kai io/fdc.c: with media mounted, READ DATA (0x02/0x06/0x0C and their MF variants) takes its eight parameters, walks R..EOT, and is ended either by the DMA engine's TERMINAL COUNT (which NP2kai forces R=1 into the result for, with C unchanged) or by EOT (which advances C), always answering the seven-byte result {ST0,ST1,ST2,C,H,R,N}; with MT the head flips and the other side of the SAME cylinder is read before C advances; a missing sector answers ST0 IC0 with ST1 ND; a write against this read-only medium answers IC0 with ST1 NW; READ ID reports the crcn-th header of the track with C from the track register and R/N from the header; the MSR carries RQM|DIO|CB with the drive-busy bit and NDM through the transfer and returns to idle at the result drain; and a drive with NO media keeps the probe subset's deferred answer, which is why media_present is part of the contract. The DMA model strobes one byte per DRQ with TC coincident with the final strobe, exactly pc9821_dmac's S_DEV. A non-DMA (ND) READ DATA read by polling MSR delivers exactly the medium's bytes even when each sector's bytes arrive after a fetch delay: RQM is shown only while a byte is there (NP2kai fdc_dataread drops RQM between sectors).",
         [
             'src/pc9821/storage/pc9821_fdc.sv',
         ],
@@ -494,7 +505,7 @@ BENCHES = {
     ),
     'fdc_ready_change': (
         'TB_PC9821_FDC_READY_CHANGE',
-        "TB_PC9821_FDC_READY_CHANGE: a floppy media change raises NP2kai's ready-change interrupt (fdd/diskdrv.c): every mount event of an equipped drive - an eject, an insert, an eject of an empty drive - leaves ST0 = AI|NR|drv (0xC8|u) for SENSE INTERRUPT STATUS and raises the interrupt at once, ungated; an insert keeps the drive NOT READY (ST3 RDY clear, a READ DATA answering the IC0|NR class) for DISK_DELAY = 20 guest frames and then, only when the 0xBE register's bit 2 is clear or the DOR's motor bit 0x08 is set, leaves ST0 = AI|drv (0xC0|u) and raises the interrupt again, with the drive READY; a medium that parses after the delay is announced when it parses; and a mount event while the controller is held in reset raises nothing (fdc_reset zeroes fdc.stat). FAIL-FIRST: the base controller had no ready-change interrupt at all (no media_chg/frame_tick seam).",
+        "TB_PC9821_FDC_READY_CHANGE: a floppy media change raises NP2kai's ready-change interrupt (fdd/diskdrv.c): every mount event of an equipped drive - an eject, an insert, an eject of an empty drive - leaves ST0 = AI|NR|drv (0xC8|u) for SENSE INTERRUPT STATUS and raises the interrupt at once, ungated; an insert keeps the drive NOT READY (ST3 RDY clear, a READ DATA answering the IC0|NR class) for DISK_DELAY = 20 guest frames and then, only when the 0xBE register's bit 2 is clear or the DOR's motor bit 0x08 is set, leaves ST0 = AI|drv (0xC0|u) and raises the interrupt again, with the drive READY, while a ready held back by that gate is announced (AI|drv) when the DOR's motor bit later rises with 0xBE bit 2 set (NP2kai io/fdc.c fdc_o94); a medium that parses after the delay is announced when it parses; and a mount event while the controller is held in reset raises nothing (fdc_reset zeroes fdc.stat). FAIL-FIRST: the base controller had no ready-change interrupt at all (no media_chg/frame_tick seam).",
         [
             'src/pc9821/storage/pc9821_fdc.sv',
         ],
@@ -509,9 +520,26 @@ BENCHES = {
             'src/pc9821/storage/pc9821_block_io.sv',
         ],
     ),
+    'fdd_media_equiv': (
+        'TB_PC9821_FDD_MEDIA_EQUIV',
+        "The floppy medium's accept-time raw offset (FD-a: the raw image's ((C*2+H)*sects + R-1) << (7+N) formed from the request's live fields and the accepting drive's geometry and latched on the accept edge, instead of formed from the request latches inside ST_SEEK) is cycle-for-cycle identical to the pre-change module (pc9821_fdd_media_ref.sv, the module as of ad9ed84c): over random raw images of every NP2kai size row and a D88 image on both drives, random READ DATA / READ ID / WRITE / FORMAT requests with in-range and out-of-range C/H/R/N, requests for an empty drive, remounts and ejects landing mid-request, aborts, read-only mounts, failed and slow block fetches and core resets, every output (the block request, LBA, slot and write flag, the write-back read data, present/writeprotect/chg, ready/rdy/hdrv/err, dout and the READ ID answer) matches on every clk cycle.",
+        [
+            'src/pc9821/storage/pc9821_fdd_media.sv',
+            'tests/pc9821/pc9821_fdd_media_ref.sv',
+        ],
+    ),
+    'fdd_media_width': (
+        'TB_PC9821_FDD_MEDIA_WIDTH',
+        "The floppy medium decides what it serves from sizes, and every size test gives the same answer at the TOP of its range as at the bottom, against the bench's own arithmetic and a synthetic image whose bytes are a function of their file offset: a D88 whose declared extent is exactly D88_MAX_EXTENT (2,000,000) mounts and reads a sector that ends 472 bytes before it back byte-exact, while an extent one byte over, 2^21, 2^21+688, 2^24+2,000,000, 2^31 and 0xFFFFFFFF each refuse to mount (no format matches); an extent beyond the file (5,000 against a 4,999-byte file) is refused and the same extent against a 5,000-byte and a 3,000,000-byte file is served; a track pointer at or past the extent, one byte short of it, 2^21+688, 2^24+688 and 0xFFFFFFFF each answer sector-not-found, and a first-track pointer at or past the extent or of 2^21 and up refuses the mount; and a raw body mounts exactly when its size is one of NP2kai's size rows - the 1,228,800 (15x512), 1,720,320 (21x512, the widest), 1,025,024 (26x256) and 1,261,568 (8x1024) rows - and not at the row size less one, plus one, plus 2^21 or plus 2^32, each served row returning its last sector (the farthest file offset of the row) byte-exact.",
+        [
+            'src/pc9821/storage/pc9821_fdd_media.sv',
+            'src/pc9821/storage/pc9821_block_share.sv',
+            'src/pc9821/storage/pc9821_block_io.sv',
+        ],
+    ),
     'fdd_media_d88': (
         'TB_PC9821_FDD_MEDIA_D88',
-        "pc9821_fdd_media reads a D88 and a raw sector image through the HPS block protocol and serves them over the byte seam pc9821_fdc drives: the D88 header is parsed where d88head.h puts its fields (fd_type at 0x1B, fd_size at 0x1C, trackp[164] at 0x20 as little-endian 32-bit offsets), a sector's file offset is found by walking the track's [16-byte _D88SEC][data] run and testing (c,h,r,n) as NP2kai's searchsector_d88 does, a sector whose stored size is shorter than 128<<N still delivers the full 128<<N bytes with a ZERO tail, READ ID answers the requested ordinal with the track's own sector count, a raw image maps CHRN straight onto its geometry row's file offset and refuses an N that is not the row's N, and a missing sector, a missing track, an ordinal past the track's headers and an unknown image size are each reported as not available. The host side is a model of the MiSTer block reader: sd_ack held for the transfer, one 16-bit word per clk_sys at sd_buff_addr with (sd_blk_cnt+1) sectors per handshake. A RE-MOUNT MOVES THE MEDIUM, which is what lets the platform stop resetting the machine on a floppy change: mounting a second image of the same geometry answers the SECOND image's sector bytes (so neither a cached block nor a parsed track table may survive the swap), an eject - a mount of a sub-sector image - clears present and answers no byte out of the ejected medium, and remounting the first image serves it byte-exact again. THE RAW SIZE GUESSER IS NP2kai's fdd_xdf.c supportxdf rows (headersize 0) AND THE GEOMETRY IS PER DRIVE: the 512-byte rows (2DD 9x512 and 8x512, 2HD 15x512/18x512/21x512), the 256-byte 26x256 row and the 9x1024 row mount and each answers READ ID with ITS OWN N and sector count (fdd_readid_common, diskimage/fddfile.c:319-345) while refusing a request whose N is not the row's (fdd_read_xdf's 0xC0, fdd_xdf.c:341-343); the double-claimed 655,360-byte body answers the DD6 row's 8x512 geometry, fdd_set_xdf's first size match in table order (:41 before the same-sized DDB row :47, whose .ddb extension tiebreak :129-133 does not exist at this seam), and a D88 whose fd_type major is 2D or 2DD (0 or 1) mounts beside the 2HD classes and answers its geometry from the walked per-track headers (fdd_d88.c:92-118 takes majors 0/1/2).",
+        "pc9821_fdd_media reads a D88 and a raw sector image through the HPS block protocol and serves them over the byte seam pc9821_fdc drives: the D88 header is parsed where d88head.h puts its fields (fd_type at 0x1B, fd_size at 0x1C, trackp[164] at 0x20 as little-endian 32-bit offsets), a sector's file offset is found by walking the track's [16-byte _D88SEC][data] run and testing (c,h,r,n) as NP2kai's searchsector_d88 does, so a header that matches C/H/R with a different N is not the sector, a sector whose stored size is shorter than 128<<N still delivers the full 128<<N bytes with a ZERO tail, READ ID answers the requested ordinal with the track's own sector count, a raw image maps CHRN straight onto its geometry row's file offset and refuses an N that is not the row's N, and a missing sector, a missing track, an ordinal past the track's headers and an unknown image size are each reported as not available. The host side is a model of the MiSTer block reader: sd_ack held for the transfer, one 16-bit word per clk_sys at sd_buff_addr with (sd_blk_cnt+1) sectors per handshake. A RE-MOUNT MOVES THE MEDIUM, which is what lets the platform stop resetting the machine on a floppy change: mounting a second image of the same geometry answers the SECOND image's sector bytes (so neither a cached block nor a parsed track table may survive the swap), an eject - a mount of a sub-sector image - clears present and answers no byte out of the ejected medium, and remounting the first image serves it byte-exact again. THE RAW SIZE GUESSER IS NP2kai's fdd_xdf.c supportxdf rows (headersize 0) AND THE GEOMETRY IS PER DRIVE: the 512-byte rows (2DD 9x512 and 8x512, 2HD 15x512/18x512/21x512), the 256-byte 26x256 row and the 9x1024 row mount and each answers READ ID with ITS OWN N and sector count (fdd_readid_common, diskimage/fddfile.c:319-345) while refusing a request whose N is not the row's (fdd_read_xdf's 0xC0, fdd_xdf.c:341-343); the double-claimed 655,360-byte body answers the DD6 row's 8x512 geometry, fdd_set_xdf's first size match in table order (:41 before the same-sized DDB row :47, whose .ddb extension tiebreak :129-133 does not exist at this seam), and a D88 whose fd_type major is 2D or 2DD (0 or 1) mounts beside the 2HD classes and answers its geometry from the walked per-track headers (fdd_d88.c:92-118 takes majors 0/1/2).",
         [
             'src/pc9821/storage/pc9821_fdd_media.sv',
             'src/pc9821/storage/pc9821_block_share.sv',
@@ -526,11 +554,11 @@ BENCHES = {
         "its interrupt, the SENSE INTERRUPT STATUS drain and the DOR read-back are compared "
         "byte for byte. The real register bugs the model had are ASSERTED and fixed: the "
         "drive/unit is parameter 0 (not the last byte), RECALIBRATE/SEEK completion is the "
-        "PER-STATE class -- an equipped drive with no diskette answers SE|NR = 0x28, which "
+        "PER-STATE class -- an equipped drive with no diskette answers SE|NR = 0x28 to RECALIBRATE, which "
         "the BIOS's drive-present probe counts as PRESENT, and a unit whose READY is never "
         "asserted answers SE|IC0|NR = 0x68 and is not counted, with the guest's forced-ready "
         "strap adding EC (SE|IC0|EC = 0x70|unit for an unequipped unit, SE = 0x20 for an "
-        "equipped one) -- READ "
+        "equipped one), while SEEK has NP2kai FDC_Seek's single not-ready class SE|IC0|NR = 0x68|unit even under forced ready -- READ "
         "ID's class is ND, the SENSE DRIVE STATUS ST3 bits are TS/T0/HD for an equipped "
         "drive and the fault bit 0x80 for a unit the PC-9821 does not equip (drives 2/3), "
         "its WP bit is the MOUNTED MEDIUM's protect state -- the D88 header's bit 4 OR "
@@ -575,14 +603,14 @@ BENCHES = {
     ),
     'ata_conform': (
         'TB_PC9821_ATA_CONFORM',
-        "A conformance sweep of the PC-9821 ATA interface against NP2kai's cbus/ideio.c: the port register file (0x0430/0x0432/0x0433/0x0435 and the 0x064x/0x074x block), a PIO sector read and write, the status/error semantics (a command abort, an ERROR-register read, READ VERIFY) and the reset paths (software reset, DEVICE RESET, EXECUTE DEVICE DIAGNOSTIC, NOP) are each compared word for word with the reference, while the IDENTIFY words are asserted against the machine's capture with the PIO-only core's documented capability substitutions (docs/probes/IDE.TXT) for the same capacity. The NP2kai divergences Round 3 fixed are asserted; ten documented divergences (the measured 0x0430/0x074E/0x064C, the 0x0644/0x0646 post-reset default, the still-waived 0x90 diagnostic error signature, and the withdrawn multiple-mode words 47/59) print a WAIVED line, while DEVICE RESET is asserted against the MACHINE (status 0x51 / ERROR 0x04, docs/probes/IDE.TXT:343) where NP2kai's 0x01|0x80 disagrees.",
+        "A conformance sweep of the PC-9821 ATA interface against NP2kai's cbus/ideio.c: the port register file (0x0430/0x0432/0x0433/0x0435 and the 0x064x/0x074x block), a PIO sector read and write, the status/error semantics (a command abort, an ERROR-register read, READ VERIFY) and the reset paths (software reset, DEVICE RESET, EXECUTE DEVICE DIAGNOSTIC, NOP) are each compared word for word with the reference, while the IDENTIFY words are asserted against the machine's capture with the PIO-only core's documented capability substitutions (docs/probes/IDE.TXT) for the same capacity. The NP2kai divergences Round 3 fixed are asserted; ten documented divergences (the measured 0x0430/0x074E/0x064C, the 0x0644/0x0646 post-reset default, the still-waived 0x90 diagnostic error signature, and the withdrawn multiple-mode words 47/59) print a WAIVED line, while DEVICE RESET is asserted against the MACHINE (status 0x51 / ERROR 0x04, docs/probes/IDE.TXT:343) where NP2kai's 0x01|0x80 disagrees, and so is the ERROR-register read, which keeps STATUS.ERR on the machine (IDE.TXT:343,349) where NP2kai's ideio_i642 clears it.",
         [
             'src/pc9821/storage/pc9821_ata.sv',
         ],
     ),
     'ata_dbg': (
         'TB_PC9821_ATA_DBG',
-        "The ATA's two diagnostic bytes, which the watchdog prints as the telemetry's A, K, X and Z fields and from which a MiSTer was diagnosed, are asserted for the first time: the state byte packs {device_present, mounted, channel_reg[0], xfer_state, BSY, DRQ} and reads the owner's captured 0x40 on a card with an image mounted and no bank selected, selecting the IDE bank raises device_present and so bit 7, the command word packs {aborts, last_cmd, commands, reason} and is zero on a card that has issued nothing, an accepted command increments only the command count while a rejected one increments both and carries its reason, and the IDENTIFY state is visible in the packed xfer_state field with DRQ set and BSY clear.",
+        "The ATA's two diagnostic bytes, which the watchdog prints as the telemetry's A, K, X and Z fields and from which a MiSTer was diagnosed, are asserted for the first time: the state byte packs {device_present, mounted, channel_reg[0], xfer_state, BSY, DRQ} and reads 0xC0 with an image mounted and the bank at its power-up 0x00 - the disk's bank 0 since the layout was fixed (the owner's historical A=0x40 is the same byte with the disk on bank 1) - selecting bank 0x01 drops device_present (0x60) and re-selecting bank 0x00 raises it again and so bit 7, the command word packs {aborts, last_cmd, commands, reason} and is zero on a card that has issued nothing, an accepted command increments only the command count while a rejected one increments both and carries its reason, and the IDENTIFY state is visible in the packed xfer_state field with DRQ set and BSY clear.",
         [
             'src/pc9821/storage/pc9821_ata.sv',
         ],
@@ -597,7 +625,7 @@ BENCHES = {
     ),
     'ata_blockmap': (
         'TB_PC9821_ATA_BLOCKMAP',
-        'The 0x0432 IDE bank select as the machine has it: a write with bit 7 set is a no-op (so the ROM\'s own save-and-restore bracket leaves the interface connected), which channel is connected is decided by bit 0 rather than a byte comparison, the task file floats at a channel bit that is clear and answers at the one the built-in IDE is on (measured: bank 0x00 leaves every task-file register at 0x0E with 0x74C/0x74E at 0x0F and their odd partners at 0xFF; bank 0x01 answers 0x064E = 0x50 with 0x074C = 0x50 and 0x074E = 0x00), a task-file write follows the same window, and a command issued after the bank select reaches the drive.',
+        'The 0x0432 IDE bank select as the machine has it: a write with bit 7 set is a no-op (so the ROM\'s own save-and-restore bracket leaves the interface connected), which channel is connected is decided by bit 0 rather than a byte comparison, the task file answers at the hard disk\'s channel - bit 0 clear, bank 0\'s master, the fixed layout (owner 2026-10-11; the stock Xe10\'s and NP2kai\'s unit 0) - and floats at the other (the values measured on the owner\'s Xe10, whose empty bank was 0x00 and live bank 0x01: an empty bank leaves every task-file register at 0x0E with 0x74C/0x74E at 0x0F and their odd partners at 0xFF; the live bank answers 0x064E = 0x50 with 0x074C = 0x50 and 0x074E = 0x00), a task-file write follows the same window, and a command issued after the bank select reaches the drive.',
         [
             'src/pc9821/storage/pc9821_ata.sv',
         ],
@@ -708,9 +736,23 @@ BENCHES = {
             'src/pc9821/storage/pc9821_ata.sv',
         ],
     ),
+    'ata_err_sticky': (
+        'TB_PC9821_ATA_ERR_STICKY',
+        "TB_PC9821_ATA_ERR_STICKY: STATUS.ERR is sticky on the hard disk the way the Xe10 shows it: after an aborted command (DEVICE RESET 0x08 on the ATA disk: status 0x51, ERROR 0x04) neither a read of the ERROR register (0x0642) nor a device/head write (0x064C = 0xA0) changes STATUS - both still read 0x51 - and the next command (IDENTIFY) then clears it to its own DRQ status 0x58, replaying the ideprobe DIAG-then-IRQ sequence whose capture reads 'after 0x08 status = 51 ; after 0x08 ERROR(0642) = 04' followed by 'pre/final status = 51 58'.",
+        [
+            'src/pc9821/storage/pc9821_ata.sv',
+        ],
+    ),
     'ata_cmd_race': (
         'TB_PC9821_ATA_CMD_RACE',
         "A0x64E COMMAND write landing in the SAME clk as the block_done completion that retires the old transfer must not vanish against the stale transfer state (review2/pulses.md H8): the dispatch guard reads pre-update BSY/xfer_state, so post-fix the dispatch takes over against the POST-retire device exactly as if the completion had been observed a cycle earlier (the serialized NP2kai order), while a command write in a NON-completing transfer cycle is still ignored. The retiring handler's read-ahead re-issue is folded out of the takeover so the adapter serves exactly the requests the surviving transfers own.",
+        [
+            'src/pc9821/storage/pc9821_ata.sv',
+        ],
+    ),
+    'ata_takeover_idle': (
+        'TB_PC9821_ATA_TAKEOVER_IDLE',
+        "TB_PC9821_ATA_TAKEOVER_IDLE: a NON-DATA command (RECALIBRATE 0x10, SET FEATURES 0xEF) written to 0x064E in the same clk as a block_done completion that would enter a DRQ phase - a READ's sector fetch (X_WAIT_BLOCK), its read-ahead while the guest drains (X_PIO_READ), and a non-final WRITE sector (X_WAIT_WRITE) - takes over the drive the way NP2kai's serialized model does (cbus/ideio.c ideio_o64e dispatches the command against the drive whatever transfer it was in, and RECALIBRATE/SET FEATURES end with `drv->status = IDESTAT_DRDY | IDESTAT_DSC` and no data phase): status reads 0x50 with DRQ clear AND the drive accepts the next command (an IDENTIFY presents word 0 = 0x044A), instead of the retiring transfer's DRQ state standing under a non-DRQ status so every later command is ignored until SRST.",
         [
             'src/pc9821/storage/pc9821_ata.sv',
         ],
@@ -736,9 +778,24 @@ BENCHES = {
             'src/pc9821/storage/pc9821_ata.sv',
         ],
     ),
+    'atapi_equiv': (
+        'TB_PC9821_ATAPI_EQUIV',
+        'The CD-ROM drive src/pc9821/storage/pc9821_atapi.sv answers every packet command with exactly the values the drive of 284a2442 answered (tests/pc9821/pc9821_atapi_ref.sv, a byte-for-byte copy of it under another name, a golden model in the way pc9821_egc_ref.sv is): the same pseudo-random stream of ATA-level and packet commands is run through both drives, each behind its own hps_io slot model serving the same ISO, PCD or no medium, and after EVERY command the two traces must be equal - the packet-phase status, the interrupt-reason and byte-count registers of every data phase, every data byte, the completion STATUS, ERROR, sector count and cylinder registers. The stream covers TEST UNIT READY, REQUEST SENSE, INQUIRY, READ CAPACITY, READ(10) in and out of range, MODE SENSE(10) of every page code, 0x3F and an unknown one in both the default and the changeable form at allocation lengths from 0 to 255 (page 0x0F switching the drive to BCD MSF), READ TOC in formats 0 and 1 in LBA and MSF with every start track, READ SUB-CHANNEL, GET CONFIGURATION, START/STOP, SEEK, PLAY AUDIO(10) and MSF, PAUSE/RESUME, MODE SELECT, unknown opcodes, DEVICE RESET, EXECUTE DEVICE DIAGNOSTIC, IDENTIFY PACKET DEVICE and SRST, with the player held still (CDDA_REQ low) so its position is a function of the commands alone, plus plays of a few sectors run to completion with CDDA_REQ high whose streamed {R, L} samples must also be equal; the medium changes between the ISO, the PCD and an eject.',
+        [
+            'src/pc9821/storage/pc9821_atapi.sv',
+            'tests/pc9821/pc9821_atapi_ref.sv',
+        ],
+    ),
+    'ata_range': (
+        'TB_PC9821_ATA_RANGE',
+        "A data command (READ SECTORS 0x20) is accepted exactly when the image holds every sector it names, which is ATA's own rule and the bench's own 64-bit arithmetic, never a value read out of the RTL: the sector count (0 meaning 256) fits between the start LBA and the capacity (start + count <= capacity, so capacity 0 accepts nothing), in the LBA28 form for starts at 0, capacity-2, capacity-1, capacity, capacity+1 and 2^28-1 and counts 1, 2, 255 and 256 over capacities from 0 to 2^32-1 (the 2^28 and 2^31 classes included, whose starts the LBA28 field cannot name past 2^28-1), and in the CHS form of the default 8-head/17-sector geometry for sectors 0, 1, 17 and 18 and heads 7 and 8 around a capacity boundary, an invalid sector or head being refused whatever the capacity; an accepted command issues its block request at the LBA the task file named and a refused one answers STATUS 0x41 with ERROR 0x04 and issues none.",
+        [
+            'src/pc9821/storage/pc9821_ata.sv',
+        ],
+    ),
     'ata_idcyl': (
         'TB_PC9821_ATA_IDCYL',
-        "The IDENTIFY geometry words across every capacity class that separates implementations: each capacity is set, IDENTIFY is issued, the whole 256-word block is consumed through the task file and word 1 (the factory-default 16-head/63-sector cylinder count floor(capacity/1008)) and word 54 (the current 8-head/17-sector count floor(capacity/136)) are compared against the bench's own integer division, each clamped at 0xFFFF - the clamp boundary 136*65536 and its neighbours, a capacity whose quotient is exactly 0xFFFF, and capacities up to 2^32 whose quotient the 16-bit field cannot hold. The module computes both with a two-pass 32-clock shift-and-subtract divider; the bench passes against either arithmetic, so it pins the answer rather than the divider.",
+        "The IDENTIFY geometry words across every capacity class that separates implementations: each capacity is set, IDENTIFY is issued, the whole 256-word block is consumed through the task file and word 1 (the factory-default 16-head/63-sector cylinder count floor(capacity/1008)) and word 54 (the current 8-head/17-sector count floor(capacity/136)) are compared against the bench's own integer division, each clamped at 0xFFFF - the clamp boundary 136*65536 and its neighbours, a capacity whose quotient is exactly 0xFFFF, and capacities up to 2^32 whose quotient the 16-bit field cannot hold. The module computes both with a free-running two-pass 32-clock shift-and-subtract divider that publishes a changed capacity within 96 clocks and the bench waits 160 after each change; the bench passes against either arithmetic, so it pins the answer rather than the divider.",
         [
             'src/pc9821/storage/pc9821_ata.sv',
         ],
@@ -761,7 +818,7 @@ BENCHES = {
     ),
     'block_io': (
         'TB_PC9821_BLOCK_IO',
-        "The MiSTer image metadata and SD-block handshake: an unmounted request fails immediately, metadata is latched, the request reaches hps_io, the buffer streams through, sd_rd clears on acknowledge, completion pulses with status, and a short block is rejected; words hps_io streams for ANOTHER slot's transfer while this request waits for its own acknowledge are ignored.",
+        "The MiSTer image metadata and SD-block handshake: an unmounted request fails immediately, metadata is latched, the request reaches hps_io, the buffer streams through, sd_rd clears on acknowledge, completion pulses with status, and a short block is rejected; words hps_io streams for ANOTHER slot's transfer while this request waits for its own acknowledge are ignored. And a remount empties the read-ahead window: after a third sequential read bursts 8 sectors into it, a window sector is replayed with no handshake and carries the image's words, and after the slot is remounted the same LBA goes back to hps_io and returns the new image's words.",
         [
             'src/pc9821/storage/pc9821_block_io.sv',
         ],
@@ -817,7 +874,7 @@ BENCHES = {
     ),
     'ata_linux_probe': (
         'TB_PC9821_ATA_LINUX_PROBE',
-        "The Linux/98 IDE driver's probe (pc98_ide.c, pc98ide_init + pc98ide_identify), which boots on the real Xe10, replayed port for port against the REAL pc9821_ata -> pc9821_block_share -> pc9821_block_io stack with the one disk image mounted at bank 1 (this core's single-disk position; pc98ide_init's own `outb(0, PC98IDE_BANK)` is replaced by the bank the disk is on, since the second disk that once sat at bank 0 was removed): the bank select, SRST through 0x74C, then for unit 0 the 0xE0 select, four alternate-status reads, STATUS neither 0x00 nor 0xFF, IDENTIFY with STATUS non-zero, DRQ and words 60/61 = the image's capacity; and for unit 1 the 0xF0 select, which must read STATUS = ALTSTATUS = 0x00 (ATA-3 r6 s.9.5.1, an absent device 1), so the driver gives the unit up - and an IDENTIFY written anyway must leave STATUS 0x00 with no DRQ and no IRQ (a command for the absent device is not executed), EXECUTE DEVICE DIAGNOSTIC written with device 1 selected is still executed by device 0 (IRQ, ERROR 0x01), and re-selecting 0xE0 must show the master's 0x50 and serve a READ SECTORS of the image's own data. FAIL-FIRST: on ffd1ae9d the absent slave answered 0x50 and IDENTIFY returned the master's page, which is the phantom hdb the owner saw in Linux on the MiSTer.",
+        "The Linux/98 IDE driver's probe (pc98_ide.c, pc98ide_init + pc98ide_identify), which boots on the real Xe10, replayed port for port against the REAL pc9821_ata -> pc9821_block_share -> pc9821_block_io stack with the one disk image mounted at bank 0 (the core's fixed position, bank 0's master, so pc98ide_init's own `outb(0, PC98IDE_BANK)` reaches it unchanged): the bank select, SRST through 0x74C, then for unit 0 the 0xE0 select, four alternate-status reads, STATUS neither 0x00 nor 0xFF, IDENTIFY with STATUS non-zero, DRQ and words 60/61 = the image's capacity; and for unit 1 the 0xF0 select, which must read STATUS = ALTSTATUS = 0x00 (ATA-3 r6 s.9.5.1, an absent device 1), so the driver gives the unit up - and an IDENTIFY written anyway must leave STATUS 0x00 with no DRQ and no IRQ (a command for the absent device is not executed), EXECUTE DEVICE DIAGNOSTIC written with device 1 selected is still executed by device 0 (IRQ, ERROR 0x01), and re-selecting 0xE0 must show the master's 0x50 and serve a READ SECTORS of the image's own data. FAIL-FIRST: on ffd1ae9d the absent slave answered 0x50 and IDENTIFY returned the master's page, which is the phantom hdb the owner saw in Linux on the MiSTer.",
         [
             'src/pc9821/storage/pc9821_ata.sv',
             'src/pc9821/storage/pc9821_block_share.sv',
@@ -826,7 +883,7 @@ BENCHES = {
     ),
     'atapi': (
         'TB_PC9821_ATAPI',
-        'The CD-ROM answers as bank 1\'s ATAPI MASTER with the REAL pc9821_ata\'s one disk on bank 0, every expected value taken from NP2kai (cbus/ideio.c, cbus/atapicmd.c), from the Xe10\'s own IDE ROM or from the image the host model serves, never from the RTL: the IDE ROM\'s probe of bank 1\'s master (BANK3@0x0A0A) passes step by step - the pre-reset presence test (STATUS 0x00, the 0xEB/0x14 signature marking the unit ATAPI, ERROR 0x01), IDENTIFY DEVICE ending ERR+ABRT, the ready poll with its SRST-and-retry, and a PACKET INQUIRY whose byte 0 is 5 - so the ROM records a CD-ROM; device 0 on bank 1 reads the signature 0x01/0x01/0x14/0xEB with STATUS 0x00 after DEVICE RESET (ERROR 0x01, an interrupt) and 0x51/ERROR 0x01 after an SRST pulse, device 1 on bank 1 is an absent slave (STATUS and ALTERNATE STATUS 0x00, a command for it not executed), and bank 0\'s master is the hard disk; IDENTIFY DEVICE aborts with the signature and IDENTIFY PACKET DEVICE returns word 0 = 0x8580 and the model "NEC CD-ROM DRIVE:98"; a PACKET command shows the CoD phase (0x644 = 0x01, DRQ, no interrupt), INQUIRY returns NP2kai\'s 36 bytes ("NEC     CD-ROM DRIVE:98 1.0 ", type 5, removable) in a data phase whose 0x644/0x648/0x64A say IO and the byte count, then completes with 0x50 and 0x644 = 0x03; TEST UNIT READY with no medium and the first one after a mount answer CHECK with NOT READY / 0x3A in REQUEST SENSE (0x28 once NEC mode is on via MODE SENSE page 0x0F), the next one GOOD; READ CAPACITY returns the sector count and 2048; READ(10) streams each 2048-byte sector of an ISO and of a PCD (from the raw sector\'s MODE1 user data) through the slot\'s block handshake with one interrupt and byte count 2048 per sector, and a read past the end answers ILLEGAL REQUEST / 0x21; READ TOC format 0 returns the descriptors (LBA, MSF and NEC BCD forms) of a one-track ISO and of a three-track PCD header, lead-out 0xAA; MODE SENSE page 0x2A returns NP2kai\'s page with medium type 0x03 for a data+audio disc; PLAY AUDIO MSF streams the audio sectors\' {R,L} samples into the CD-DA port and READ SUB-CHANNEL reports playing/paused/completed with the current position, which wanders by NP2kai\'s rand() & 7 frames while paused or completed; and PATACD.SYS\'s unit probe (bank 0/1, master/slave, IDENTIFY PACKET with the 0xEC fallback, word 0 bits 15:14 = 10, INQUIRY type 5, polled with nIEN, NOP after the packet command) finds the CD at bank 1\'s master, reads an all-zero identify page for the absent slave beside the disk, and finds nothing at the other three units; and the OSD\'s Eject CD-ROM (pc9821_mount_eject\'s size-0 event on slot 4, status[11] as the --cdrom top wires it) leaves no medium - TEST UNIT READY answers NOT READY / 0x3A every time and MODE SENSE reports medium type 0x70 - and a re-mount answers NOT READY / 0x28 once (NEC mode), then GOOD, and reads again; and a READ(10) whose block request waits while hps_io streams ANOTHER slot\'s words takes none of them.',
+        'The CD-ROM answers as bank 1\'s ATAPI MASTER with the REAL pc9821_ata\'s one disk on bank 0, every expected value taken from NP2kai (cbus/ideio.c, cbus/atapicmd.c), from the Xe10\'s own IDE ROM or from the image the host model serves, never from the RTL: the IDE ROM\'s probe of bank 1\'s master (BANK3@0x0A0A) passes step by step - the pre-reset presence test (STATUS 0x00, the 0xEB/0x14 signature marking the unit ATAPI, ERROR 0x01), IDENTIFY DEVICE ending ERR+ABRT, the ready poll with its SRST-and-retry, and a PACKET INQUIRY whose byte 0 is 5 - so the ROM records a CD-ROM; device 0 on bank 1 reads the signature 0x01/0x01/0x14/0xEB with STATUS 0x00 after DEVICE RESET (ERROR 0x01, an interrupt) and 0x51/ERROR 0x01 after an SRST pulse, device 1 on bank 1 is an absent slave (STATUS and ALTERNATE STATUS 0x00, a command for it not executed), and bank 0\'s master is the hard disk; IDENTIFY DEVICE aborts with the signature and IDENTIFY PACKET DEVICE returns word 0 = 0x8580 and the model "NEC CD-ROM DRIVE:98"; a PACKET command shows the CoD phase (0x644 = 0x01, DRQ, no interrupt), INQUIRY returns NP2kai\'s 36 bytes ("NEC     CD-ROM DRIVE:98 1.0 ", type 5, removable) in a data phase whose 0x644/0x648/0x64A say IO and the byte count, then completes with 0x50 and 0x644 = 0x03; TEST UNIT READY with no medium and the first one after a mount answer CHECK with NOT READY / 0x3A in REQUEST SENSE (0x28 once NEC mode is on via MODE SENSE page 0x0F), the next one GOOD; READ CAPACITY returns the sector count and 2048; READ(10) streams each 2048-byte sector of an ISO and of a PCD (from the raw sector\'s MODE1 user data) through the slot\'s block handshake with one interrupt and byte count 2048 per sector, and a read past the end answers ILLEGAL REQUEST / 0x21; READ TOC format 0 returns the descriptors (LBA, MSF and NEC BCD forms) of a one-track ISO and of a three-track PCD header, lead-out 0xAA; MODE SENSE page 0x2A returns NP2kai\'s page with medium type 0x03 for a data+audio disc; PLAY AUDIO MSF streams the audio sectors\' {R,L} samples into the CD-DA port and READ SUB-CHANNEL reports playing/paused/completed with the current position, which wanders by NP2kai\'s rand() & 7 frames while paused or completed; and PATACD.SYS\'s unit probe (bank 0/1, master/slave, IDENTIFY PACKET with the 0xEC fallback, word 0 bits 15:14 = 10, INQUIRY type 5, polled with nIEN, NOP after the packet command) finds the CD at bank 1\'s master, reads an all-zero identify page for the absent slave beside the disk, and finds nothing at the other three units; and the OSD\'s Eject CD-ROM (pc9821_mount_eject\'s size-0 event on slot 4, status[11] as the --cdrom top wires it) leaves no medium - TEST UNIT READY answers NOT READY / 0x3A every time and MODE SENSE reports medium type 0x70 - and a re-mount answers NOT READY / 0x28 once (NEC mode), then GOOD, and reads again; and a READ(10) whose block request waits while hps_io streams ANOTHER slot\'s words takes none of them; and a PLAY AUDIO MSF issued while the previous play\'s audio sector is still being fetched streams its own first sector whole and completes at its own end (NP2kai\'s synchronous playaudio: the superseded fetch\'s completion does not advance the new play); and with nIEN set a drive RELEASES INTRQ (ATA-3 Device Control: high impedance) so an unacknowledged CD request cannot hide the disk\'s next IRQ9 edge on the ORed line (MAME pc9801.cpp ideirq INPUT_MERGER_ANY_HIGH), while the request itself follows NP2kai\'s ideio.c - a completion under nIEN neither raises nor clears it and a status read under nIEN does not acknowledge it.',
         [
             'src/pc9821/storage/pc9821_ata.sv',
             'src/pc9821/storage/pc9821_atapi.sv',
@@ -918,6 +975,48 @@ BENCHES = {
             'tests/pc9821/gath_cone_merge.sv',
         ],
     ),
+    'pegc_storebuf_equiv': (
+        'TB_PC9821_PEGC_STOREBUF_EQUIV',
+        "The PEGC posted store buffer's area rewrite (per-entry per-lane merge writes with a one-hot match instead of a read-back merge, 25-bit entry addresses, age counters saturating at HOLD_CYCLES) is cycle-for-cycle identical to the pre-rewrite buffer (pc9821_pegc_storebuf_ref.sv, the module as of ac2538dc): over several hundred thousand cycles of random posted stores into a small pool of dwords and rows (so combines, adjacent pairs, same-row gathers, row changes, age-outs, a full buffer and drain-before-read all occur) with random backend accepts and response-queue back-pressure, in_ready, mem_valid, mem_addr/din/be/burstcount/write/gath and busy match on every cycle, and the payload slots the controller reads - din_hi of a two-dword pair and the carried entries 1..burstcount-1 of a gather - match whenever a request is presented.",
+        [
+            'src/pc9821/core/pc9821_pegc_storebuf.sv',
+            'tests/pc9821/pc9821_pegc_storebuf_ref.sv',
+        ],
+    ),
+    'pegc_equiv': (
+        'TB_PC9821_PEGC_EQUIV',
+        "The PEGC register file's area rewrite (mio2's 32 read-back bytes held in one block RAM behind per-dword dirty flops, with plane_mode and vram_en in their own flops) is cycle-for-cycle identical to the pre-rewrite module (pc9821_pegc_ref.sv, the module as of d8f166a6): over random dword-aligned reads, line reads and byte-enabled writes across the mio1 and mio2 windows and their neighbours, with random gaps between requests and random resets mid-run (so the lazy zero of a clean dword is exercised after dirty data), cpu_dout, cpu_line_dout, cpu_ready, both response pulses, bank_a, bank_b, plane_mode and vram_en match on every cycle.",
+        [
+            'src/pc9821/video/pc9821_pegc.sv',
+            'tests/pc9821/pc9821_pegc_ref.sv',
+        ],
+    ),
+    'crtc_geom_equiv': (
+        'TB_PC9821_CRTC_GEOM_EQUIV',
+        "The CRTC's registered raster geometry (V1-a: the clamped totals registered from the SYNC block as it arrives on the frame-boundary edge the copy of the block uses, and every derived compare operand - HACTIVE, the HSYNC/VSYNC bounds, the frame-end/walk-slot bounds - registered every clk_sys from them, one clk_sys behind, so every raster compare reads a register) is cycle-for-cycle identical to the pre-change module (pc9821_crtc_ref.sv, the module as of ad9ed84c): over tens of frames of random, default-perturbed and clamp-extreme SYNC blocks (every field at zero and at its maximum, cr past the line, lf of 0/1/1024, an all-zero blanking), with the block's last byte landing one cycle before, ON and one cycle after the frame-boundary edge, random command/MODE/CRTC/palette/text-RAM traffic, irregular pixel_ce, and machine resets mid-frame, right after a SYNC write and on the frame-boundary edge, every one of the module's 57 outputs (hs/vs/de, o_htotal/o_vtotal/o_vbp, the frame and snapshot strobes, the vsync IRQ and status bits, the text fetch and render ports, the palette ports, io_dout) matches on every clk_sys cycle.",
+        [
+            'src/pc9821/video/pc9821_crtc.sv',
+            'tests/pc9821/pc9821_crtc_ref.sv',
+            'src/pc9821/core/pc9821_text_mem.sv',
+            'src/pc9821/common/pc9821_dpram.sv',
+        ],
+    ),
+    'gdc2_equiv': (
+        'TB_PC9821_GDC2_EQUIV',
+        "The graphics GDC's area rewrite (the draw engine's unit count held as leng-1 in 16 bits, the cursor advance summed in one adder) is cycle-for-cycle identical to the pre-rewrite module (pc9821_gdc2_ref.sv, the module as of 3b134fe4): over several hundred thousand clk_sys cycles of random well-formed and cut-short command streams on the 0xA0/0xA2 ports (SCROLL/TEXTW, SYNC, CSRW, CSRFORM, VECTW in all eight directions, MASK, every WRITE width and ROP, START/STOP, CSRR/LPEN read-back) against a randomly-stalling GVRAM visit port, with a raster that wraps and snapshots, and one 65,536-unit draw, every output (io_dout, the scanout address and enables, the draw engine's visit port) matches on every cycle.",
+        [
+            'src/pc9821/video/pc9821_gdc2.sv',
+            'tests/pc9821/pc9821_gdc2_ref.sv',
+        ],
+    ),
+    'gvram_arb_equiv': (
+        'TB_PC9821_GVRAM_ARB_EQUIV',
+        "The GVRAM arbiter's area rewrite (the 128-bit line-read datum collected by shifting each column's byte in instead of by an indexed byte write) is cycle-for-cycle identical to the pre-rewrite module (pc9821_gvram_arb_ref.sv, the module as of 3b134fe4) on the plain CPU path: over several hundred thousand cycles of random single reads, byte-enable walks, stores and 16-column cache-line reads on random planes, pages and offsets against a synchronous GVRAM model, every arbiter output (cpu_ready, cpu_resp_valid, cpu_line_resp_valid, cpu_dout, the GVRAM port, the client dones and the telemetry strobes) matches on every cycle, and cpu_line_dout matches in every cycle its strobe is high, which is the only time anything reads it.",
+        [
+            'src/pc9821/core/pc9821_gvram_arb.sv',
+            'tests/pc9821/pc9821_gvram_arb_ref.sv',
+        ],
+    ),
     'gamma': (
         'TB_PC9821_GAMMA',
         'The three gamma-correction curves are one 256x8 M10K per channel behind the MiSTer '
@@ -950,6 +1049,13 @@ BENCHES = {
         "oracle's own registered read equals the pattern written to each index.",
         [
             'sys/shadowmask.sv',
+        ],
+    ),
+    'dmac_autoinit': (
+        'TB_PC9821_DMAC_AUTOINIT',
+        "The uPD71071's autoinitialize reload returns each channel to the values the guest PROGRAMMED, whatever the transfer has walked since: for each of the four channels a block is programmed with a distinct address (low byte, high byte and the 0x21-0x27 bank byte, whose port-to-channel map is NP2kai's ((port >> 1) + 1) & 3) and a count, the block is run through its terminal count and the next block starts again at exactly the programmed 24-bit address with the programmed length (checked on the bus addresses the engine presents, not on a register readback), a channel's reload is independent of the other three channels' programming, and re-programming only ONE byte lane of a channel afterwards (the address low byte, the count low byte, the bank byte) changes only that lane of its reload - the other lanes keep what was programmed before.",
+        [
+            'src/pc9821/core/pc9821_dmac.sv',
         ],
     ),
     'dmac_engine': (
@@ -1287,12 +1393,52 @@ BENCHES = {
             'src/pc9821/common/pc9821_dpram.sv',
         ],
     ),
+    'egc_resp_owner': (
+        'TB_PC9821_EGC_RESP_OWNER',
+        "TB_PC9821_EGC_RESP_OWNER: a GUARD for pc9821_gvram_arb's strobe-routed CPU response (the TB timing cut): an EGC-owned CPU word read, with the CPU holding its request through the ready edge as z486 does (src/z486/bus_unit.sv clears ext_valid_r at the accept edge) and a GDC draw visit already waiting so that pc9821_gvram_share grants it at the earliest legal cycle, is answered on the SAME cycle and with the SAME datum as the same read with no visit behind it - for a plain-store, a GRCG-routed-store and a plain-read visit - and every visit completes; in the EGC strobe's cycle the share still presents the CPU, which is the handshake fact that makes the cut cycle-identical to the old owner mux. Not fail-first: the old mux answers these reads too.",
+        [
+            'src/pc9821/common/pc9821_dpram.sv',
+            'src/pc9821/core/pc9821_gvram_arb.sv',
+            'src/pc9821/core/pc9821_gvram_share.sv',
+            'src/pc9821/core/pc9821_gvram_scan.sv',
+            'tests/pc9821/pc9821_gvram_dut.sv',
+            'src/pc9821/core/pc9821_gvram_mem.sv',
+            'src/pc9821/video/pc9821_grcg.sv',
+            'src/pc9821/core/pc9821_egc.sv',
+        ],
+    ),
     'egc_ring_reset': (
         'TB_PC9821_EGC_RING_RESET',
         "The EGC's M10K ring is scrubbed on reset, so its contents after a reset are the ones a fresh engine has (zero, exactly the register form and the NP2kai reference's rst() give) and not whatever the run before the reset left. A descending byte-unit produce serves the byte its OWN feed just wrote (NP2kai egcsftb_dnn_sub reads outptr[0] before the decrement, mem/memegc.c:174-178), and the bench pins that against a POISONED ring: it fills all 64 ring entries with 0xA5 through ascending word feeds, patches the next read's source byte to 0x5A, arms a descending byte unit and asserts the read serves 0x5A (the fresh feed) and never the 0xA5 survivor - the fail-first regression for review egc.md F2's within-unit produce-slot fix, where the old slot read one entry BELOW the write pointer and served the survivor. The same shape after a MID-RUN reset serves a third fresh byte 0x5C: no pre-reset ring content may leak from any slot; the scrub keeps the never-fed entries at the register form zero for parity with the reference's rst().",
         [
             'src/pc9821/core/pc9821_egc.sv',
             'src/pc9821/common/pc9821_dpram.sv',
+        ],
+    ),
+    'egc_serial_equiv': (
+        'TB_PC9821_EGC_SERIAL_EQUIV',
+        'TB_PC9821_EGC_SERIAL_EQUIV: the PLANE-SERIAL pc9821_egc is indistinguishable from the PLANE-PARALLEL engine it replaced (kept verbatim as the bench-only tests/pc9821/pc9821_egc_par.sv) - two complete GVRAM stacks (pc9821_gvram_share + pc9821_gvram_arb + pc9821_gvram_mem + the engine), seeded with the same random GVRAM, run the same randomized register programs and CPU access streams (every OPE bit pattern, random ROPs, plane enables, masks, FG/BG, both shift directions with random source/destination bit addresses and lengths, every byte-enable set, both pages, 0-5 idle cycles between accesses so posted writes and back-to-back reads collide) plus forced COMPAREREAD and shifted-read/shifted-copy phases, and must agree on EVERY CPU read datum, on the ordered stream of GVRAM port-A writes (address, enables, enabled bytes) and on the final GVRAM; while the serial stack runs, its scanout port B samples a GVRAM word every cycle and every sample must be a WHOLE word some write of the reference committed (never some planes old and some new); and, with expected values from independent arithmetic, a CPU read issued the cycle after a posted WS_CPU write is accepted returns the written word on each of the four planes and in the compare mask. FAIL-FIRST: a planted serial-path bug (stage B dropping plane 3 from the compare AND) fails the read-datum comparison.',
+        [
+            'src/pc9821/common/pc9821_dpram.sv',
+            'src/pc9821/core/pc9821_gvram_arb.sv',
+            'src/pc9821/core/pc9821_gvram_share.sv',
+            'src/pc9821/core/pc9821_gvram_mem.sv',
+            'src/pc9821/core/pc9821_egc.sv',
+            'tests/pc9821/pc9821_egc_par.sv',
+        ],
+    ),
+    'egc_xe10_pace': (
+        'TB_PC9821_EGC_XE10_PACE',
+        "TB_PC9821_EGC_XE10_PACE: the EGC through the REAL pc9821_gvram_arb, pc9821_gvram_share and pc9821_gvram_mem keeps every egcplane shape at or under the Xe10's own NET cost per access (docs/probes/EGCP.TXT, the egcplane probe on the real Xe10 decoded by tools/hwprobe/egcplane/egcplane_decode.py: EGC1400 and EGC0CF0 write rows 0.6-0.8 ns net, so the CPU never waits on an EGC write; EGC3100SP and EGC28F0SP same-page read+write rows 676.9-677.5 ns net) at 80 MHz (base) AND at 50 MHz (the slowest clk_sys the build system offers a base-like build, `--custom --clk-sys-mhz 50`), driven by a CPU model that issues the probe's own loop (body_egc: one word read and/or one word write per row, 80-byte row stride, page 0) with the core's own measured loop-shell time between accesses, and the per-row time is IDENTICAL for 1, 2, 3 and 4 planes enabled through 0x4A0 (FFFE/FFFC/FFF8/FFF0) on every shape, as it is on the machine. It reports each shape's margin against the machine. FAIL-FIRST: an engine that spends 20 extra clk_sys per unit fails the write rows (the CPU starts waiting on posted writes).",
+        [
+            'src/pc9821/common/pc9821_dpram.sv',
+            'src/pc9821/core/pc9821_gvram_arb.sv',
+            'src/pc9821/core/pc9821_gvram_share.sv',
+            'src/pc9821/core/pc9821_gvram_scan.sv',
+            'tests/pc9821/pc9821_gvram_dut.sv',
+            'src/pc9821/core/pc9821_gvram_mem.sv',
+            'src/pc9821/video/pc9821_grcg.sv',
+            'src/pc9821/core/pc9821_egc.sv',
         ],
     ),
     'egc_post_walk': (
@@ -1395,7 +1541,7 @@ BENCHES = {
     ),
     'gdc2_write': (
         'TB_PC9821_GDC2_WRITE',
-        "The graphics GDC's WRITE command executes against the ITF's own GVRAM pattern test: the exact BANK4@0xFA70F stream (GRCG TDW tiles 0x33/0x55, VECTW then CSRW 00 40 08, WRITE FF FF) reads back the tile words 0x3333 at 0xA8000 and 0x5555 at 0xB0000 exactly as the Xe10 does - the test that SETS BIOS work-area 0000:054D bit 6, the FLAMEZAP boot check - and with the GRCG never armed those tile words are ABSENT, so the bit becomes correct because the test genuinely passes and never because it is forced. The write's data path is the machine's own WDAT_WORD/GDCWG rows: the uPD7220's internal bit order lands per-byte bit-reversed in CPU VRAM (GDCCURS's MASK_0001 reads expected-cpu=0080), CURS.WG - bit 3 of CSRW's third byte - selects the WDAT word directly or the 7220's bit-0 replication of it, and the four ROPs paint the mask bits with the pattern exactly as the STRICT capture rows say (W_0_FFFF_0000_0001 lands FF7F, W_2_FFFF_0001_A55A lands 5AA5, which refutes NP2kai gdcsub_write's clear formula; the capture wins) - fifteen capture vectors replayed byte for byte. Multi-unit draws walk ONE DOT along the VECTW direction per unit and advance the cursor, exactly WDAT_STEP's observed pixels (dir 0 paints word 0x0800 and leaves the cursor at 0x0828 = +40 words, dir 1 paints (0x0800,D7) and (0x0828,D8), dir 2 paints D7 then D8 inside word 0x0800, dir 3 paints (0x0800,D7) and (0x07D8,D8)), with the cursor write-back readable over CSRR's first two bytes (the raw_curd EAD the machine reports); a second draw queued while the first walks lands its own capture outcome and nothing is dropped. The GRCG-RMW and EGC routes carry each unit as ONE store visit on the GVRAM port share - the route latched per draw exactly as NP2kai's gdcpset_prepare latches its pset functions (io/gdc_pset.c:117-137) - and are checked DIFFERENTIALLY against the CPU path's own store of the same word, so no expected pixel is ever derived from this repo's RTL. It does not cover the FIFO/drawing-busy timing (item 63's FIFO_TURN/STATE rows), the CURD read-back's five-byte shape, or the FIGD/line/rect/arc command space.",
+        "The graphics GDC's WRITE command executes against the ITF's own GVRAM pattern test: the exact BANK4@0xFA70F stream (GRCG TDW tiles 0x33/0x55, VECTW then CSRW 00 40 08, WRITE FF FF) reads back the tile words 0x3333 at 0xA8000 and 0x5555 at 0xB0000 exactly as the Xe10 does - the test that SETS BIOS work-area 0000:054D bit 6, the FLAMEZAP boot check - and with the GRCG never armed those tile words are ABSENT, so the bit becomes correct because the test genuinely passes and never because it is forced. The write's data path is the machine's own WDAT_WORD/GDCWG rows: the uPD7220's internal bit order lands per-byte bit-reversed in CPU VRAM (GDCCURS's MASK_0001 reads expected-cpu=0080), CURS.WG - bit 3 of CSRW's third byte - selects the WDAT word directly or the 7220's bit-0 replication of it, and the four ROPs paint the mask bits with the pattern exactly as the STRICT capture rows say (W_0_FFFF_0000_0001 lands FF7F, W_2_FFFF_0001_A55A lands 5AA5, which refutes NP2kai gdcsub_write's clear formula; the capture wins) - fifteen capture vectors replayed byte for byte. Multi-unit draws walk ONE DOT along the VECTW direction per unit and advance the cursor, exactly WDAT_STEP's observed pixels (dir 0 paints word 0x0800 and leaves the cursor at 0x0828 = +40 words, dir 1 paints (0x0800,D7) and (0x0828,D8), dir 2 paints D7 then D8 inside word 0x0800, dir 3 paints (0x0800,D7) and (0x07D8,D8); directions 4-7 and the three-unit draws replay the same capture's STEP_DC01_D4..D7 and STEP_DC02_D1..D7 rows), with the cursor write-back readable over CSRR's first two bytes (the raw_curd EAD the machine reports); a second draw queued while the first walks lands its own capture outcome and nothing is dropped. The GRCG-RMW and EGC routes carry each unit as ONE store visit on the GVRAM port share - the route latched per draw exactly as NP2kai's gdcpset_prepare latches its pset functions (io/gdc_pset.c:117-137) - and are checked DIFFERENTIALLY against the CPU path's own store of the same word, so no expected pixel is ever derived from this repo's RTL. It does not cover the FIFO/drawing-busy timing (the conformance capture's FIFO_TURN/STATE rows), the CURD read-back's five-byte shape, or the FIGD/line/rect/arc command space.",
         [
             'src/pc9821/common/pc9821_dpram.sv',
             'src/pc9821/core/pc9821_gvram_arb.sv',
@@ -2463,7 +2609,7 @@ BENCHES = {
     ),
     'bios_select': (
         'TB_PC9821_BIOS_SELECT',
-        "The Machine field applies ONLY at machine reset / reload: after a reset latches the Xe10 set, port 0xF0 reads the measured 0xA9, and a mid-run OSD flip to the Xe set (or any reserved set) leaves the strap at 0xA9 on every later read and across the warm CPU-reset class (out 0xF0, 0x534, a z486 shutdown); only the next machine reset / reload re-samples the field and moves the strap to the Xe byte 0x89, and the reset after that restores 0xA9 with the OSD back on the config-less default. The strap must be stable for the whole boot because the two ITFs read its bit 5 differently (the Xe10 masks bits 5 and 6 together at BANK4@0xF8207, the Xe tests bit 5 alone at BANK4@0xF81DF). Fail-first: on the old live-apply wiring the mid-run flip reads 0x89 immediately and this bench fails at step (b). And the OSD GDC Clock field (port 0x31 bit 7 - the machine's own GDC 2.5/5 MHz strap, 0xF3 with bit 7 set at 2.5 MHz, 0x73 at 5 MHz, the BIOS sampling it once at POST at BIOS.ROM@0xFD93C and deriving the games' work-area 0x54D bit 2 from it) follows the identical contract on its own byte: entry 0 answers the measured 0xF3, a mid-run flip and the warm CPU-reset class move it not at all, and only the next machine reset applies 0x73 - each step FAIL-FIRST against a live-apply wiring, which answers 0x73 immediately in step (d2). And the ITF's own software-DIP-switch verify is transcribed whole (BANK4@0xFC6BA-0xFC726: the direct odd-parity pass over bank A's 0x84/0x86-0x88/0x89^0x8A/0x8B-0x8F, the port-0x31 MERGE for 0x851E, and bank B's ten direct bytes) and passes at BOTH straps, because index 1's bit 4 is the DIP-2 register's parity bit and is PRESENTED on the read from the reset-qualified strap latch while the store keeps the measured 0x02 byte; FAIL-FIRST, because with bit 4 stored the 5 MHz merge (0x73 & 0xEF) | (0x02 & 0x10) = 0x63 is EVEN, the ITF's repair path cannot own the bit, and its SET THE SOFTWARE DIP-SWITCH printer (BANK4@0xFC8DE-0xFC903) writes 0xF0 = 0x00 - a reboot loop on this core. Step (e3) pins the SHAPE of that fix at both straps: after a machine reset - the store's restore walk, now the ONLY restore, the OSD `Reset DIPs` action this step used to name having been removed at the owner's instruction - the store holds the MEASURED 0x02 - the machine's own bank A image, docs/probes/PORTS.TXT:258 - and it is the PORT that presents bit 4, so 0x851E reads 0x12 with 5 MHz selected and 0x02 at the machine's own 2.5 MHz, which is the recovery route the owner reported as no longer working. And port 0xF0 bit 5 is IDE unit 0's drive-present line: the ITF builds its IDE drive bitmap and the 0x457 byte from bits 5/6 (BANK4@0x19DF-0x19F2, BANK4@0x1B6C-0x1B8F), so with a drive on bank 0 (the second hard disk) the measured 0xA9 reads 0x89 and returns to 0xA9 without it (step f).",
+        "The Machine field applies ONLY at machine reset / reload: after a reset latches the Xe10 set, port 0xF0 reads the measured 0xA9, and a mid-run OSD flip to the Xe set (or any reserved set) leaves the strap at 0xA9 on every later read and across the warm CPU-reset class (out 0xF0, 0x534, a z486 shutdown); only the next machine reset / reload re-samples the field and moves the strap to the Xe byte 0x89, and the reset after that restores 0xA9 with the OSD back on the config-less default. The strap must be stable for the whole boot because the two ITFs read its bit 5 differently (the Xe10 masks bits 5 and 6 together at BANK4@0xF8207, the Xe tests bit 5 alone at BANK4@0xF81DF). Fail-first: on the old live-apply wiring the mid-run flip reads 0x89 immediately and this bench fails at step (b). And the OSD GDC Clock field (port 0x31 bit 7 - the machine's own GDC 2.5/5 MHz strap, 0xF3 with bit 7 set at 2.5 MHz, 0x73 at 5 MHz, the BIOS sampling it once at POST at BIOS.ROM@0xFD93C and deriving the games' work-area 0x54D bit 2 from it) follows the identical contract on its own byte: entry 0 answers the measured 0xF3, a mid-run flip and the warm CPU-reset class move it not at all, and only the next machine reset applies 0x73 - each step FAIL-FIRST against a live-apply wiring, which answers 0x73 immediately in step (d2). And the ITF's own software-DIP-switch verify is transcribed whole (BANK4@0xFC6BA-0xFC726: the direct odd-parity pass over bank A's 0x84/0x86-0x88/0x89^0x8A/0x8B-0x8F, the port-0x31 MERGE for 0x851E, and bank B's ten direct bytes) and passes at BOTH straps, because index 1's bit 4 is the DIP-2 register's parity bit and is PRESENTED on the read from the reset-qualified strap latch while the store keeps the measured 0x02 byte; FAIL-FIRST, because with bit 4 stored the 5 MHz merge (0x73 & 0xEF) | (0x02 & 0x10) = 0x63 is EVEN, the ITF's repair path cannot own the bit, and its SET THE SOFTWARE DIP-SWITCH printer (BANK4@0xFC8DE-0xFC903) writes 0xF0 = 0x00 - a reboot loop on this core. Step (e3) pins the SHAPE of that fix at both straps: after a machine reset - the store's restore walk, now the ONLY restore, the OSD `Reset DIPs` action this step used to name having been removed at the owner's instruction - the store holds the MEASURED 0x02 - the machine's own bank A image, docs/probes/PORTS.TXT:258 - and it is the PORT that presents bit 4, so 0x851E reads 0x12 with 5 MHz selected and 0x02 at the machine's own 2.5 MHz, which is the recovery route the owner reported as no longer working. And port 0xF0 bit 5 is IDE unit 0's drive-present line: the ITF builds its IDE drive bitmap and the 0x457 byte from bits 5/6 (BANK4@0x19DF-0x19F2, BANK4@0x1B6C-0x1B8F), so with a drive on bank 0 (the hard disk, bank 0's master in the core's fixed layout) the measured 0xA9 reads 0x89 and returns to 0xA9 without it (step f).",
         [
             'src/pc9821/storage/pc9821_fdc.sv',
             'src/pc9821/input/pc9821_mouse.sv',
@@ -2515,7 +2661,7 @@ BENCHES = {
     ),
     'pcm86_bufrst': (
         'TB_PC9821_PCM86_BUFRST',
-        "The 86-PCM's 0xA468 bit-3 buffer reset is AUTHORITATIVE while the buffer is RUNNING: for every one of the sample period's phases, a reset issued while the drain engine is mid-frame still leaves the byte count at zero rather than at 0xFFFE, because the engine's own rdptr/count update sits later in the same always block and otherwise subtracts a frame from a count the reset has just zeroed. And the full+write+D_DONE collision (datapaths.md F7 / buffers.md F6): a guest byte written on the EXACT cycle a draining frame completes while the ring is FULL survives as the newest byte and keeps count == wrptr - rdptr (mod 0x8000) - the write arm's drop-oldest slip and the frame advance BOTH owe the read pointer there - swept over nbyte 1, 2 and 4 and compared byte-for-byte against a golden drop-oldest/newest-survives stream.",
+        "The 86-PCM's 0xA468 bit-3 buffer reset is AUTHORITATIVE while the buffer is RUNNING: for every one of the sample period's phases, a reset issued while the drain engine is mid-frame still leaves the byte count at zero rather than at 0xFFFE, because the engine's own rdptr/count update sits later in the same always block and otherwise subtracts a frame from a count the reset has just zeroed. And the full+write+D_DONE collision (datapaths.md F7 / buffers.md F6): a guest byte written on the EXACT cycle a draining frame completes while the ring is FULL survives as the newest byte and keeps count == wrptr - rdptr (mod 0x8000) - in NP2kai's serialized order (the drain runs at sound_sync before the port write, cbus/pcm86io.c pcm86_oa46c), so the frame leaves first, the ring is no longer full and no slip is owed: count = 0x8000 - nbyte + 1 - swept over nbyte 1, 2 and 4 and compared byte-for-byte against that golden stream.",
         [
             'src/pcm86/pc9821_pcm86.sv',
             'src/pcm86/pc9821_pcm86_buf.sv',
@@ -2540,7 +2686,7 @@ BENCHES = {
     ),
     'pcm86': (
         'TB_PC9821_PCM86',
-        "The PC-9801-86's 86-PCM block through the real I/O bus: 0xA460 answering the board sound ID 0x40 with the extension latch in bit 0 and the ID nibble read-only, 0xA468 and 0xA46A reading back what was written with 0xA46A multiplexed between the IRQ threshold and the DAC control and the reset values 0x00 and 0x32, 0xA466 full/empty/phase status whose full bit only a real 32 KiB buffer can set, the drain stopping while playback is disabled and then consuming one sample frame per sample period at the selected rate, the 16-bit big-endian and 8-bit left-justified sample decode as an exact audio level, and the buffer-low interrupt at 0xA468 bit 4 as a LEVEL that is gated by the IRQ enable (bit 5), that re-asserts on a bit-4-clear write while the buffer is still below threshold, and that clears only when the level is no longer true. It does NOT cover DMA, which neither reference models, and it does not assert the analogue output.",
+        "The PC-9801-86's 86-PCM block through the real I/O bus: 0xA460 answering the board sound ID 0x40 with the extension latch in bit 0 and the ID nibble read-only, 0xA468 and 0xA46A reading back what was written with 0xA46A multiplexed between the IRQ threshold and the DAC control and the reset values 0x00 and 0x32, 0xA466 full/empty/phase status whose full bit only a real 32 KiB buffer can set, the drain stopping while playback is disabled and then consuming one sample frame per sample period at the selected rate, the 16-bit big-endian (mono and the reset format's stereo, left word first) and 8-bit left-justified sample decode as an exact audio level, and the buffer-low interrupt at 0xA468 bit 4 as a LEVEL that is gated by the IRQ enable (bit 5), that re-asserts on a bit-4-clear write while the buffer is still below threshold, and that clears only when the level is no longer true. It does NOT cover DMA, which neither reference models, and it does not assert the analogue output.",
         [
             'src/pc9821/common/pc9821_dpram.sv',
             'src/pc9821/storage/pc9821_fdc.sv',
@@ -2554,10 +2700,26 @@ BENCHES = {
     ),
     'pcm86_cdc': (
         'TB_PC9821_PCM86_CDC',
-        "With the -86 card's sample bus crossing from clk_sys (50 MHz) to CLK_AUDIO (24.576 MHz) through the held cdc_vector_handshake_continuous that z486_mister.sv now instantiates, exactly as the CD path already does, every 86-PCM sample pair driven on the bus arrives at the destination intact and in order - including the full-scale 0x7FFFF and 0x80000 OF THE 20-BIT BUS and a walk of every bit - and the destination never holds a value whose L and R halves differ, which is the old/new bit-mix a per-bit or unsynchronised crossing produces; the crossing's latency is bounded and printed.",
+        "With the -86 card's sample bus crossing from clk_sys (50 MHz) to CLK_AUDIO (24.576 MHz) through the held cdc_vector_handshake_continuous that z486_mister.sv now instantiates, exactly as the CD path already does, every 86-PCM sample pair driven on the bus arrives at the destination intact and in order - including the full-scale 0x7FFFF and 0x80000 OF THE 20-BIT BUS and a walk of every bit - and the destination never holds a value whose L and R halves differ, which is the old/new bit-mix a per-bit or unsynchronised crossing produces; the crossing's latency is bounded and printed. The L/R-halves check can only see a LOGIC-level mix (a half registered on another strobe); a 2-state zero-delay simulation cannot produce a metastable capture, so the unsynchronised-crossing case it names is argued from the structure, not observed.",
         [
             'src/common/cdc_vector_handshake_continuous.sv',
             'src/common/synchronizer.sv',
+        ],
+    ),
+    'pcm86_irq_rearm': (
+        'TB_PC9821_PCM86_IRQ_REARM',
+        "TB_PC9821_PCM86_IRQ_REARM: an 86-PCM buffer-low interrupt that is acknowledged (0xA468 written with bit 4 clear) while the buffer is STILL at or below the 0xA46A threshold - so the flag re-latches, as NP2kai's pcm86_oa468 forces it - and then refilled, raises a NEW interrupt edge when the buffer drains back to the threshold: every armed threshold event is a fresh request, as NP2kai delivers it (sound/pcm86c.c pcm86_cb: `pcm86->irqflag = 1; ... pic_setirq(pcm86->irq);` once per write-armed reqirq), instead of the line staying high from the re-latch so the edge-triggered PIC never sees the next one and playback stalls; a first event from a low line still gives exactly one edge.",
+        [
+            'src/pcm86/pc9821_pcm86.sv',
+            'src/pcm86/pc9821_pcm86_buf.sv',
+        ],
+    ),
+    'pcm86_overflow_align': (
+        'TB_PC9821_PCM86_OVERFLOW_ALIGN',
+        "TB_PC9821_PCM86_OVERFLOW_ALIGN: overfilling the 86-PCM's 32 KiB buffer by a byte count that is not a whole frame keeps the drain FRAME-ALIGNED: the read pointer slips in NP2kai's 4-byte groups (cbus/pcm86io.c pcm86_oa46c: `g_pcm86.realbuf -= 4; g_pcm86.readpos = (g_pcm86.readpos + 4) & PCM86_BUFMSK;`), a multiple of every format's frame size, so after a 16-bit-stereo buffer is overfilled by 2 bytes every played frame still takes its left sample from a frame's first two bytes and its right sample from its last two - never the 1-byte slip that swaps channels and splits samples for the rest of the session.",
+        [
+            'src/pcm86/pc9821_pcm86.sv',
+            'src/pcm86/pc9821_pcm86_buf.sv',
         ],
     ),
     'pcm86_irqmask': (
@@ -2584,7 +2746,7 @@ BENCHES = {
     ),
     'pic_ref': (
         'TB_PC9821_PIC_REF',
-        "Drives the real pc9821_pic with every 8259 register the machine can reach - ICW1-4, OCW1/OCW2/OCW3 - and checks each result against NP2kai io/pic.c, one named case per register semantics. OCW3 special mask mode (ESMM/SMM) and OCW2 priority rotation (R/SL/EOI) are implemented and asserted, so those cases pass. ICW1 keeping the in-service register is asserted against NP2kai's own contract (io/pic.c:326-337 leaves the isr clear disabled inside #if 0; FAIL-FIRST against the old clear, review-interrupts F1). The four cases where NP2kai's model itself diverges from the datasheet (its RIS latches without RR, its ICW3 count ignores SNGL, its ICW4 ignores AEOI, its reset presets the IMR) print a WAIVED line and are not asserted: the RTL follows the datasheet and qemu. AEOI is implemented in full against that datasheet/QEMU/ao486 answer: no ISR bit is set in AEOI mode and an OCW2 with R=1, SL=0, EOI=0 arms rotate-on-auto-EOI, so each acknowledge advances the priority pointer and the second of two pending levels is serviced (asserted). The in-service block is asserted to follow that rotation base too: with pry=3 an IRQ4 already in service blocks IRQ0 and permits IRQ3.",
+        "Drives the real pc9821_pic with every 8259 register the machine can reach - ICW1-4, OCW1/OCW2/OCW3 - and checks each result against NP2kai io/pic.c, one named case per register semantics. OCW3 special mask mode (ESMM/SMM) and OCW2 priority rotation (R/SL/EOI) are implemented and asserted, so those cases pass. ICW1 keeping the in-service register is asserted against NP2kai's own contract (io/pic.c:326-337 leaves the isr clear disabled inside #if 0; FAIL-FIRST against the old clear, review-interrupts F1). The four cases where NP2kai's model itself diverges from the datasheet (its RIS latches without RR, its ICW3 count ignores SNGL, its ICW4 ignores AEOI, its reset presets the IMR) print a WAIVED line instead of asserting NP2kai: three of them assert the RTL against QEMU hw/intc/i8259.c instead (RIS gated on RR, SNGL ending the sequence after ICW2, AEOI setting no ISR bit), and the reset IMR (RTL 0xFF; QEMU and MAME 0x00) is not asserted because the ITF programs the IMR before enabling interrupts. The vector takes ICW2 bits 7:3 only (pic.c `(icw[1] & 0xf8) | num`), asserted both tracked and at the acknowledge edge. AEOI is implemented in full against that datasheet/QEMU/ao486 answer: no ISR bit is set in AEOI mode and an OCW2 with R=1, SL=0, EOI=0 arms rotate-on-auto-EOI, so each acknowledge advances the priority pointer and the second of two pending levels is serviced (asserted). The in-service block is asserted to follow that rotation base too: with pry=3 an IRQ4 already in service blocks IRQ0 and permits IRQ3.",
         [
             'src/pc9821/interrupts/pc9821_pic.sv',
         ],
@@ -2592,6 +2754,13 @@ BENCHES = {
     'pit': (
         'TB_PC9821_PIT',
         "The PIT's tick rate and zero-divisor behaviour, instantiated at the clock frequency the system ships (50 MHz) with the divider derived from the verified 2.4576 MHz input strap, so the counts here are the ones the hardware produces. The read side is pinned against the real 8253/8254 counting element too (review timers.md F1/F2/F3): a mode-3 read spans 0..N - the full divisor, down by 2 per source clock, QEMU hw/timer/i8254-pc98.c:100-103 `counter = count - ((2*d) % count)` - never the 0..N/2 half-count model; read-back STATUS bit 6 is the LIVE NULL COUNT (set by a control word, cleared by the count byte that COMPLETES the load, 8254 / NP2kai io/pit.c:244-254,307); and mode 0 keeps counting past terminal count, wrapping to 0xFFFF, instead of freezing at 0.",
+        [
+            'src/pc9821/timers/pc9821_pit.sv',
+        ],
+    ),
+    'pit_oneshot': (
+        'TB_PC9821_PIT_ONESHOT',
+        "TB_PC9821_PIT_ONESHOT: PIT modes 1, 4 and 5 are ONE-SHOTS that raise exactly one OUT rising edge (one IRQ0) per count write and never oscillate: after the control word OUT is HIGH in modes 1/4/5 (only mode 0 starts low), a mode-4/5 count makes one OUT low strobe of one PIT clock about N clocks after the write and then OUT stays high while the counter wraps, and a mode-1 count (software-triggered here, as NP2kai counts it) takes OUT low and back high once at terminal count; the read-back status byte returns the control word's bits 5:0 as written (mode 6 stays 6, the BCD bit is kept), not a normalised mode.",
         [
             'src/pc9821/timers/pc9821_pit.sv',
         ],
@@ -2863,6 +3032,13 @@ BENCHES = {
             'src/pc9821/core/pc9821_perf_msg.sv',
         ],
     ),
+    'mouse_sign': (
+        'TB_PC9821_MOUSE_SIGN',
+        "TB_PC9821_MOUSE_SIGN: the bus mouse decodes hps_io's PS/2 packet deltas as the 9-bit two's-complement values Main_MiSTer sends - the X sign in byte 0 bit 4 and the Y sign in bit 5, with the delta byte the low 8 bits, so magnitudes 128-255 arrive in both directions - and a fast move of +200 / -200 counts as +200 / -200 (latched and clamped to 0x7F / 0x80), never as the -56 / +56 an 8-bit sign extension of the delta byte gives, on both axes including Y's PS/2-up to PC-98-down negation.",
+        [
+            'src/pc9821/input/pc9821_mouse.sv',
+        ],
+    ),
     'mouse': (
         'TB_PC9821_MOUSE',
         "The PC-98 BUS MOUSE (pc9821_mouse behind pc9821_iobus's 0x7FD9-0x7FDF/0xBFDB decode) against NP2kai io/mouseif.c: the power-up read-back composes to 0xEF (buttons 0xE0 with the latch_x = -1 reset nibble, mouseif_reset:325-326), a 0x7FDF MODE WRITE resets the Port C latch to 0 (mouseif_o7fdf's setportc(0), :197-216 - review-iobus row 8's divergence, unambiguous in NP2kai and identical in qemu-pc98's hw/input/pc98-mouse.c), PS/2 packets accumulate into the X/Y delta counters with Y NEGATED (PS/2 up-positive vs the PC-98 down-positive counter, sdl/mousemng.c:229-234) and portc bits 7/6/5 select latch-vs-live, axis and nibble (i7fd9:239-271), the Port C low nibble is 0x08 | three strap bits DERIVED from the live software-DIP store rather than a constant (mouseif.c:296-303 computes bit 2 from dipsw[2] bit 7 and bits 1:0 from ~dipsw[0] bits 5:4; over the measured power-up image 0x841E = 0x7C / 0x8E1E = 0x49 all three are 0, so the power-up 0x7FDD read is 0xF8 - the old hardcoded 0x03 strap answered 0xFB, a nibble no power-up bank yields), the buttons read as active-low L/M/R at bits 7/6/5 (mousemng.h + MAME's bit map; middle PRESSED is the one MAME-only behaviour and is NOTE'd, not silently claimed), the latch edge clamps to [-128,127] and arms the four-read overflow guard (setportc:142-163, i7fd9:253-266: +496 reads nibble F clamped for four reads and then nibble 0 wrapped - software ASSUMES the overflow), and IRQ13 pulses every (SYS_CLOCK_HZ/120) << timing clk with the 0xBFDB timing field (mouseint:131-140 + mouseif_obfdb:309-312; the 120 Hz base qemu and MAME agree on), silenced by INT# and re-armed by its falling edge (setportc:164-173). The R4 packet/latch coincidence merge is swept across the latch write with the same-cycle hit counted and asserted. FAIL-FIRST: the file connects no NEW port (pc9821_iobus by .*, ps2_mouse/mouse_irq joining the existing nets), so the same file builds against the pre-change pc9821_iobus.sv and every section fails there (0xE0 not 0xEF, no Port C reset, the strap nibble 0x0B where the store's bytes give 0x08, frozen deltas/buttons, no guard, mouse_irq never pulses).",
@@ -2971,6 +3147,138 @@ BENCHES = {
     'dbg_system': (
         'TB_PC9821_DBG_SYSTEM',
         "The debug-UART framework is wired into pc9821_system the way the build options say: with every DBG_* parameter at its default the debug arm (dbg_uart_we) never rises - the instruments do not exist - and with the display log, the CPU sampler and the snoop built the mux puts whole records on the arm under a randomly stalling accept: the display log's ALIVE record (0x1F) at power-up, CPU samples (0x20/0x21) at the sampler's period, and a display-port write the bench forces onto the device bus (OUT 0xA4 = 0x01) as a 0x16 record carrying that value, every record intact and in the table's length.",
+        [
+            'src/z486/z486_cache_map_pkg.sv',
+            'src/pc9821/storage/pc9821_ata.sv',
+            'src/pc9821/storage/pc9821_block_io.sv',
+            'src/pc9821/storage/pc9821_fdc.sv',
+            'src/pc9821/common/pc9821_dpram.sv',
+            'src/pc9821/video/pc9821_crtc.sv',
+            'src/pc9821/core/pc9821_text_mem.sv',
+            'src/pc9821/video/pc9821_gdc2.sv',
+            'src/pc9821/video/pc9821_cg.sv',
+            'src/pc9821/video/pc9821_grcg.sv',
+            'src/pc9821/video/pc9821_plane_fold.sv',
+            'src/pc9821/video/pc9821_gfx_palette.sv',
+            'src/pc9821/video/pc9821_video_mixer.sv',
+            'src/pc9821/interrupts/pc9821_inta_bridge.sv',
+            'src/pc9821/interrupts/pc9821_interrupts.sv',
+            'src/pc9821/input/pc9821_mouse.sv',
+            'src/pc9821/core/pc9821_ports_pkg.sv',
+            'src/pc9821/core/pc9821_dmac.sv',
+            'src/pc9821/core/pc9821_iobus.sv',
+            'src/pc9821/core/pc9821_cpu_reset_gate.sv',
+            'src/z486/cpu_throttle.sv',
+            'src/pc9821/core/pc9821_cpu_clk.sv',
+            'src/pc9821/core/pc9821_cpu_bus_bridge.sv',
+            'src/pc9821/input/pc9821_kbd.sv',
+            'src/pc9821/interrupts/pc9821_pic.sv',
+            'src/pc9821/timers/pc9821_pit.sv',
+            'src/pc9821/rtc/pc9821_calendar.sv',
+            'src/pc9821/core/pc9821_window_responder.sv',
+            'src/pc9821/core/pc9821_memory_map.sv',
+            'src/pc9821/core/pc9821_open_bus.sv',
+            'src/pc9821/core/pc9821_rom_loader.sv',
+            'src/pc9821/core/pc9821_memory_subsystem.sv',
+            'src/pc9821/core/pc9821_pegc_storebuf.sv',
+            'src/pc9821/video/pc9821_pegc.sv',
+            'src/pc9821/core/pc9821_pegc_scan.sv',
+            'src/pc9821/core/pc9821_rhythm_loader.sv',
+            'src/pc9821/core/pc9821_egc.sv',
+            'src/pc9821/core/pc9821_device_select.sv',
+            'src/pc9821/core/pc9821_gameport.sv',
+            'src/pc9821/core/pc9821_watchdog_msg.sv',
+            'src/pc9821/core/pc9821_perf_msg.sv',
+            'src/pc9821/core/pc9821_gfx_msg.sv',
+            'src/pc9821/core/pc9821_wdg_trigger.sv',
+            'src/pc9821/core/pc9821_dbg_record.sv',
+            'src/pc9821/core/pc9821_gvram_arb.sv',
+            'src/pc9821/core/pc9821_gvram_share.sv',
+            'src/pc9821/core/pc9821_gvram_scan.sv',
+            'src/pc9821/core/pc9821_gvram_mem.sv',
+            'src/pc9821/storage/pc9821_block_share.sv',
+            'src/pc9821/storage/pc9821_fdd_media.sv',
+            'src/pc9821/storage/pc9821_atapi.sv',
+            'src/pc9821/storage/pc9821_hps_slot_demux.sv',
+            'src/pc9821/core/pc9821_system.sv',
+            'src/opna/pc9821_opna.sv',
+            'src/pcm86/pc9821_pcm86.sv',
+            'src/pcm86/pc9821_pcm86_buf.sv',
+            'src/opna/jtopna.v',
+            'src/opna/jt12/hdl/jt08.v',
+            'src/opna/jt12/hdl/jt08_acc.v',
+            'src/opna/jt12/hdl/jt12_acc.v',
+            'src/opna/jt12/hdl/jt12_csr.v',
+            'src/opna/jt12/hdl/jt12_div.v',
+            'src/opna/jt12/hdl/jt12_dout.v',
+            'src/opna/jt12/hdl/jt12_eg.v',
+            'src/opna/jt12/hdl/jt12_eg_cnt.v',
+            'src/opna/jt12/hdl/jt12_eg_comb.v',
+            'src/opna/jt12/hdl/jt12_eg_ctrl.v',
+            'src/opna/jt12/hdl/jt12_eg_final.v',
+            'src/opna/jt12/hdl/jt12_eg_pure.v',
+            'src/opna/jt12/hdl/jt12_eg_step.v',
+            'src/opna/jt12/hdl/jt12_exprom.v',
+            'src/opna/jt12/hdl/jt12_kon.v',
+            'src/opna/jt12/hdl/jt12_lfo.v',
+            'src/opna/jt12/hdl/jt12_logsin.v',
+            'src/opna/jt12/hdl/jt12_mmr.v',
+            'src/opna/jt12/hdl/jt12_mod.v',
+            'src/opna/jt12/hdl/jt12_op.v',
+            'src/opna/jt12/hdl/jt12_pcm.v',
+            'src/opna/jt12/hdl/jt12_pg.v',
+            'src/opna/jt12/hdl/jt12_pg_comb.v',
+            'src/opna/jt12/hdl/jt12_pg_dt.v',
+            'src/opna/jt12/hdl/jt12_pg_inc.v',
+            'src/opna/jt12/hdl/jt12_pg_sum.v',
+            'src/opna/jt12/hdl/jt12_pm.v',
+            'src/opna/jt12/hdl/jt12_reg.v',
+            'src/opna/jt12/hdl/jt12_reg_ch.v',
+            'src/opna/jt12/hdl/jt12_rst.v',
+            'src/opna/jt12/hdl/jt12_sh.v',
+            'src/opna/jt12/hdl/jt12_sh24.v',
+            'src/opna/jt12/hdl/jt12_sh_rst.v',
+            'src/opna/jt12/hdl/jt12_single_acc.v',
+            'src/opna/jt12/hdl/jt12_sumch.v',
+            'src/opna/jt12/hdl/jt12_timers.v',
+            'src/opna/jt12/hdl/jt12_top.v',
+            'src/opna/jt12/hdl/mixer/jt12_comb.v',
+            'src/opna/jt12/hdl/mixer/jt12_decim.v',
+            'src/opna/jt12/hdl/mixer/jt12_fm_uprate.v',
+            'src/opna/jt12/hdl/mixer/jt12_genmix.v',
+            'src/opna/jt12/hdl/mixer/jt12_interpol.v',
+            'src/opna/jt12/hdl/adpcm/jt08_adpcm_acc.v',
+            'src/opna/jt12/hdl/adpcm/jt08_adpcm_cnt.v',
+            'src/opna/jt12/hdl/adpcm/jt08_adpcm_drvA.v',
+            'src/opna/jt12/hdl/adpcm/jt08_adpcm_drvB.v',
+            'src/opna/jt12/hdl/adpcm/jt08_adpcm_gain.v',
+            'src/opna/jt12/hdl/adpcm/jt08_adpcm_rmul.v',
+            'src/opna/jt12/hdl/adpcm/jt08_adpcmb_cnt.v',
+            'src/opna/jt12/hdl/adpcm/jt08_adpcmb_interpol.v',
+            'src/opna/jt12/hdl/adpcm/jt10_adpcm.v',
+            'src/opna/jt12/hdl/adpcm/jt10_adpcm_dbrom.v',
+            'src/opna/jt12/hdl/adpcm/jt10_adpcma_lut.v',
+            'src/opna/jt12/hdl/adpcm/jt10_adpcmb.v',
+            'src/opna/jt12/hdl/adpcm/jt10_adpcmb_gain.v',
+            'src/opna/jt12/hdl/adpcm/jt10_cen_burst.v',
+            'src/opna/jt49/hdl/jt49.v',
+            'src/opna/jt49/hdl/jt49_bus.v',
+            'src/opna/jt49/hdl/jt49_cen.v',
+            'src/opna/jt49/hdl/jt49_div.v',
+            'src/opna/jt49/hdl/jt49_eg.v',
+            'src/opna/jt49/hdl/jt49_exp.v',
+            'src/opna/jt49/hdl/jt49_noise.v',
+            'src/opna/rhythm_rom/RHYTHM_ROM.v',
+            'tests/pc9821/z486_stub.sv',
+            'src/pc9821/core/pc9821_dbg_ring.sv',
+            'src/pc9821/core/pc9821_dbg_mux.sv',
+            'src/pc9821/core/pc9821_dbg_cpu.sv',
+            'src/pc9821/video/pc9821_gdc_log.sv',
+        ],
+    ),
+    'ide_layout': (
+        'TB_PC9821_IDE_LAYOUT',
+        "The built-in IDE layout is fixed in pc9821_system whatever the build and the media: in the build WITHOUT the CD (CDROM_EN 0) and in the build WITH it (CDROM_EN 1), the one hard disk (hps_io slot 0) answers as bank 0's master - 0x0432 = 0x00, 0x064C = 0xA0: STATUS 0x50, ERROR 0x01, cylinder 0x00/0x00 (an ATA, not a packet, signature) and 0x0433 = 0x02 - and the CD-ROM, when built, as bank 1's master - STATUS 0x00, 0x0642 = 0x01 and the 0x14/0xEB ATAPI signature the Xe10 IDE ROM's presence test reads - with bank 1 an empty connector without it (the measured empty-bank float: 0x064E = 0x064C = 0x0E, 0x074E = 0x0F); port 0xF0 reports exactly that, bit 5 = the hard disk (clear once it is mounted) and bit 6 = the CD drive (clear only in the CD build), so the Xe10 strap reads 0xE9 then 0xC9 without the CD and 0xA9 then 0x89 with it, the stock CD-equipped Xe10's 0x89; and in the CD build a disc mount and an eject move none of it.",
         [
             'src/z486/z486_cache_map_pkg.sv',
             'src/pc9821/storage/pc9821_ata.sv',
@@ -3424,7 +3732,7 @@ BENCHES = {
     ),
     'pit_ref': (
         'TB_PC9821_PIT_REF',
-        "Runs the real pc9821_interrupts PIT (channels 0/1/2) and the interrupt it feeds - the same block the machine instantiates, with the master 8259 programmed as the ITF programs it - and checks every channel's mode 0/2/3 output period and the interrupt-on-terminal-count against NP2kai io/pit.c: mode 3 and 2 re-arm every period, mode 0 fires once, channel 1 and 2 are independent of channel 0, and IRQ0 lands on the master PIC's IRQ0. The uPD71054 read-back command is implemented and asserted (0xC2 on ch0 returns the status byte 0x36 in bits 6:0 after a completed count load - NULL COUNT is live: set by a control word, cleared when the load completes, the first byte of an LSB+MSB pair not counting - with bit 7 the channel's live OUT pin, asserted separately). NP2kai's channel-0 write that clears master IRR0 is waived: the machine's own IRQWD run shows the bit set before and after a latch command (docs/probes/IRQWD.TXT; confounded by the as-found mode-0 static OUT, so the falling-edge model in pit_irq_clear supersedes it). Two fail-first cases pin the word-read byte phase against NP2kai's PIT_FLAG_R (io/pit.c:224-239,248-249,348-358) and the Xe10 capture (r13/214-probe-fix.md:22-24,93-98): a counter latch does NOT reset the phase, so a latched pair is consumed high-then-low after one word read, and a mode-set control word DOES reset it, so the next word read is low-first.",
+        "Runs the real pc9821_interrupts PIT (channels 0/1/2) and the interrupt it feeds - the same block the machine instantiates, with the master 8259 programmed as the ITF programs it - and checks every channel's mode 0/2/3 output period and the interrupt-on-terminal-count against NP2kai io/pit.c: mode 3 and 2 re-arm every period, mode 0 fires once, channel 1 and 2 are independent of channel 0, and IRQ0 lands on the master PIC's IRQ0. The uPD71054 read-back command is implemented and asserted (0xC2 on ch0 returns the status byte 0x36 in bits 6:0 after a completed count load - NULL COUNT is live: set by a control word, cleared when the load completes, the first byte of an LSB+MSB pair not counting - with bit 7 the channel's live OUT pin, asserted separately). NP2kai's channel-0 write that clears master IRR0 is waived: the machine's own IRQWD run shows the bit set before and after a latch command (docs/probes/IRQWD.TXT; confounded by the as-found mode-0 static OUT, so the falling-edge model in pit_irq_clear supersedes it). Two fail-first cases pin the word-read byte phase against NP2kai's PIT_FLAG_R (io/pit.c:224-239,248-249,348-358) and the Xe10 capture (r13/214-probe-fix.md:22-24,93-98): a counter latch does NOT reset the phase, so a latched pair is consumed high-then-low after one word read, and a mode-set control word DOES reset it, so the next word read is low-first. An MSB-only (RL=2) count read answers the count's HIGH byte (NP2kai io/pit.c:346-347, PIT_RL_H).",
         [
             'src/pc9821/interrupts/pc9821_interrupts.sv',
             'src/pc9821/interrupts/pc9821_pic.sv',
@@ -3451,7 +3759,7 @@ BENCHES = {
     ),
     'audio_clip': (
         'TB_PC9821_AUDIO_CLIP',
-        "The sound path under a dense worst case -- six full-level drums overlapping with six FM channels at maximum, the SSG at maximum and the 86-PCM voice playing at full scale, with the 0xA46C write-FIFO and the OPNA register queue (WRQ) flooded at the I/O floor cadence -- with three detections running throughout: (a) no dropped write or sample: every host write presented through the real pc9821_iobus master is accepted by the buffer and lands (WRQ entries drained to the chip, 0xA46C bytes stored in SDRAM byte-exact) now that both buffers back-pressure through io_wr_wait instead of silently dropping on full (the pre-fix WRQ lost 94/160 at this cadence and the 0xA46C FIFO dropped past 4 deep under SDRAM contention), with the stall itself counted so the no-drop result cannot be vacuous; (b) no accumulator wrap: the six-drum sum is recomputed with unbounded integers from jt08_adpcm_acc's per-drum slot inputs and compared with the DUT accumulator every slot; (c) no clipped-vs-expected sample: jt08_adpcm_acc's pcm_out must equal the raw drum sum (the pre-fix 16-bit clamp there flat-topped dense overlaps before the FM mix -- the owner's drums clipping) and the output chain must equal the single-clamp saturating model of the wide FM+ADPCM junction (the ymfm clamp16 / NP2kai _saturation_s16 point) followed by the AC-coupled (zero-mean) SSG and a WIDE join with NO intermediate saturation (datapaths.md F1: the pre-fix tree flat-topped there even when the FM+SSG+PCM86 sum fit in 16 bits; the single clamp is at the final DAC), the over-16 stimulus kept non-vacuous. Phase 1 pins the 0 dB single-drum output to the same model, so the default path stays bit-identical.",
+        "The sound path under a dense worst case -- six full-level drums overlapping with six FM channels at maximum, the SSG at maximum and the 86-PCM voice playing at full scale, with the 0xA46C write-FIFO and the OPNA register queue (WRQ) flooded at the I/O floor cadence -- with three detections running throughout: (a) no dropped write or sample: every host write presented through the real pc9821_iobus master is accepted by the buffer and lands (WRQ entries drained to the chip, 0xA46C bytes stored in SDRAM byte-exact) now that both buffers back-pressure through io_wr_wait instead of silently dropping on full (the pre-fix WRQ lost 94/160 at this cadence and the 0xA46C FIFO dropped past 4 deep under SDRAM contention), with the stall itself counted so the no-drop result cannot be vacuous; (b) the die's drum bus: the six-drum sum is recomputed from jt08_adpcm_acc's per-drum slot inputs as the die's 16-bit two's-complement WRAP (YM2608-LLE fmopna_impl.c:5370) and compared with the DUT accumulator every slot; (c) no clipped-vs-expected sample: jt08_adpcm_acc's pcm_out must equal that wrapped round sum, never a clamped one (the pre-fix 16-bit clamp there flat-topped dense overlaps before the FM mix -- the owner's drums clipping) and the output chain must equal the single-clamp saturating model of the wide FM+ADPCM junction (the ymfm clamp16 / NP2kai _saturation_s16 point) followed by the AC-coupled (zero-mean) SSG and a WIDE join with NO intermediate saturation (datapaths.md F1: the pre-fix tree flat-topped there even when the FM+SSG+PCM86 sum fit in 16 bits; the single clamp is at the final DAC), the over-16 stimulus kept non-vacuous. Phase 1 pins the 0 dB single-drum output to the same model, so the default path stays bit-identical.",
         [
             'src/pc9821/common/pc9821_dpram.sv',
             'src/pc9821/storage/pc9821_fdc.sv',
@@ -3538,9 +3846,36 @@ BENCHES = {
             'src/pc9821/audio/pc9821_audio_fir_engine.sv',
         ],
     ),
+    'audio_out_equiv': (
+        'TB_PC9821_AUDIO_OUT_EQUIV',
+        "The 48 kHz output stage's area rewrite (the FIR MAC engine accumulating straight from the multiplier into a 34-bit DSP accumulator instead of through a 34-bit product register and a 42-bit logic adder) is cycle-for-cycle identical to the pre-rewrite stage (pc9821_audio_out_ref.sv, the three modules as of 3b134fe4): over random, full-scale, impulse, step, tone and silent mixer streams with the right channel changing off the valid edge, AUDIO_L/R, the CIC's output strobe and samples, and the stage-B and stage-C start and done strobes match on every CLK_AUDIO cycle.",
+        [
+            'src/pc9821/audio/pc9821_audio_out.sv',
+            'src/pc9821/audio/pc9821_audio_cic4.sv',
+            'src/pc9821/audio/pc9821_audio_fir_engine.sv',
+            'tests/pc9821/pc9821_audio_out_ref.sv',
+        ],
+    ),
+    'pcm86_equiv': (
+        'TB_PC9821_PCM86_EQUIV',
+        "The 86-PCM block's area rewrite (the IRQ threshold held as an 8-bit count plus a ceiling flag, the DAC volume scale as a nibble repeat instead of a multiply, the SDRAM write FIFO's entries as unreset memory, the buffer address concatenated under the 32 KiB-aligned base instead of added, and the read request's don't-care write data left alone) is cycle-for-cycle identical to the pre-rewrite block (pc9821_pcm86_ref.sv, the two modules as of 3b134fe4): over a random mix of 0xA466/0xA468/0xA46A/0xA46C writes (buffer resets, every rate and format, thresholds including 0xFF, byte bursts that fill the write FIFO) against a random-latency SDRAM, every read port, the write wait, the interrupt, the DAC outputs, the logical count and the SDRAM request (valid, write, byte enable, burst count, and the address and write data whenever they are meaningful) match on every clock.",
+        [
+            'src/pcm86/pc9821_pcm86.sv',
+            'src/pcm86/pc9821_pcm86_buf.sv',
+            'tests/pc9821/pc9821_pcm86_ref.sv',
+        ],
+    ),
+    'audio_volume_equiv': (
+        'TB_PC9821_AUDIO_VOLUME_EQUIV',
+        "The ten-channel volume stage's area rewrite (each consumed channel's product captured once per epoch into its own field instead of shifted through a ten-deep output chain, and the sample and volume selects built over the consumed channels only) delivers, on every valid strobe, the same samples_out fields as the pre-rewrite stage (pc9821_audio_volume_ref.sv, the module as of 3b134fe4) for every consumed channel, and the same valid strobe on every clock: over random 20-bit samples and random volume codes that change on EVERY clock (so the instants each channel is sampled at are pinned, not only the values), for the all-channels-consumed configuration (every field) and for the configuration z486_mister.sv instantiates (master, -86 and CD fields).",
+        [
+            'src/pc9821/audio/pc9821_audio_volume.sv',
+            'tests/pc9821/pc9821_audio_volume_ref.sv',
+        ],
+    ),
     'audio_out_alias': (
         'TB_PC9821_AUDIO_OUT_ALIAS',
-        "A 45 kHz tone carried on the mixer's 2.4576 MHz grid - above the 48 kHz presentation's 24 kHz Nyquist, so it MUST be removed and not folded - comes out of the pre-fix output stage (a bare register loaded on audio_volume_valid, the stage this lane replaced) folded onto 3 kHz at the tone's own level, and comes out of pc9821_audio_out at <= -60 dB relative: the bare-latch arm measures the fold at about 0 dB (the fold is real and the stimulus is non-vacuous) while the filtered arm's 5/32 polyphase prototype holds a 28 kHz stopband at -100 dB by design, so the aliasing that a bare strobe cannot avoid is removed instead of folded.",
+        "A 45 kHz tone carried on the mixer's 2.4576 MHz grid - above the 48 kHz presentation's 24 kHz Nyquist, so it MUST be removed and not folded - comes out of the pre-fix output stage (a bare register loaded on audio_volume_valid, the stage this lane replaced) folded onto 3 kHz at the tone's own level, and comes out of pc9821_audio_out at <= -60 dB relative: the bare-latch arm measures the fold at about 0 dB (the fold is real and the stimulus is non-vacuous) while the filtered arm's 5/32 polyphase prototype holds a 28 kHz stopband at -100 dB by design, so the aliasing that a bare strobe cannot avoid is removed instead of folded - and an in-band 3 kHz tone at the same drive on the right channel passes at 0 dB +-0.5 dB, so the stopband cannot be met by a stage that attenuates everything.",
         [
             'src/pc9821/audio/pc9821_audio_out.sv',
             'src/pc9821/audio/pc9821_audio_cic4.sv',
@@ -3558,7 +3893,7 @@ BENCHES = {
     ),
     'audio_mix': (
         'TB_PC9821_AUDIO_MIX',
-        "The PC-9801-86's sample reaches AUDIO_L, and the volume stage obeys the law at its three broken points (review-audio-volume F1/F4/F6): with the mixer wired exactly as z486_mister.sv wires it - the same ten-channel sb_volume concat and the same volumes pc9821_system.sv hard-wires, INCLUDING vol_cd = 5'd0 as shipped, which this bench used to mis-wire at 5'd31 while claiming the hard-wires (F6) - a sample on the -86 slot comes out bit-identical at unity through the real pc9821_audio_volume, volume code 0 is TRUE MUTE (a full-scale CD-DA sample at the shipped vol_cd 0 contributes EXACTLY zero through the module and at mix_dry, both polarities - NP2kai volume-0 is exact 0, sound/beepg.c:161-163), and MASTER SCALING LANDS BEFORE THE FINAL SATURATION (NP2kai scales every source by vol_master pre-sum, sound/fmboard.c:103-133): at master code 28 (-6 dB) the over-rail sum +40000 comes out +20047 = floor(40000*32846/2^16) UNSATURATED and -40000 comes out -20048, where the old post-clamp master emitted +16422/-16423 of clipped audio turned down. It also pins the final DAC's arithmetic (datapaths.md F1/F2): spk + the -86 stream + CD sum WIDE (20-bit, no wrap) and saturate ONCE at mix_dry on the master-scaled sum - a positive overflow clamps to 0x7FFF (the pre-fix 17-bit mix_tmp wrapped and the saturator emitted 0x8000: wrong rail AND polarity), the sum swept through 65530..65545 stays on the +rail across the wrap boundary, a large negative clamps to 0x8000, and a wide (-86-scale) sample_86 crosses pc9821_audio_volume unclipped at unity to be clipped exactly once at the DAC.",
+        "The PC-9801-86's sample reaches AUDIO_L, and the volume stage obeys the law at its three broken points (review-audio-volume F1/F4/F6): with the mixer wired exactly as z486_mister.sv wires it - the same ten-channel sb_volume concat and the same volumes pc9821_system.sv hard-wires, INCLUDING both vol_cd hard-wires - 5'd31 in the CD-DA build every preset ships and 5'd0 without CD audio (pc9821_system.sv CDROM_AUDIO_EN; F6 asked for the muted arm) - a sample on the -86 slot comes out bit-identical at unity through the real pc9821_audio_volume, volume code 0 is TRUE MUTE (a full-scale CD-DA sample at vol_cd 0 contributes EXACTLY zero through the module and at mix_dry, both polarities - NP2kai volume-0 is exact 0, sound/beepg.c:161-163), and MASTER SCALING LANDS BEFORE THE FINAL SATURATION (NP2kai scales every source by vol_master pre-sum, sound/fmboard.c:103-133): at master code 28 (-6 dB) the over-rail sum +40000 comes out +20047 = floor(40000*32846/2^16) UNSATURATED and -40000 comes out -20048, where the old post-clamp master emitted +16422/-16423 of clipped audio turned down. It also pins the final DAC's arithmetic (datapaths.md F1/F2): spk + the -86 stream + CD sum WIDE (20-bit, no wrap) and saturate ONCE at mix_dry on the master-scaled sum - a positive overflow clamps to 0x7FFF (the pre-fix 17-bit mix_tmp wrapped and the saturator emitted 0x8000: wrong rail AND polarity), the sum swept through 65530..65545 stays on the +rail across the wrap boundary, a large negative clamps to 0x8000, and a wide (-86-scale) sample_86 crosses pc9821_audio_volume unclipped at unity to be clipped exactly once at the DAC.",
         [
             'src/pc9821/audio/pc9821_audio_volume.sv',
         ],
@@ -3654,7 +3989,7 @@ BENCHES = {
     ),
     'opna_port': (
         'TB_PC9821_OPNA_PORT',
-                "The PC-9801-86 board's DATA SHADOW through the real I/O bus: after a write to the low select port 0x188 alone, a read of the data port 0x18A answers the byte that write carried, and the extended data port 0x18E answers that shadow for every extended register except 0x08 and 0x0F, which are the only two NP2kai reads from the chip. Both expectations come from the board model itself (NP2kai cbus/board86.c opna_o188 assigns s.addrl AND s.data; opna_i18a returns s.data above 0x0F and below 0xFF; opna_o18e reads the chip only for addrh 0x08 and 0x0F), not from this RTL. It does NOT assert the 3ch/6ch stereo switch, which needs a vendored file, and it does not assert the chip's own register contents. It also pins the review's S1 same-cycle case: a queued write's drain fire meeting a host status read's S_BYTE must never corrupt the read - the fire holds the chip port to the host and retries - across a swept-phase stream of 0x188 reads whose bytes must all show the flags 0x00, never the data-port case.",
+                "The PC-9801-86 board's DATA SHADOW through the real I/O bus: after a write to the low select port 0x188 alone, a read of the data port 0x18A answers the byte that write carried, and the extended data port 0x18E answers that shadow for every extended register except 0x08 and 0x0F, which are the only two NP2kai reads from the chip - and 0x0F IS answered from the chip (NP2kai s.reg[0x10F], 0x00 after reset), not the shadow; the 0x08 side (adpcm_readsample) is not asserted. Both expectations come from the board model itself (NP2kai cbus/board86.c opna_o188 assigns s.addrl AND s.data; opna_i18a returns s.data above 0x0F and below 0xFF; opna_o18e reads the chip only for addrh 0x08 and 0x0F), not from this RTL. It does NOT assert the 3ch/6ch stereo switch, which needs a vendored file, and it does not assert the chip's own register contents. It also pins the review's S1 same-cycle case: a queued write's drain fire meeting a host status read's S_BYTE must never corrupt the read - the fire holds the chip port to the host and retries - across a swept-phase stream of 0x188 reads whose bytes must all show the flags 0x00, never the data-port case.",
         [
             'src/pc9821/common/pc9821_dpram.sv',
             'src/pc9821/storage/pc9821_fdc.sv',
@@ -4260,6 +4595,16 @@ BENCHES = {
             'src/pc9821/audio/pc9821_audio_volume.sv',
         ],
     ),
+    'cdda_equiv': (
+        'TB_PC9821_CDDA_EQUIV',
+        "The CD-DA block's divider rewrite (the CLK_AUDIO accumulator held in units of the common factor of its 88200 step and its CLK_AUDIO_RATE threshold - 16 bits at 24.576 MHz instead of 32) is clock-for-clock identical to the pre-change block (cdda_ref.v, the module as of 3b134fe4): over a real 80 MHz and 24.576 MHz clock pair with random sector bursts and a fast-rate configuration, AUDIO_CE, AUDIO_L, AUDIO_R and CDDA_REQ match at every sampling instant, and the divider's toggle is the exact 44.1 kHz ratio.",
+        [
+            'src/soc/cdda.v',
+            'src/common/cdc_vector_handshake_continuous.sv',
+            'src/common/synchronizer.sv',
+            'tests/pc9821/cdda_ref.v',
+        ],
+    ),
     'cdda_div_reset': (
         'TB_PC9821_CDDA_DIV_RESET',
         "The CDDA block's CLK_AUDIO domain resolves out of reset (review r2-resets F3): the 44.1 kHz divider accumulator, the clk_44100 toggle, the resample flops and the ring pointers are seeded, so the divider does not X-lock in 4-state simulation (run under iverilog for the fail-first X-lock), AUDIO_CE pulses at the divided rate, AUDIO_L/R are never X, and one word written through CDDA_WR comes out of AUDIO_L/R at the full-volume setting.",
@@ -4343,7 +4688,7 @@ BENCHES = {
     ),
     'sysclk_invariance': (
         'TB_PC9821_SYSCLK_INVARIANCE',
-        "Every guest-visible TIMEBASE and device-pacing TIME this core owns measures the same WALL-CLOCK rate at two clk_sys frequencies (the base profile's 50 MHz and mediumoc's 100 MHz): each device is instantiated twice in ONE simulation, on its own clock, and read at the same simulated nanosecond, so an equal count is an equal real time rather than an equal cycle count - a model counting clk_sys instead of a real time reads 2x at 100 MHz. THE VIDEO ENABLE IS THE PRODUCTION ONE, not a copy: the real pc9821_system runs at both clocks (its CPU is tests/pc9821/z486_stub.sv) and its exported video_ce - the production PIXEL_CE_INC = round(PIXEL_HZ * 2^24 / SYS_FREQ) accumulator - drives the standalone CRTC probes and is itself counted, so a divider that counted clk_sys fails here. Covered, each with the time it is derived from named in the bench: PIT channel 0 at BOTH programs a guest uses - the BIOS's 100 Hz (divisor 0x6000 at 2.4576 MHz) and the sound drivers' 9990.24 Hz (divisor 0x00F6, the Rusty intro's INT 08h music/PCM tick) - plus channel 1 (the beeper tone, the ITF's own 2000 Hz program: control 0x76, divisor 0x04CD) and channel 2 (the RS-232C baud clock), all three on the 8253's own 2.4576 MHz input clock; the uPD4993A's four guest-writable tick rates (1/64, 1/32, 1/16 s and off) and its 1 Hz divider; the keyboard's typematic delay and interval (NP2kai's 500 ms / 50 ms) and the 3 s OSD HELP-hold window; the calendar's CDAT serial read, whose bit clock is the GUEST's (both clocks are driven with one wall-clock command schedule and the recovered 48-bit payload is compared); the bus mouse's IRQ13 at its default 120 Hz and at its guest-programmed 60 Hz and 30 Hz forms; the game port's 1.1 us tick and the axis one-shot it times (the right end stop's 1022 ticks); the ARTIC 307200 Hz counter the ITF's delay() spins on (qemu pc98-sys.c:64 TIMESTAMP_HZ); the two I/O-wait floors that are real times and therefore must be paid at both clocks (0x005F = the machine's item-41 1621 ns, one value, an 8253 port >= one 2.4576 MHz tick); the GVRAM arbiter's captured per-access holds (478 ns read, 142 ns write, 104 ns GRCG store - the capture's times, converted per profile and asserted back as times); the FDC's 20 us recalibrate delay; the OPNA's 7.9872 MHz chip enable, the SSG's cen/16 sample enable and its guest-programmed Timer A/B IRQ period (144 and 2304 chip enables per count); PCM86's sample strobe at a guest-selected rate of NP2kai's pcm86rate8 table; and the FAITHFUL I/O class table (IO_LATENCY_PROFILE 2, build_profile.py's 'iofaithful'), whose per-class times all come from docs/probes/IO.TXT and must be the same REAL TIME at 50 and 100 MHz and within one clk_sys of the capture: the default class (823 ns read / 862 ns write), the EGC named ports 0x006A/0x00A6 (386 read / 356 write), the text GDC 0x0060/0x0062 (444), the graphics GDC 0x00A0/0x00A2 (676), the GRCG pair 0x007C/0x007E (359 write; 0x007C reads at the default class), the 8253 write 0x0077 (861), the 0x005F read (826) and write (1621, item 41's anchor) and the EGC register file 0x04A1 odd / 0x04A0 even (823 / 9290). The iobus's per-access class floor (IO_MIN_HOLD = 4 clk_sys, r13/276's deliberate stall reduction against r13/245's measured 840 ns machine class) is PRINTED at both clocks and asserted by nothing, because locking in either number would decide a stall-budget question that is the owner's. FAIL-FIRST history: the keyboard's OSD HELP-hold window is read at both clocks and must be 3 s of wall time, which the 28-bit HELP_HOLD_CYCLES = SYS_CLOCK_HZ*3 could not hold at 100 MHz (300e6 mod 2^28 = 31_564_544, a 0.32 s hold) - that case fails before the width fix and passes after it - and the 0x60 status byte's data-ready bit 0 was a bare `stat_dr <= ~stat_dr` on every clk_sys, so its edge count read 2x at 100 MHz before the fix. The data-ready bit's RATE IS NOT A MACHINE FACT and is not claimed: the machine's 2^21-sample 0x60 histogram (docs/probes/GDC.TXT) measures only its ~50 % duty and no reference gives its period, so the bench asserts the DERIVATION (one toggle per two 21.0526 MHz dots) and the two clocks' agreement. The MPU-PC98II's MIDI-out serialiser is measured here too: its start bit is the same 32 us at both clocks, which is MIDI's own 31250 baud.",
+        "Every guest-visible TIMEBASE and device-pacing TIME this core owns measures the same WALL-CLOCK rate at two clk_sys frequencies (the base profile's 50 MHz and mediumoc's 100 MHz): each device is instantiated twice in ONE simulation, on its own clock, and read at the same simulated nanosecond, so an equal count is an equal real time rather than an equal cycle count - a model counting clk_sys instead of a real time reads 2x at 100 MHz. THE VIDEO ENABLE IS THE PRODUCTION ONE, not a copy: the real pc9821_system runs at both clocks (its CPU is tests/pc9821/z486_stub.sv) and its exported video_ce - the production PIXEL_CE_INC = round(PIXEL_HZ * 2^24 / SYS_FREQ) accumulator - drives the standalone CRTC probes and is itself counted, so a divider that counted clk_sys fails here. Covered, each with the time it is derived from named in the bench: PIT channel 0 at BOTH programs a guest uses - the BIOS's 100 Hz (divisor 0x6000 at 2.4576 MHz) and the sound drivers' 9990.24 Hz (divisor 0x00F6, the Rusty intro's INT 08h music/PCM tick) - plus channel 1 (the beeper tone, the ITF's own 2000 Hz program: control 0x76, divisor 0x04CD) and channel 2 (the RS-232C baud clock), all three on the 8253's own 2.4576 MHz input clock; the uPD4993A's four guest-writable tick rates (1/64, 1/32, 1/16 s and off) and its 1 Hz divider; the keyboard's typematic delay and interval (NP2kai's 500 ms / 50 ms) and the 3 s OSD HELP-hold window; the calendar's CDAT serial read, whose bit clock is the GUEST's (both clocks are driven with one wall-clock command schedule and the recovered 48-bit payload is compared); the bus mouse's IRQ13 at its default 120 Hz and at its guest-programmed 60 Hz and 30 Hz forms; the game port's 1.1 us tick and the axis one-shot it times (the right end stop's 1022 ticks); the ARTIC 307200 Hz counter the ITF's delay() spins on (qemu pc98-sys.c:64 TIMESTAMP_HZ); the two I/O-wait floors that are real times and therefore must be paid at both clocks (0x005F = the machine's item-41 1621 ns, one value, an 8253 port >= one 2.4576 MHz tick); the GVRAM arbiter's captured per-access holds (478 ns read, 142 ns write, 104 ns GRCG store - the capture's times, converted per profile and asserted back as times); the FDC's 20 us recalibrate delay; the OPNA's 7.9872 MHz chip enable, the SSG's cen/16 sample enable and its guest-programmed Timer A/B IRQ period (144 and 2304 chip enables per count); PCM86's sample strobe at a guest-selected rate of NP2kai's pcm86rate8 table; and the FAITHFUL I/O class table (IO_LATENCY_PROFILE 2, build_profile.py's 'iofaithful'), whose per-class times all come from docs/probes/IO.TXT and must be the same REAL TIME at 50 and 100 MHz and within one clk_sys of the capture: the default class (823 ns read / 862 ns write), the EGC named ports 0x006A/0x00A6 (386 read / 356 write), the text GDC 0x0060/0x0062 (444), the graphics GDC 0x00A0/0x00A2 (676), the GRCG pair 0x007C/0x007E (359 write; 0x007C reads at the default class), the 8253 write 0x0077 (861), the 0x005F read (826) and write (1621, docs/probes/IO.TXT's anchor) and the EGC register file 0x04A1 odd / 0x04A0 even (823 / 9290). The iobus's per-access class floor (IO_MIN_HOLD = 4 clk_sys, r13/276's deliberate stall reduction against r13/245's measured 840 ns machine class) is PRINTED at both clocks and asserted by nothing, because locking in either number would decide a stall-budget question that is the owner's. FAIL-FIRST history: the keyboard's OSD HELP-hold window is read at both clocks and must be 3 s of wall time, which the 28-bit HELP_HOLD_CYCLES = SYS_CLOCK_HZ*3 could not hold at 100 MHz (300e6 mod 2^28 = 31_564_544, a 0.32 s hold) - that case fails before the width fix and passes after it - and the 0x60 status byte's data-ready bit 0 was a bare `stat_dr <= ~stat_dr` on every clk_sys, so its edge count read 2x at 100 MHz before the fix. The data-ready bit's RATE IS NOT A MACHINE FACT and is not claimed: the machine's 2^21-sample 0x60 histogram (docs/probes/GDC.TXT) measures only its ~50 % duty and no reference gives its period, so the bench asserts the DERIVATION (one toggle per two 21.0526 MHz dots) and the two clocks' agreement. The MPU-PC98II's MIDI-out serialiser is measured here too: its start bit is the same 32 us at both clocks, which is MIDI's own 31250 baud.",
         [
             'src/z486/z486_cache_map_pkg.sv',
             'src/pc9821/storage/pc9821_ata.sv',

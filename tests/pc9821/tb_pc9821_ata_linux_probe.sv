@@ -3,7 +3,7 @@
 `timescale 1ns / 1ps
 
 // ==== WHAT THIS PROVES ====
-// TB_PC9821_ATA_LINUX_PROBE: The Linux/98 IDE driver's probe (pc98_ide.c, pc98ide_init + pc98ide_identify), which boots on the real Xe10, replayed port for port against the REAL pc9821_ata -> pc9821_block_share -> pc9821_block_io stack with the one disk image mounted at bank 1 (this core's single-disk position; pc98ide_init's own `outb(0, PC98IDE_BANK)` is replaced by the bank the disk is on, since the second disk that once sat at bank 0 was removed): the bank select, SRST through 0x74C, then for unit 0 the 0xE0 select, four alternate-status reads, STATUS neither 0x00 nor 0xFF, IDENTIFY with STATUS non-zero, DRQ and words 60/61 = the image's capacity; and for unit 1 the 0xF0 select, which must read STATUS = ALTSTATUS = 0x00 (ATA-3 r6 s.9.5.1, an absent device 1), so the driver gives the unit up - and an IDENTIFY written anyway must leave STATUS 0x00 with no DRQ and no IRQ (a command for the absent device is not executed), EXECUTE DEVICE DIAGNOSTIC written with device 1 selected is still executed by device 0 (IRQ, ERROR 0x01), and re-selecting 0xE0 must show the master's 0x50 and serve a READ SECTORS of the image's own data. FAIL-FIRST: on ffd1ae9d the absent slave answered 0x50 and IDENTIFY returned the master's page, which is the phantom hdb the owner saw in Linux on the MiSTer.
+// TB_PC9821_ATA_LINUX_PROBE: The Linux/98 IDE driver's probe (pc98_ide.c, pc98ide_init + pc98ide_identify), which boots on the real Xe10, replayed port for port against the REAL pc9821_ata -> pc9821_block_share -> pc9821_block_io stack with the one disk image mounted at bank 0 (the core's fixed position, bank 0's master, so pc98ide_init's own `outb(0, PC98IDE_BANK)` reaches it unchanged): the bank select, SRST through 0x74C, then for unit 0 the 0xE0 select, four alternate-status reads, STATUS neither 0x00 nor 0xFF, IDENTIFY with STATUS non-zero, DRQ and words 60/61 = the image's capacity; and for unit 1 the 0xF0 select, which must read STATUS = ALTSTATUS = 0x00 (ATA-3 r6 s.9.5.1, an absent device 1), so the driver gives the unit up - and an IDENTIFY written anyway must leave STATUS 0x00 with no DRQ and no IRQ (a command for the absent device is not executed), EXECUTE DEVICE DIAGNOSTIC written with device 1 selected is still executed by device 0 (IRQ, ERROR 0x01), and re-selecting 0xE0 must show the master's 0x50 and serve a READ SECTORS of the image's own data. FAIL-FIRST: on ffd1ae9d the absent slave answered 0x50 and IDENTIFY returned the master's page, which is the phantom hdb the owner saw in Linux on the MiSTer.
 //
 // Reference: the Linux/98 IDE driver, pc98_ide.c (the driver of a Linux image
 // that boots on the real Xe10 - a software observation of the real machine, rank 2):
@@ -47,7 +47,7 @@ module tb_pc9821_ata_linux_probe;
   wire [15:0] d_din = 16'd0;
 
   // Image sizes in sectors. Different, so a capacity answered from the wrong slot is visible.
-  localparam [7:0] BANK = 8'h01;
+  localparam [7:0] BANK = 8'h00;   // pc98ide_init's own outb(0, PC98IDE_BANK): the disk is bank 0's master
   localparam [31:0] CAP_A = 32'd20160;   // 20 cylinders of 16*63
   localparam [31:0] CAP_D = 32'd5040;    //  5 cylinders of 16*63
 
@@ -213,7 +213,7 @@ module tb_pc9821_ata_linux_probe;
     end
   endtask
 
-  // The bank the one disk answers at (this core's single-disk position, docs/probes/IDE.TXT).
+  // The bank the one disk answers at (bank 0, the core's fixed layout).
   task automatic select(input dev, input [3:0] lba_hi);
     begin
       tf_write(16'h0432, BANK);

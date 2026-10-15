@@ -76,22 +76,27 @@ module paging_tlb
     output reg          tlbt_done,
     output reg          tlbt_lookup_done,
     output reg   [31:0] tlbt_tr6_out,
-    output reg   [31:0] tlbt_tr7_out
+    // Valid in the tlbt_lookup_done cycle (the one cycle its only reader, z486's
+    // TR7 reload, samples it): its PFN is read from tlbt_pfn_ram that cycle.
+    output       [31:0] tlbt_tr7_out
 );
 
 // 8 sets x 4 ways, one lookup port as on the i486: the registered lookup
 // address carries walker, demand and prefetch requests in that priority. Tags
-// and PFNs live in MLAB, one copy per read port (the registered lookup,
-// INVLPG's tag compare, and the TR6/TR7 test port that also serves the
-// sidecar's replacement refresh); the small per-entry flags, valid bits and
-// PLRU state stay in registers.
+// and PFNs live in MLAB, one copy per read port: the registered lookup
+// ({W, U, D, tag[16:0], PFN[19:0]}, two 20-bit-wide MLABs per way), and an
+// auxiliary port shared by INVLPG's tag compare, the TR6/TR7 test lookup and
+// the sidecar's replacement refresh (see aux_rd_set), which needs only
+// {W, U, D, tag[16:0]}: one 20-bit-wide MLAB per way. The PFN's only other
+// reader, the TR7 readback, takes it a cycle later from tlbt_pfn_ram (one
+// 32 x 20 MLAB indexed by {way, set}) instead of a second 20-bit MLAB per way.
+// W/U/D ride in bits the MLABs pay for anyway (they replaced 96 flip-flops
+// and their per-port 8:1 read selects). The small per-entry flags, valid bits
+// and PLRU state stay in registers.
 // MLABs have one write port and asynchronous reads, so each copy costs about
 // 20 ALMs where the register array cost a flip-flop per bit plus an 8:1 read
 // mux per bit and port.
 reg valid_q    [7:0][3:0];
-reg writable_q [7:0][3:0];
-reg user_q     [7:0][3:0];
-reg dirty_q    [7:0][3:0];
 reg vga_mem    [7:0][3:0];
 reg pcd_q      [7:0][3:0];
 reg pwt_q      [7:0][3:0];     // PTE.PWT, kept for the TR7 test readback only
@@ -131,65 +136,70 @@ wire [1:0]  write_way = tlbt_write ? tlbt_way : victim_way;
 wire [2:0]  write_set = tlbt_write ? tlbt_set : update_set;
 wire [16:0] write_tag = tlbt_write ? tlbt_tag : update_tag;
 wire [19:0] write_pfn = tlbt_write ? tlbt_tr7_r[31:12] : update_pfn;
+// {W, U, D}: from TR6 for a TR6 write, else from the walker.
+wire [2:0]  write_wud = tlbt_write ? {tlbt_tr6_r[6], tlbt_tr6_r[8], tlbt_tr6_r[10]} :
+                                     {update_writable, update_user, update_dirty};
 
 logic [16:0] lookup_tag_q [4];
 logic [19:0] lookup_pfn_q [4];
-logic [16:0] inval_tag_q  [4];
+logic [2:0]  lookup_wud_q [4];
 
 // Quartus 17 does not apply ramstyle to memories declared inside a generate
 // block (they stay as registers), so the copies are written out flat.
-`Z486_DISTRIBUTED_RAM reg [36:0] lookup_copy0 [0:7];
-`Z486_DISTRIBUTED_RAM reg [16:0] inval_copy0  [0:7];
-`Z486_DISTRIBUTED_RAM reg [36:0] lookup_copy1 [0:7];
-`Z486_DISTRIBUTED_RAM reg [16:0] inval_copy1  [0:7];
-`Z486_DISTRIBUTED_RAM reg [36:0] lookup_copy2 [0:7];
-`Z486_DISTRIBUTED_RAM reg [16:0] inval_copy2  [0:7];
-`Z486_DISTRIBUTED_RAM reg [36:0] lookup_copy3 [0:7];
-`Z486_DISTRIBUTED_RAM reg [16:0] inval_copy3  [0:7];
-// TR6/TR7 lookup read port.
-`Z486_DISTRIBUTED_RAM reg [36:0] test_copy0   [0:7];
-`Z486_DISTRIBUTED_RAM reg [36:0] test_copy1   [0:7];
-`Z486_DISTRIBUTED_RAM reg [36:0] test_copy2   [0:7];
-`Z486_DISTRIBUTED_RAM reg [36:0] test_copy3   [0:7];
+`Z486_DISTRIBUTED_RAM reg [39:0] lookup_copy0 [0:7];
+`Z486_DISTRIBUTED_RAM reg [39:0] lookup_copy1 [0:7];
+`Z486_DISTRIBUTED_RAM reg [39:0] lookup_copy2 [0:7];
+`Z486_DISTRIBUTED_RAM reg [39:0] lookup_copy3 [0:7];
+// The auxiliary read port (INVLPG, TR6/TR7 lookup, sidecar refresh):
+// {W, U, D, tag[16:0]} per way.
+`Z486_DISTRIBUTED_RAM reg [19:0] aux_copy0    [0:7];
+`Z486_DISTRIBUTED_RAM reg [19:0] aux_copy1    [0:7];
+`Z486_DISTRIBUTED_RAM reg [19:0] aux_copy2    [0:7];
+`Z486_DISTRIBUTED_RAM reg [19:0] aux_copy3    [0:7];
+// Every entry's PFN at {way, set}, for the TR7 readback only.
+`Z486_DISTRIBUTED_RAM reg [19:0] tlbt_pfn_ram [0:31];
 always_ff @(posedge clk) begin
     if (tlb_write && write_way == 2'd0) begin
-        lookup_copy0[write_set] <= {write_tag, write_pfn};
-        inval_copy0[write_set]  <= write_tag;
-        test_copy0[write_set]   <= {write_tag, write_pfn};
+        lookup_copy0[write_set] <= {write_wud, write_tag, write_pfn};
+        aux_copy0[write_set]    <= {write_wud, write_tag};
     end
     if (tlb_write && write_way == 2'd1) begin
-        lookup_copy1[write_set] <= {write_tag, write_pfn};
-        inval_copy1[write_set]  <= write_tag;
-        test_copy1[write_set]   <= {write_tag, write_pfn};
+        lookup_copy1[write_set] <= {write_wud, write_tag, write_pfn};
+        aux_copy1[write_set]    <= {write_wud, write_tag};
     end
     if (tlb_write && write_way == 2'd2) begin
-        lookup_copy2[write_set] <= {write_tag, write_pfn};
-        inval_copy2[write_set]  <= write_tag;
-        test_copy2[write_set]   <= {write_tag, write_pfn};
+        lookup_copy2[write_set] <= {write_wud, write_tag, write_pfn};
+        aux_copy2[write_set]    <= {write_wud, write_tag};
     end
     if (tlb_write && write_way == 2'd3) begin
-        lookup_copy3[write_set] <= {write_tag, write_pfn};
-        inval_copy3[write_set]  <= write_tag;
-        test_copy3[write_set]   <= {write_tag, write_pfn};
+        lookup_copy3[write_set] <= {write_wud, write_tag, write_pfn};
+        aux_copy3[write_set]    <= {write_wud, write_tag};
     end
+    if (tlb_write)
+        tlbt_pfn_ram[{write_way, write_set}] <= write_pfn;
 end
-logic [36:0] test_q [4];
-// The test read port also serves the sidecar's replacement refresh (below)
-// whenever no TR6 request is pending; a pending request owns it.
+// aux_q[w] = {W, U, D, tag[16:0]}
+logic [19:0] aux_q [4];
+// The auxiliary port's three readers never need it in the same cycle:
+//  - INVLPG (invalidate_page) owns it. In that cycle the TLB state update
+//    takes its invalidate_page branch, so neither the sidecar refresh nor a
+//    TR6 lookup is applied (tlbt_go also excludes invalidate_page).
+//  - Otherwise a pending TR6 request owns it; the refresh is suppressed while
+//    one is pending (vref_refresh's !tlbt_pend_r).
+//  - Otherwise the sidecar's replacement refresh reads it.
+// So every consumer sees exactly the set it saw when INVLPG had its own tag
+// copy, and the port costs one 3:1 address select instead of four MLABs.
 wire [2:0] vref_set;
-wire [2:0] test_rd_set = tlbt_pend_r ? tlbt_set : vref_set;
-assign test_q[0] = test_copy0[test_rd_set];
-assign test_q[1] = test_copy1[test_rd_set];
-assign test_q[2] = test_copy2[test_rd_set];
-assign test_q[3] = test_copy3[test_rd_set];
-assign {lookup_tag_q[0], lookup_pfn_q[0]} = lookup_copy0[lookup_set];
-assign inval_tag_q[0]                      = inval_copy0[invalidate_set];
-assign {lookup_tag_q[1], lookup_pfn_q[1]} = lookup_copy1[lookup_set];
-assign inval_tag_q[1]                      = inval_copy1[invalidate_set];
-assign {lookup_tag_q[2], lookup_pfn_q[2]} = lookup_copy2[lookup_set];
-assign inval_tag_q[2]                      = inval_copy2[invalidate_set];
-assign {lookup_tag_q[3], lookup_pfn_q[3]} = lookup_copy3[lookup_set];
-assign inval_tag_q[3]                      = inval_copy3[invalidate_set];
+wire [2:0] aux_rd_set = invalidate_page ? invalidate_set :
+                        tlbt_pend_r     ? tlbt_set : vref_set;
+assign aux_q[0] = aux_copy0[aux_rd_set];
+assign aux_q[1] = aux_copy1[aux_rd_set];
+assign aux_q[2] = aux_copy2[aux_rd_set];
+assign aux_q[3] = aux_copy3[aux_rd_set];
+assign {lookup_wud_q[0], lookup_tag_q[0], lookup_pfn_q[0]} = lookup_copy0[lookup_set];
+assign {lookup_wud_q[1], lookup_tag_q[1], lookup_pfn_q[1]} = lookup_copy1[lookup_set];
+assign {lookup_wud_q[2], lookup_tag_q[2], lookup_pfn_q[2]} = lookup_copy2[lookup_set];
+assign {lookup_wud_q[3], lookup_tag_q[3], lookup_pfn_q[3]} = lookup_copy3[lookup_set];
 
 // Hit detection - combinational, parallel comparison within selected set
 wire hit0 = valid_q[lookup_set][0] && (lookup_tag_q[0] == lookup_tag);
@@ -350,10 +360,20 @@ assign vipt_is_vga_mem = vipt_match && vipt_tlb_q[0];
 // cycle after it, when vipt_linear_r is the preread's address.
 assign vref_set = vipt_linear_r[14:12];
 wire [16:0] vref_tag = vipt_linear_r[31:15];
-wire [3:0] vref_match = {valid_q[vref_set][3] && (test_q[3][36:20] == vref_tag),
-                         valid_q[vref_set][2] && (test_q[2][36:20] == vref_tag),
-                         valid_q[vref_set][1] && (test_q[1][36:20] == vref_tag),
-                         valid_q[vref_set][0] && (test_q[0][36:20] == vref_tag)};
+// The auxiliary port's tag compare and valid read, shared by its three
+// readers: the compare tag and the valid bits follow aux_rd_set's owner, so
+// each reader's match is computed exactly when it reads the port (INVLPG's in
+// its invalidate_page cycle, the TR6 lookup's in tlbt_lookup, which implies
+// tlbt_pend_r and !invalidate_page, and the refresh's when vref_refresh can
+// apply: !tlbt_pend_r, and outside the invalidate_page branch).
+wire [16:0] aux_cmp_tag = invalidate_page ? invalidate_tag :
+                          tlbt_pend_r     ? tlbt_tag : vref_tag;
+wire [3:0]  aux_valid  = {valid_q[aux_rd_set][3], valid_q[aux_rd_set][2],
+                          valid_q[aux_rd_set][1], valid_q[aux_rd_set][0]};
+wire [3:0]  aux_tag_eq = {aux_q[3][16:0] == aux_cmp_tag, aux_q[2][16:0] == aux_cmp_tag,
+                          aux_q[1][16:0] == aux_cmp_tag, aux_q[0][16:0] == aux_cmp_tag};
+wire [3:0]  aux_match  = aux_valid & aux_tag_eq;
+wire [3:0] vref_match = aux_match;
 wire       vref_refresh = vipt_fresh_r && vipt_match && !tlbt_pend_r && (|vref_match);
 wire [1:0] vref_way = vref_match[0] ? 2'd0 : vref_match[1] ? 2'd1 :
                       vref_match[2] ? 2'd2 : 2'd3;
@@ -421,7 +441,8 @@ always_ff @(posedge clk) begin
     if (reset_n && vipt_match && !vipt_valid_ref_q)
         $fatal(1, "sidecar hit on an entry the valid-bit reference rejects (linear %08x)",
                vipt_linear_r);
-    if (reset_n && vipt_fresh_r && vipt_match && !tlbt_pend_r && !(|vref_match))
+    if (reset_n && vipt_fresh_r && vipt_match && !tlbt_pend_r && !invalidate_page &&
+        !(|vref_match))
         $fatal(1, "sidecar hit on a page the four-way TLB does not hold (linear %08x)",
                vipt_linear_r);
 end
@@ -433,9 +454,9 @@ always_comb begin
 
     // Select physical address from matching entry
     physical_addr = {lookup_pfn_q[hit_way], linear_addr[11:0]};
-    writable = writable_q[lookup_set][hit_way];
-    user = user_q[lookup_set][hit_way];
-    dirty = dirty_q[lookup_set][hit_way];
+    writable = lookup_wud_q[hit_way][2];
+    user = lookup_wud_q[hit_way][1];
+    dirty = lookup_wud_q[hit_way][0];
 
     // If no hit, output linear address (will be overridden by page walker result)
     if (!hit) begin
@@ -462,10 +483,10 @@ always @(posedge clk)
                update_vpn, lookup_vpn);
 // synthesis translate_on
 
-wire inval_match0 = valid_q[invalidate_set][0] && inval_tag_q[0] == invalidate_tag;
-wire inval_match1 = valid_q[invalidate_set][1] && inval_tag_q[1] == invalidate_tag;
-wire inval_match2 = valid_q[invalidate_set][2] && inval_tag_q[2] == invalidate_tag;
-wire inval_match3 = valid_q[invalidate_set][3] && inval_tag_q[3] == invalidate_tag;
+wire inval_match0 = aux_match[0];
+wire inval_match1 = aux_match[1];
+wire inval_match2 = aux_match[2];
+wire inval_match3 = aux_match[3];
 
 // TLB state update and PLRU management. Tag/PFN writes are in the MLAB
 // copies above, enabled by tlb_write and victim_way.
@@ -521,14 +542,11 @@ always_ff @(posedge clk or negedge reset_n) begin
             endcase
         end
 
-        // Insert new entry from page walker, or from a TR6 write (V/D/U/W
-        // from TR6, PFN/PCD/PWT from TR7; the walker's write has priority,
-        // so both share one write index).
+        // Insert new entry from page walker, or from a TR6 write (V from TR6,
+        // PCD/PWT from TR7; D/U/W and the PFN go to the MLAB copies). The
+        // walker's write has priority, so both share one write index.
         if (update_valid || tlbt_write) begin
             valid_q[write_set][write_way]    <= tlbt_write ? tlbt_tr6_r[11] : 1'b1;
-            writable_q[write_set][write_way] <= tlbt_write ? tlbt_tr6_r[6] : update_writable;
-            user_q[write_set][write_way]     <= tlbt_write ? tlbt_tr6_r[8] : update_user;
-            dirty_q[write_set][write_way]    <= tlbt_write ? tlbt_tr6_r[10] : update_dirty;
             vga_mem[write_set][write_way]    <= z486_page_in_window(write_pfn, VGA_BASE, VGA_TOP);
             pcd_q[write_set][write_way]      <= tlbt_write ? tlbt_tr7_r[11] : update_pcd;
             pwt_q[write_set][write_way]      <= tlbt_write ? tlbt_tr7_r[10] : update_pwt;
@@ -557,16 +575,27 @@ endfunction
 logic [3:0] tlbt_match;
 always_comb begin
     for (int w = 0; w < 4; w++)
-        tlbt_match[w] = (valid_q[tlbt_set][w] == tlbt_tr6_r[11]) &&
-                        (test_q[w][36:20] == tlbt_tag) &&
-                        tlbt_attr_ok(dirty_q[tlbt_set][w], tlbt_tr6_r[10], tlbt_tr6_r[9]) &&
-                        tlbt_attr_ok(user_q[tlbt_set][w], tlbt_tr6_r[8], tlbt_tr6_r[7]) &&
-                        tlbt_attr_ok(writable_q[tlbt_set][w], tlbt_tr6_r[6], tlbt_tr6_r[5]);
+        tlbt_match[w] = (aux_valid[w] == tlbt_tr6_r[11]) && aux_tag_eq[w] &&
+                        tlbt_attr_ok(aux_q[w][17], tlbt_tr6_r[10], tlbt_tr6_r[9]) &&
+                        tlbt_attr_ok(aux_q[w][18], tlbt_tr6_r[8], tlbt_tr6_r[7]) &&
+                        tlbt_attr_ok(aux_q[w][19], tlbt_tr6_r[6], tlbt_tr6_r[5]);
 end
 wire       tlbt_one = (tlbt_match == 4'b0001) || (tlbt_match == 4'b0010) ||
                       (tlbt_match == 4'b0100) || (tlbt_match == 4'b1000);
 wire [1:0] tlbt_hit_way = tlbt_match[0] ? 2'd0 : tlbt_match[1] ? 2'd1 :
                           tlbt_match[2] ? 2'd2 : 2'd3;
+// TR7's PFN: a single hit's entry PFN, read from tlbt_pfn_ram in the
+// tlbt_lookup_done cycle at the {way, set} the lookup registered, else TR7's
+// own PFN field. The RAM holds the lookup cycle's contents then: tlbt_lookup
+// implies tlbt_go, which excludes update_valid, invalidate_all and
+// invalidate_page, and tlbt_write is its exclusive twin (TR6.C), so tlb_write
+// is low in the lookup cycle and nothing is written on the edge between.
+reg  [4:0]  tlbt_pfn_addr_r;
+reg         tlbt_pfn_hit_r;
+reg  [19:0] tlbt_tr7_pfn_r;
+reg  [11:0] tlbt_tr7_low_r;
+assign tlbt_tr7_out = {tlbt_pfn_hit_r ? tlbt_pfn_ram[tlbt_pfn_addr_r] : tlbt_tr7_pfn_r,
+                       tlbt_tr7_low_r};
 always_ff @(posedge clk) begin
     if (!reset_n) begin
         tlbt_pend_r <= 1'b0;
@@ -575,7 +604,10 @@ always_ff @(posedge clk) begin
         tlbt_tr6_r <= 32'd0;
         tlbt_tr7_r <= 32'd0;
         tlbt_tr6_out <= 32'd0;
-        tlbt_tr7_out <= 32'd0;
+        tlbt_pfn_addr_r <= 5'd0;
+        tlbt_pfn_hit_r <= 1'b0;
+        tlbt_tr7_pfn_r <= 20'd0;
+        tlbt_tr7_low_r <= 12'd0;
     end else begin
         tlbt_done <= tlbt_go;
         tlbt_lookup_done <= tlbt_lookup;
@@ -588,16 +620,18 @@ always_ff @(posedge clk) begin
         end
         if (tlbt_lookup) begin
             // LRU reports the state before the lookup; PL reports a single hit.
-            tlbt_tr7_out <= {tlbt_one ? test_q[tlbt_hit_way][19:0] : tlbt_tr7_r[31:12],
-                             tlbt_one ? pcd_q[tlbt_set][tlbt_hit_way] : 1'b0,
-                             tlbt_one ? pwt_q[tlbt_set][tlbt_hit_way] : 1'b0,
-                             tlbt_plru, 2'b00, tlbt_one,
-                             tlbt_one ? tlbt_hit_way : 2'b00, 2'b00};
+            tlbt_pfn_addr_r <= {tlbt_hit_way, tlbt_set};
+            tlbt_pfn_hit_r <= tlbt_one;
+            tlbt_tr7_pfn_r <= tlbt_tr7_r[31:12];
+            tlbt_tr7_low_r <= {tlbt_one ? pcd_q[tlbt_set][tlbt_hit_way] : 1'b0,
+                               tlbt_one ? pwt_q[tlbt_set][tlbt_hit_way] : 1'b0,
+                               tlbt_plru, 2'b00, tlbt_one,
+                               tlbt_one ? tlbt_hit_way : 2'b00, 2'b00};
             tlbt_tr6_out <= tlbt_one
                 ? {tlbt_tr6_r[31:12], valid_q[tlbt_set][tlbt_hit_way],
-                   dirty_q[tlbt_set][tlbt_hit_way], !dirty_q[tlbt_set][tlbt_hit_way],
-                   user_q[tlbt_set][tlbt_hit_way], !user_q[tlbt_set][tlbt_hit_way],
-                   writable_q[tlbt_set][tlbt_hit_way], !writable_q[tlbt_set][tlbt_hit_way],
+                   aux_q[tlbt_hit_way][17], !aux_q[tlbt_hit_way][17],
+                   aux_q[tlbt_hit_way][18], !aux_q[tlbt_hit_way][18],
+                   aux_q[tlbt_hit_way][19], !aux_q[tlbt_hit_way][19],
                    4'b0000, tlbt_tr6_r[0]}
                 : tlbt_tr6_r;
         end

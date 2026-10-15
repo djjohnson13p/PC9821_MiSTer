@@ -180,7 +180,7 @@ module tb_pc9821_gvram_latency;
   //
   // This is what makes a change that lengthens the handshake by one cycle but stays inside the
   // captured time legal - and, symmetrically, what lets one that goes UNDER the capture stand
-  // (TODO item 113's GRCG store measures 120 ns at 50 MHz and 60 ns at 100 MHz: both are inside
+  // (trade T28's GRCG store measures 120 ns at 50 MHz and 60 ns at 100 MHz: both are inside
   // the floor, so neither is a failure, and the clk-dependence is reported by `invariant` rather
   // than failed).
   task automatic floor(input string what, input integer got_ps, input integer cap_ps,
@@ -212,10 +212,10 @@ module tb_pc9821_gvram_latency;
       // REPORTED, not failed (owner, 2026-10-02). The two clocks agreeing is the design's
       // standing rate rule ("a time must be derived from a real frequency"), and a divergence
       // here is worth seeing - but the CONTRACT this bench enforces is the floor above, and a
-      // value under it is legal at either clock. TODO item 113's GRCG store is the instance:
+      // value under it is legal at either clock. Trade T28's GRCG store is the instance:
       // 120 ns at 50 MHz and 60 ns at 100 MHz, both inside the floor.
       if (d > 25_000)
-        $display("NOTE gvram_latency: %0s is NOT clk_sys-invariant (%0d ps apart) - allowed by the floor contract, see TODO item 113",
+        $display("NOTE gvram_latency: %0s is NOT clk_sys-invariant (%0d ps apart) - allowed by the floor contract, see docs/trade-candidates.md T28",
                  what, d);
     end
   endtask

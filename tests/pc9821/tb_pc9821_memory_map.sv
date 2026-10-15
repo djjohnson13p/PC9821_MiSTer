@@ -26,7 +26,8 @@ module tb_pc9821_memory_map;
   // default keeps every pre-existing expectation in this bench in the map's
   // identity region.
   reg [7:0] win0_sel = 8'h08;
-  reg [31:0] pack_base = 32'h01F8_0000;
+  wire       win0_sel_moved = (win0_sel != 8'h08);   // pc9821_iobus's registered compare
+  reg [31:0] pack_base = 32'h0200_0000;
   reg [31:0] guest_ram_bytes = 32'h0200_0000;
   reg [31:0] gvram_base = 32'h0300_0000;
   reg gvram_access_page = 0;
@@ -77,6 +78,11 @@ module tb_pc9821_memory_map;
 
   reg  [1:0] d8_bank = 2'b00;
 
+  wire addr_ge_ram;   // the map's shared compare output, unused here
+  // No translation in front of the map here: the untranslated address IS cpu_addr.
+  wire [31:0] cpu_addr_raw = cpu_addr;
+  wire        xl_low20 = 1'b0;
+  wire        xl_peg = 1'b0;
   pc9821_memory_map dut (.*);
 
   integer errors = 0;
@@ -152,8 +158,8 @@ module tb_pc9821_memory_map;
     // D8000 is ordinary RAM until the 0x053D gate enables the option ROM.
     check_addr(32'h000D_8000, 32'h000D_8000);
     ide_rom_enable = 1;
-    check_addr(32'h000D_8000, 32'h01FF_0000);
-    check_addr(32'h000D_9FFF, 32'h01FF_1FFF);   // 8 KiB, not 32 KiB
+    check_addr(32'h000D_8000, 32'h0207_0000);
+    check_addr(32'h000D_9FFF, 32'h0207_1FFF);   // 8 KiB, not 32 KiB
     // 0xDA000-0xDBFFF is the IDE BIOS work RAM: identity RAM while the port
     // 0x1E8E gate bit is set (driven ON here) and the absent route's own shape
     // while it is clear - the machine's own gate, docs/probes/SHADOWW.TXT:226-231
@@ -256,22 +262,22 @@ module tb_pc9821_memory_map;
     check_addr(32'h001A_FFFF, 32'h001A_FFFF);
 
     // Fixed lower BIOS: E8000..F7FFF -> hidden pack + 10000..1FFFF.
-    check_addr(32'h000E_8000, 32'h01F9_0000);
-    check_addr(32'h000F_7FFF, 32'h01F9_FFFF);
+    check_addr(32'h000E_8000, 32'h0201_0000);
+    check_addr(32'h000F_7FFF, 32'h0201_FFFF);
 
     // ITF selected at reset: F8000 window and 4 GiB alias agree.
     top_bank = 4'd8;
-    check_addr(32'h000F_8000, 32'h01F8_0000);
-    check_addr(32'h000F_FFFF, 32'h01F8_7FFF);
-    check_addr(32'hFFFF_8000, 32'h01F8_0000);
-    check_addr(32'hFFFF_FFFF, 32'h01F8_7FFF);
+    check_addr(32'h000F_8000, 32'h0200_0000);
+    check_addr(32'h000F_FFFF, 32'h0200_7FFF);
+    check_addr(32'hFFFF_8000, 32'h0200_0000);
+    check_addr(32'hFFFF_FFFF, 32'h0200_7FFF);
 
     // Main-BIOS top bank uses pack offset 20000.
     top_bank = 4'd9;
-    check_addr(32'h000F_8000, 32'h01FA_0000);
-    check_addr(32'h000F_FFFF, 32'h01FA_7FFF);
-    check_addr(32'hFFFF_8000, 32'h01FA_0000);
-    check_addr(32'hFFFF_FFFF, 32'h01FA_7FFF);
+    check_addr(32'h000F_8000, 32'h0202_0000);
+    check_addr(32'h000F_FFFF, 32'h0202_7FFF);
+    check_addr(32'hFFFF_8000, 32'h0202_0000);
+    check_addr(32'hFFFF_FFFF, 32'h0202_7FFF);
 
     // OSD RAM sizing: the reserve and open-bus boundary track the configured
     // guest size. 16 MiB guest -> pack at 0x0100_0000.
@@ -280,23 +286,23 @@ module tb_pc9821_memory_map;
     // are the main BIOS, so bank 7 and the 0x043D top-BIOS state are the same
     // image (the BIOS top) rather than two different ones.
     top_bank = 4'd0;
-    check_addr(32'h000F_8000, 32'h01FB_1000);
-    check_addr(32'h000F_FFFF, 32'h01FB_8FFF);
-    check_addr(32'hFFFF_8000, 32'h01FB_1000);
+    check_addr(32'h000F_8000, 32'h0203_1000);
+    check_addr(32'h000F_FFFF, 32'h0203_8FFF);
+    check_addr(32'hFFFF_8000, 32'h0203_1000);
     top_bank = 4'd3;
-    check_addr(32'h000F_8000, 32'h01FF_0000);   // option-ROM slot
-    check_addr(32'h000F_FFFF, 32'h01FF_7FFF);
+    check_addr(32'h000F_8000, 32'h0207_0000);   // option-ROM slot
+    check_addr(32'h000F_FFFF, 32'h0207_7FFF);
     top_bank = 4'd7;
-    check_addr(32'h000F_8000, 32'h01FA_0000);   // == the top-BIOS image
-    check_addr(32'h000F_FFFF, 32'h01FA_7FFF);
+    check_addr(32'h000F_8000, 32'h0202_0000);   // == the top-BIOS image
+    check_addr(32'h000F_FFFF, 32'h0202_7FFF);
     top_bank = 4'd5;
-    check_addr(32'h000F_8000, 32'h01F9_0000);   // main BIOS first half
+    check_addr(32'h000F_8000, 32'h0201_0000);   // main BIOS first half
     top_bank = 4'd6;
-    check_addr(32'h000F_8000, 32'h01F9_8000);   // main BIOS second half
+    check_addr(32'h000F_8000, 32'h0201_8000);   // main BIOS second half
     // Bank 4 is the ITF image, so it aliases the reset state.
     top_bank = 4'd4;
-    check_addr(32'h000F_8000, 32'h01F8_0000);
-    check_addr(32'h000F_FFFF, 32'h01F8_7FFF);
+    check_addr(32'h000F_8000, 32'h0200_0000);
+    check_addr(32'h000F_FFFF, 32'h0200_7FFF);
 
     top_bank = 4'd8;
     pack_base = 32'h0100_0000;
@@ -523,7 +529,7 @@ module tb_pc9821_memory_map;
     // ES=0x9800 and 64 KiB from DS=0xE800 to ES=0x8800 (BANK4@0x01D9-0x01FE),
     // which is a materialise-into-the-shadow at the SAME physical address.
     // The sizing section above moved the reserve, so put it back first.
-    pack_base = 32'h01F8_0000;
+    pack_base = 32'h0200_0000;
     guest_ram_bytes = 32'h0200_0000;
     win0_sel = 8'h08;                                  // identity, the restore value
     check_addr(32'h0008_0000, 32'h0008_0000);
@@ -531,10 +537,10 @@ module tb_pc9821_memory_map;
     check_addr(32'h0009_FFFF, 32'h0009_FFFF);
 
     win0_sel = 8'h0E;                                  // 0xE0000-0xFFFFF
-    check_addr(32'h0009_8000, 32'h01F8_0000);          // -> the ROM window
-    check_addr(32'h0009_FFFF, 32'h01F8_7FFF);
-    check_addr(32'h0008_8000, 32'h01F9_0000);          // -> the lower BIOS
-    check_addr(32'h0008_FFFF, 32'h01F9_7FFF);
+    check_addr(32'h0009_8000, 32'h0200_0000);          // -> the ROM window
+    check_addr(32'h0009_FFFF, 32'h0200_7FFF);
+    check_addr(32'h0008_8000, 32'h0201_0000);          // -> the lower BIOS
+    check_addr(32'h0008_FFFF, 32'h0201_7FFF);
     // 0x80000-0x87FFF is the first 32 KiB of the window, which aliases
     // 0xE0000: the same bytes the intensity window serves with the window at
     // identity. The firmware never touches that part, but it must not be RAM.
@@ -551,8 +557,8 @@ module tb_pc9821_memory_map;
     ide_rom_enable = 0;
     check_addr(32'h0009_8000, 32'h000D_8000);          // -> identity address...
     ide_rom_enable = 1;                                // ...which is the option-ROM window
-    check_addr(32'h0009_8000, 32'h01FF_0000);          // pack option-ROM slot
-    check_addr(32'h0009_9FFF, 32'h01FF_1FFF);
+    check_addr(32'h0009_8000, 32'h0207_0000);          // pack option-ROM slot
+    check_addr(32'h0009_9FFF, 32'h0207_1FFF);
     // Measured through the same window, the machine reads 0xFFFF at 0xC0000 and
     // 0xD0000 and discards stores there (`0461=0C rb=0D b=FFFF a=FFFF`), so the
     // region the window selects is not backed on the machine at that moment.

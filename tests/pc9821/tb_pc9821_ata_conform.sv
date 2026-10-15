@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 // ==== WHAT THIS PROVES ====
-// A conformance sweep of the PC-9821 ATA interface against NP2kai's cbus/ideio.c: the port register file (0x0430/0x0432/0x0433/0x0435 and the 0x064x/0x074x block), a PIO sector read and write, the status/error semantics (a command abort, an ERROR-register read, READ VERIFY) and the reset paths (software reset, DEVICE RESET, EXECUTE DEVICE DIAGNOSTIC, NOP) are each compared word for word with the reference, while the IDENTIFY words are asserted against the machine's capture with the PIO-only core's documented capability substitutions (docs/probes/IDE.TXT) for the same capacity. The NP2kai divergences Round 3 fixed are asserted; ten documented divergences (the measured 0x0430/0x074E/0x064C, the 0x0644/0x0646 post-reset default, the still-waived 0x90 diagnostic error signature, and the withdrawn multiple-mode words 47/59) print a WAIVED line, while DEVICE RESET is asserted against the MACHINE (status 0x51 / ERROR 0x04, docs/probes/IDE.TXT:343) where NP2kai's 0x01|0x80 disagrees.
+// A conformance sweep of the PC-9821 ATA interface against NP2kai's cbus/ideio.c: the port register file (0x0430/0x0432/0x0433/0x0435 and the 0x064x/0x074x block), a PIO sector read and write, the status/error semantics (a command abort, an ERROR-register read, READ VERIFY) and the reset paths (software reset, DEVICE RESET, EXECUTE DEVICE DIAGNOSTIC, NOP) are each compared word for word with the reference, while the IDENTIFY words are asserted against the machine's capture with the PIO-only core's documented capability substitutions (docs/probes/IDE.TXT) for the same capacity. The NP2kai divergences Round 3 fixed are asserted; ten documented divergences (the measured 0x0430/0x074E/0x064C, the 0x0644/0x0646 post-reset default, the still-waived 0x90 diagnostic error signature, and the withdrawn multiple-mode words 47/59) print a WAIVED line, while DEVICE RESET is asserted against the MACHINE (status 0x51 / ERROR 0x04, docs/probes/IDE.TXT:343) where NP2kai's 0x01|0x80 disagrees, and so is the ERROR-register read, which keeps STATUS.ERR on the machine (IDE.TXT:343,349) where NP2kai's ideio_i642 clears it.
 
 module tb_pc9821_ata_conform;
 
@@ -225,7 +225,7 @@ module tb_pc9821_ata_conform;
     @(negedge clk);
     rst_n = 1;
     repeat (200) @(posedge clk);          // let the capacity-derived cylinder count settle
-    write_byte(16'h0432, 8'h01);          // the bank the built-in interface is on
+    write_byte(16'h0432, 8'h00);          // the bank the built-in interface is on
 
     // ---- 1. a channel with no image is no drive at all ----
     // NP2kai devinit (cbus/ideio.c) leaves drv->device = IDETYPE_NONE when its sxsi is
@@ -245,7 +245,7 @@ module tb_pc9821_ata_conform;
     read_byte(16'h0430, value); waive("reg_430_connection_report", value, 8'h01);
     // NP2kai ideio_i430 for 0x0432 returns the stored bank byte & 0x7f; qemu
     // pc98_ide_chsel_read adds 0x40 (slave-capable). This core matches NP2kai here.
-    read_byte(16'h0432, value); check("reg_432_bank_readback", value, 8'h01);
+    read_byte(16'h0432, value); check("reg_432_bank_readback", value, 8'h00);
     // NP2kai ideio_i435 is a constant 0.
     read_byte(16'h0435, value); check("reg_435", value, 8'h00);
 
@@ -372,8 +372,9 @@ module tb_pc9821_ata_conform;
     read_byte(16'h074C, value); check("abort_status_no_dsc", value, 8'h41);
     check("abort_irq", irq, 16'd1);
     read_byte(16'h0642, value); check("abort_error_abrt", value, 8'h04);
-    // NP2kai ideio_i642 clears IDESTAT_ERR in the status as a side effect of reading ERROR.
-    read_byte(16'h074C, value); check("error_read_clears_status_err", value, 8'h40);
+    // The MACHINE keeps STATUS.ERR across an ERROR read (docs/probes/IDE.TXT:343,349: 0x51
+    // after the 0x0642 read and a 0x064C write), where NP2kai ideio_i642 clears it (0x40).
+    read_byte(16'h074C, value); check_machine("error_read_keeps_status_err", value, 8'h41);
 
     // ---- 9. READ VERIFY (0x40) ----
     // NP2kai accepts it: `drv->status &= ~IDESTAT_BSY; setintr(drv);` with no error. qemu

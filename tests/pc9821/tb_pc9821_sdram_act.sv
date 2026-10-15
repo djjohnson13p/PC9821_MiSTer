@@ -46,7 +46,7 @@ module tb_pc9821_sdram_act;
   localparam integer FREQ = 100_000_000;
   localparam integer CYCLE_NS = 10;                 // 1/100MHz
   localparam integer T_RCD = 2;                     // ns_to_cycles(18) at 100 MHz
-  localparam integer CAS   = 2;                     // CAS_I = 2 for FREQ <= 100MHz
+  localparam integer CAS   = 3;                     // CL3 at 100 MHz and up (sdram.v CAS_I, the 2026-10-13 hardware cutover)
 
   reg clk = 0;
   always #(CYCLE_NS/2) clk = ~clk;

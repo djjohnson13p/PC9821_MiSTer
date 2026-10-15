@@ -12,8 +12,9 @@
 module sdram_chip_model #(
     // The chip's own CAS latency, in cycles. JEDEC SDR: the read data of a READ command
     // appears CAS (the latency the MRS programmed) clocks after the command, on the pins,
-    // independent of when the controller samples it. Two is what sdram.v declares for the
-    // legacy <=66MHz settings this core runs at (CAS_I = 2 for FREQ <= 100MHz).
+    // independent of when the controller samples it. Two is what sdram.v declares below
+    // 100 MHz (CAS_I = 2 below 100 MHz, 3 at 100 MHz and up): a bench at 100 MHz or more
+    // passes 3.
     parameter integer CAS = 2,
     // The transfer appears CAS cycles after the controller asserts the READ command.
     // The model tracks the pipeline depth implied by that datasheet statement (one in-flight

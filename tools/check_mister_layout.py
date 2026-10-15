@@ -130,6 +130,11 @@ def staging_leaves_no_config(deploy: Path) -> list[str]:
         t = Path(td)
         (t / "tools").mkdir()
         shutil.copy2(deploy, t / "tools" / deploy.name)
+        # the other files the staging copies (the Scripts-menu CUE/BIN converter)
+        for rel in ("cue2pcd.py", "mister/pc9821_cue2pcd.sh"):
+            if (ROOT / "tools" / rel).is_file():
+                (t / "tools" / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / "tools" / rel, t / "tools" / rel)
         (t / "output_files").mkdir()
         (t / "output_files" / "z486_mister.rbf").write_bytes(b"")
         (t / "build").mkdir()

@@ -24,10 +24,14 @@ module pc9821_pcm86_buf (
     input  wire        clk,
     input  wire        reset,
 
-    // Byte address of the buffer's first byte in the SDRAM (4-byte aligned). An input
-    // rather than a parameter because it moves with the guest RAM size: pack_base +
-    // PACK_BYTES + 256 KiB.
+    // Byte address of the buffer's first byte in the SDRAM. An input rather than a
+    // parameter because it moves with the guest RAM size: pack_base + PACK_BYTES + 256 KiB.
+    // It must be 32 KiB aligned (the buffer's own size): only bits [31:15] are used, and the
+    // buffer offset is concatenated under them instead of added. pack_base is a multiple of
+    // 1 MiB (pc9821_system size_code_bytes) and 0x140000 a multiple of 256 KiB.
+    /* verilator lint_off UNUSEDSIGNAL */   // bits [14:0] are the buffer-offset bits: zero by contract
     input  wire [31:0] buf_base,
+    /* verilator lint_on UNUSEDSIGNAL */
 
     // Guest write port. wr_en is a one-cycle strobe; wr_addr/wr_data are valid on it.
     // wr_wait is the write back-pressure: high while the FIFO cannot accept a byte.
@@ -70,6 +74,9 @@ module pc9821_pcm86_buf (
     // ------------------------------------------------------------------
     localparam integer FW = 4;                    // FIFO depth (power of two)
 
+    // No reset on the entries: an entry is read only while wcnt says it is held, and it is
+    // written before wcnt counts it. Without the reset Quartus can build the 4 x 23 array as
+    // memory (a reset of the whole array forces 92 flip-flops).
     reg  [22:0] fifo [0:FW-1];                    // {wr_addr, wr_data}
     reg  [1:0]  fhead;                            // oldest entry
     reg  [2:0]  wcnt;                             // entries held
@@ -105,8 +112,6 @@ module pc9821_pcm86_buf (
     // separate write latch is kept.
     wire [1:0] rd_lane = rd_lat[1:0];
 
-    integer i;
-
     always @(posedge clk) begin
         if (reset) begin
             wcnt        <= 3'd0;
@@ -121,7 +126,6 @@ module pc9821_pcm86_buf (
             sdram_addr  <= 32'd0;
             sdram_din   <= 32'd0;
             sdram_be    <= 4'd0;
-            for (i = 0; i < FW; i = i + 1) fifo[i] <= 23'd0;
         end else begin
             rd_valid <= 1'b0;
 
@@ -147,7 +151,7 @@ module pc9821_pcm86_buf (
                         // address and byte ride on fifo_head, which is stable until the pop.
                         sdram_valid <= 1'b1;
                         sdram_write <= 1'b1;
-                        sdram_addr  <= buf_base + {17'd0, fifo_head[22:8]};
+                        sdram_addr  <= {buf_base[31:15], fifo_head[22:8]};
                         // The byte's lane: replicated to all four so the byte-enable picks it.
                         sdram_din   <= {4{fifo_head[7:0]}};
                         sdram_be    <= 4'b0001 << fifo_head[9:8];   // addr[1:0]
@@ -155,8 +159,7 @@ module pc9821_pcm86_buf (
                     end else if (rd_pending) begin
                         sdram_valid <= 1'b1;
                         sdram_write <= 1'b0;
-                        sdram_addr  <= buf_base + {17'd0, rd_lat};
-                        sdram_din   <= 32'd0;
+                        sdram_addr  <= {buf_base[31:15], rd_lat};
                         sdram_be    <= 4'b1111;
                         bstate      <= B_RD;
                     end

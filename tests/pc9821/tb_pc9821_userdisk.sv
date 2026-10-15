@@ -38,7 +38,7 @@ module tb_pc9821_userdisk;
   // +CD_FILE=<path>: the CD-ROM's image (ISO or PCD, tools/cue2pcd.py) on hps_io slot 4, served
   // by this host model's second leg (the leg that once served the removed second hard disk).
   // Only in a build with -DUSERDISK_CD (USERDISK_CD=1 for run_userdisk.sh), which builds
-  // pc9821_system with CDROM_EN: the CD is then bank 1's master and the disk bank 0's.
+  // pc9821_system with CDROM_EN: the CD is bank 1's master; the disk is bank 0's in every build.
   reg hdd1_mounted = 0;
   reg [63:0] hdd1_size = 0;
   wire [31:0] hdd1_lba;
@@ -475,7 +475,7 @@ module tb_pc9821_userdisk;
   // machine's own measured access TIMES (docs/probes/IO.TXT), which is the compile-time
   // devkit switch the io-latency lane left.
   // One source, one variable, so a boot A/B is one build per side and the delta is
-  // attributable. The faithful table prices 0x005F by direction (826 ns read / item 41's
+  // attributable. The faithful table prices 0x005F by direction (826 ns read / IO.TXT's
   // 1621 ns write), while the min profile charges its ONE value, 1621 ns, in both directions
   // (a wr-dependent value there trips a Quartus fitter bug); that port is what the BIOS's own
   // delay loops are calibrated on.
@@ -1346,7 +1346,7 @@ module tb_pc9821_userdisk;
              dut.cpu.memory_inst.cache_unit_inst.icache_inst.state,
              dut.cpu.memory_inst.cache_unit_inst.icache_inst.req_tag_r,
              dut.cpu.memory_inst.cache_unit_inst.icache_inst.req_set_r,
-             dut.cpu.memory_inst.cache_unit_inst.icache_inst.line_r);
+             dut.cpu.memory_inst.cache_unit_inst.icache_inst.fill_line);
       $write("\n");
     end else if (cs0_probed && (cs0_wait != 16'hFFFF)) begin
       cs0_wait <= cs0_wait + 16'd1;
@@ -2274,7 +2274,7 @@ module tb_pc9821_userdisk;
       $display("TIMEOUT ZCPU mblock_busy=%0d mreq=%0d macc=%0d mserv=%0d icache_state=%0d icache_line=%0d icache_resp=%0d",
                dut.cpu.mem_block_busy, dut.cpu.mem_req_current, dut.cpu.mem_accepted,
                dut.cpu.mem_servicing, dut.cpu.memory_inst.cache_unit_inst.icache_inst.state,
-               dut.cpu.memory_inst.cache_unit_inst.icache_inst.line_r,
+               dut.cpu.memory_inst.cache_unit_inst.icache_inst.fill_line,
                dut.cpu.memory_inst.cache_unit_inst.icache_inst.cpu_resp_valid);
       $display("TIMEOUT MEMREQ mwrite=%0d mburst=%0d owed=%0d rda=%0d bacc=%0d beat=%0d hdone=%0d",
                dut.memory.mem_write, dut.memory.mem_burstcount,
@@ -2582,10 +2582,10 @@ module tb_pc9821_userdisk;
                dut.g_cdrom.atapi.cdb[9], dut.g_cdrom.atapi.cdb[10], dut.g_cdrom.atapi.cdb[11],
                dut.g_cdrom.atapi.cmd, tb_cycle);
     if (dut.g_cdrom.atapi.st != cdmon_st && (dut.g_cdrom.atapi.st == 3'd0 || dut.g_cdrom.atapi.st == 3'd6))
-      $display("CDMON %s st=%02x err=%02x ireason=%02x bytes=%0d sk=%x asc=%04x irq=%0d cyc=%0d",
+      $display("CDMON %s st=%02x err=%02x ireason=%02x bytes=%0d skc=%0d(0 none,1 not-ready,2 illegal,3 aborted) ascc=%0d(0 none,1 invalid-field,2 n2r,3 no-medium,4 lba) irq=%0d cyc=%0d",
                (dut.g_cdrom.atapi.st == 3'd6) ? "DATA" : "DONE", dut.g_cdrom.atapi.status,
                dut.g_cdrom.atapi.error, dut.g_cdrom.atapi.sc, dut.g_cdrom.atapi.cy,
-               dut.g_cdrom.atapi.sk, dut.g_cdrom.atapi.asc, dut.g_cdrom.atapi.irq, tb_cycle);
+               dut.g_cdrom.atapi.skc, dut.g_cdrom.atapi.ascc, dut.g_cdrom.atapi.irq, tb_cycle);
     if (dut.device_io_rd && dut.ata_cs && !dut.g_cdrom.atapi.bank1 && dut.ata.drive_head[4] &&
         (dut.device_io_addr == 16'h0640 || dut.device_io_addr == 16'h0641) && dut.device_io_dout != 8'h00)
       $display("CDMON GHOST bank 0 DEV 1 data read %04x = %02x (master status %02x) cyc=%0d",
@@ -3847,14 +3847,12 @@ module tb_pc9821_userdisk;
                dut.u_crtc.VACTIVE, dut.u_crtc.VFP, dut.u_crtc.VSYNC_W,
                dut.u_crtc.in_vsync, dut.u_crtc.vs_sync_ff, dut.u_crtc.de_ff,
                dut.u_crtc.gdc_start, dut.u_crtc.pixel_ce);
-      $display("RASTER sync_live=%02x%02x%02x%02x%02x%02x%02x%02x v_sync=%02x%02x%02x%02x%02x%02x%02x%02x s_lf_r=%0d s_y_r=%0d",
+      $display("RASTER sync_live=%02x%02x%02x%02x%02x%02x%02x%02x HACTIVE=%0d HS_ON=%0d HS_OFF=%0d VS_ON=%0d VS_OFF=%0d VBP=%0d",
                dut.u_crtc.sync_live[0], dut.u_crtc.sync_live[1], dut.u_crtc.sync_live[2],
                dut.u_crtc.sync_live[3], dut.u_crtc.sync_live[4], dut.u_crtc.sync_live[5],
                dut.u_crtc.sync_live[6], dut.u_crtc.sync_live[7],
-               dut.u_crtc.v_sync[0], dut.u_crtc.v_sync[1], dut.u_crtc.v_sync[2],
-               dut.u_crtc.v_sync[3], dut.u_crtc.v_sync[4], dut.u_crtc.v_sync[5],
-               dut.u_crtc.v_sync[6], dut.u_crtc.v_sync[7],
-               dut.u_crtc.s_lf_r, dut.u_crtc.s_y_r);
+               dut.u_crtc.HACTIVE, dut.u_crtc.HS_ON, dut.u_crtc.HS_OFF,
+               dut.u_crtc.VS_ON, dut.u_crtc.VS_OFF, dut.u_crtc.VBP);
       // The PC tail is the single most useful thing on a stall: it names the
       // loop the guest is stuck in, which is otherwise invisible (the CS trace
       // only fires on a *segment* change, so a firmware that never leaves its

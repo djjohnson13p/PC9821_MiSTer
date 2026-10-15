@@ -88,19 +88,19 @@ module pc9821_egc (
     input  wire        cl_ready,
     output reg         cl_write,
     output reg  [15:0] cl_addr,
-    output reg  [31:0] cl_wdata,
+    output wire [31:0] cl_wdata,
     // The zero-datum lane-skip's flags for cl_wdata (pc9821_gvram_arb's lane_datum0),
     // registered beside it: cl_datum0[k] says cl_wdata's byte k is 0x00. Always exactly
     // {cl_wdata[31:24]==0, cl_wdata[23:16]==0, cl_wdata[15:8]==0, cl_wdata[7:0]==0},
     // so the arb muxes 4-bit results instead of comparing 32-bit muxed write data.
-    output reg  [3:0]  cl_datum0,
+    output wire [3:0]  cl_datum0,
     output reg  [3:0]  cl_wbe,
     // The multi-column request: cl_burst says ONE request covers
     // several consecutive columns. A WRITE carries its column pair in cl_wdata2, word 0 = the
     // lower column; a READ is the unit's enabled columns (cl_wbe) and the client answers one word
     // per cl_done. Every other access leaves cl_burst low and cl_wdata2 don't-care.
     output reg         cl_burst,
-    output reg  [63:0] cl_wdata2,
+    output wire [63:0] cl_wdata2,
     input  wire [31:0] cl_rdata,
     input  wire        cl_done,
 
@@ -190,8 +190,24 @@ module pc9821_egc (
   // ---------------------------------------------------------------
   // Shifter state (NP2kai egcshift + shiftinput_* + egcsftb_*_sub)
   // ---------------------------------------------------------------
-  reg [15:0] patreg [0:3];    // the four-plane pattern register
-  reg [15:0] sdata  [0:3];    // the shifter's output quad (NP2kai egc_src)
+  // The per-plane state the plane loop walks (the pattern register patreg[p] and the shifter's
+  // output quad sdata[p], NP2kai's egc.patreg / egc_src) is kept as a RING that rotates one step
+  // per loop cycle instead of a four-entry array behind 4:1 read muxes and per-plane write
+  // enables. The loop steps plane pb = 0,1,2,3 in four consecutive cycles (pl = 1..4) and every
+  // unit runs all four, so at loop cycle j the plane being written (pb = j) is ALWAYS slot 0 and
+  // the plane stage A reads (pa = j+1) is always slot 1; after the fourth rotation the ring is
+  // aligned again (slot p = plane p), which is the only time anything outside the loop looks at
+  // it (the `sdata`/`patreg` views below). S_STEP_HI's stage A reads plane 0 before the first
+  // rotation, i.e. slot 0.
+  reg [15:0] pat_r0, pat_r1, pat_r2, pat_r3;
+  reg [15:0] sd_r0, sd_r1, sd_r2, sd_r3;
+  /* verilator lint_off UNUSEDSIGNAL */   // the aligned view tb_pc9821_egc peeks (sdata[0]); the RTL itself reads the ring slots
+  wire [15:0] sdata  [0:3];   // aligned views (only meaningful outside the loop)
+  assign sdata[0] = sd_r0;
+  assign sdata[1] = sd_r1;
+  assign sdata[2] = sd_r2;
+  assign sdata[3] = sd_r3;
+  /* verilator lint_on UNUSEDSIGNAL */
   reg [15:0] srcmask;         // AND-mask for the unit just shifted
   // `remain` is loaded from the 12-bit length plus one (max 4096) and only decreases or
   // holds, so 13 bits hold it; `stack`'s feed adds at most 16 only when the old stack is
@@ -378,13 +394,14 @@ module pc9821_egc (
   // The read column's and the burst write's requests are presented from the state that decides
   // them, so the D1 accept lands in the first poll cycle instead of two dedicated setup states
   // one state per request, not three.
-  // The produce is FOUR states now, not one. `S_FEED` writes the unit's source bytes
-  // into the M10K ring, `S_STEP_LO`/`S_STEP_HI` each run ONE `mask_step` and one `sub_data` lane,
-  // and the COMMIT state assembles the result. Reads commit in `S_EVAL` (their response state is
-  // the same state, so the probe still holds) and writes in `S_COMMIT`. The numbers of
-  // the older states are unchanged so the benches' state probes keep their meaning.
+  // The produce: `S_FEED` writes the unit's source bytes into the M10K ring, `S_STEP_LO`/
+  // `S_STEP_HI` each run ONE `mask_step`, and the plane loop (see THE PLANE-SERIAL DATAPATH)
+  // steps the four planes and commits. Reads loop in `S_EVAL` (so the benches' read-evaluate
+  // probe still holds) and writes in `S_COMMIT`. EGC_RESP2 is no longer entered (a read's ready
+  // leaves from its last plane step); the package keeps the value so the numbering, and the
+  // bench-only parallel reference that still uses it, are unchanged.
   localparam egc_state_e S_IDLE = EGC_IDLE, S_RD_RESP = EGC_RD_RESP, S_EVAL = EGC_EVAL,
-             S_WR = EGC_WR, S_WR_ACC = EGC_WR_ACC, S_RESP2 = EGC_RESP2, S_HOLD = EGC_HOLD,
+             S_WR = EGC_WR, S_WR_ACC = EGC_WR_ACC, S_HOLD = EGC_HOLD,
              S_WR_B_ACC = EGC_WR_B_ACC, S_FEED = EGC_FEED, S_STEP_LO = EGC_STEP_LO,
              S_STEP_HI = EGC_STEP_HI, S_COMMIT = EGC_COMMIT;
 
@@ -441,6 +458,52 @@ module pc9821_egc (
   wire [1:0] acc_col1 = acc_col1_full[1:0];
   /* verilator lint_on UNUSEDSIGNAL */
 
+  // ---------------------------------------------------------------
+  // THE PLANE-SERIAL DATAPATH
+  // ---------------------------------------------------------------
+  // The engine's per-plane work - the shifter's two output bytes, the ROP, the mask merge, the
+  // pattern latch, the compare and the read pick - runs on ONE 16-bit plane datapath that steps
+  // the four planes in turn, instead of four parallel copies. It is a two-stage plane pipeline:
+  //   stage A (plane `pa`): the shifter's lo/hi output bytes for that plane, from the ring's
+  //           registered window, into `st_lo`/`st_hi`;
+  //   stage B (plane `pb`, one cycle later): that plane's egc_src assembly, pattern latch, ROP,
+  //           merge and read pick, written into the plane's own state (sdata/patreg) and into
+  //           the unit's COLUMN ACCUMULATORS (`wacc_lo`/`wacc_hi`: byte p of each is plane p).
+  // Stage A of plane 0 runs in S_STEP_HI (where the window and both step masks first exist);
+  // the loop state (S_EVAL for a read unit, S_COMMIT for a write unit) then steps `pl` 1..4:
+  // pl = 1..3 runs stage A of plane pl and stage B of plane pl-1, pl = 4 runs stage B of plane 3
+  // and COMMITS the unit (srcmask/stack/pointers, the read's response piece).
+  //
+  // ALWAYS FOUR STEPS, whatever 0x4A0 enables: the Xe10's EGC time is flat across 1-4 enabled
+  // planes (docs/probes/EGCP.TXT, EGC3100SP/EGC28F0SP 677 ns net at 1, 2, 3 and 4 planes), so the
+  // step count never depends on the plane mask.
+  //
+  // NOTHING OUTSIDE CAN TELL. The cross-plane results (the compare read's AND over the planes,
+  // the source/pattern latches) accumulate across the steps and are exposed only at the unit's
+  // commit, exactly where the parallel form exposed them; the write is presented from the
+  // accumulators only after all four planes are in them, as the same column requests the
+  // parallel form issued (one column = byte p of plane p for all four planes, written to the
+  // four plane arrays in ONE clk_sys by pc9821_gvram_mem), so no client ever sees a column with
+  // some planes written. The CPU's next access waits for S_IDLE as before, which is after the
+  // whole write (tb_pc9821_egc_serial_equiv proves every write and read datum against the
+  // parallel engine, tests/pc9821/pc9821_egc_par.sv).
+  reg  [2:0]  pl;
+  wire        in_loop   = (state == S_EVAL) || (state == S_COMMIT);
+  wire        loop_last = in_loop && pl[2];
+  wire [1:0]  pa        = (state == S_STEP_HI) ? 2'd0 : pl[1:0];
+  wire        st_load   = (state == S_STEP_HI) || (in_loop && !pl[2]);
+  wire [1:0]  pb        = pl[1:0] - 2'd1;         // pl = 1..4 -> plane 0..3
+  reg  [7:0]  st_lo, st_hi;                       // stage A -> stage B
+  reg  [31:0] wacc_lo, wacc_hi;                   // the unit's two write columns, byte p = plane p
+  reg  [3:0]  wbe_lo, wbe_hi;                     // their per-plane write enables
+  reg  [15:0] cmp_acc;                            // the compare's running AND over the planes
+  reg  [15:0] rp_pick;                            // the read plane's response piece
+
+  // The produce COMMITS in the loop's last step (S_EVAL for a read, S_COMMIT for a write).
+  wire        produce_commit_step = loop_last;
+
+  // The FEED needs every plane's source bytes at once (one ring word carries all four), so its
+  // extracts stay four-wide; they are wiring and a lane select, not a datapath.
   wire [15:0] quad_word [0:3];
   wire [7:0]  quad_byte [0:3];
   /* verilator lint_off WIDTHTRUNC */   // CPU byte and dword extraction (this line and the generate loop below). unit_lane is the
@@ -459,73 +522,18 @@ module pc9821_egc (
     for (gp = 0; gp < 4; gp = gp + 1) begin : g_extract
       assign quad_word[gp] = lastvram[gp][unit_shift +: 16];
       assign quad_byte[gp] = lastvram[gp][{unit_lane, 3'b000} +: 8];
-      // The same extracts at the STAGED unit index: the read response assembles one state
-      // after the commit, where the unit walk has already moved unit_lane/unit_word, so its
-      // quad reads must use the committed unit's own index.
-      assign quad_word_q[gp] = lastvram[gp][unit_shift_q +: 16];
-      assign quad_byte_q[gp] = lastvram[gp][{unit_lane_q, 3'b000} +: 8];
     end
   endgenerate
 
+  // Stage B's plane: its destination dword and the extracts the unit needs from it.
+  wire [31:0] lv_b = lastvram[pb];
+  wire [15:0] dq_w = lv_b[unit_shift +: 16];
+  wire [7:0]  dq_b = lv_b[{unit_lane, 3'b000} +: 8];
   /* verilator lint_on WIDTHTRUNC */
-  // RL_MEMWRITE latches the pattern register from the destination BEFORE the ROP runs
-  // (mem/memegc.c:1337-1343 `egc.patreg.w[p] = ...; data = egc_opew(...)`). `pat_latch_now`
-  // marks the state whose edge commits that latch so the pattern operand takes the POST-latch
-  // value; the value is only consumed where the unit is committed.
-  // The produce COMMITS in the read's evaluate state (S_EVAL) or the write's commit state
-  // (S_COMMIT); both run the same commit block.
-  wire        produce_commit_step = (state == S_EVAL) || (state == S_COMMIT);
-  wire        pat_latch_now = produce_commit_step &&
-                              ((unit_read && pat_rd) || (unit_write && pat_wr));
-  // Pattern source for the ROP functions and for the WS_PATREG data quad.
-  wire [15:0] pat_quad [0:3];
-  wire [15:0] patreg_lat [0:3];   // patreg with the presenting unit's latch applied
-  wire [15:0] fgc_quad [0:3];
-  wire [15:0] bgc_quad [0:3];
-  wire [15:0] patreg_data [0:3];
-  // COMPAREREAD's compare mask, one bit per pixel of the unit (see resp_word/resp_byte below
-  // for the hardware source): a plane's bit is "equal" where that plane's data matches the
-  // retained FG colour's bit for it, and the mask is the AND over the ACCESS-enabled planes -
-  // a plane whose ACCESS bit is set is not compared at all, so it contributes all ones.
-  wire [15:0] cmp_w_eq [0:3];
-  wire [7:0]  cmp_b_eq [0:3];
-  wire [15:0] quad_word_q [0:3];   // the staged-index quad extracts (the late consume, below)
-  wire [7:0]  quad_byte_q [0:3];
-  // The committed produce as every post-commit consumer sees it: exactly the value the sdata
-  // assembly writes for a producing unit (a byte unit's single lane is `pr_prod_lo` in EITHER
-  // half), the HELD sdata otherwise. Declared here, assigned below beside the pipeline
-  // registers.
-  wire [15:0] src_word [0:3];
-  // A read's PLOAD_R (RL_MEMREAD) loads only the SELECTED PAT plane: the byte/word source bytes
-  // for the unit being committed, restricted to read_plane. A write's PLOAD_W loads all four
-  // (W10_PLOADW_CAPTURE, EGCWRITE.CSV). `patreg_lat` is the same restriction for the presenting
-  // unit's pattern operand.
-  // A word latch loads the whole register; a byte latch loads only the operand's lane.
-  generate
-    for (gp = 0; gp < 4; gp = gp + 1) begin : g_quad
-      wire pat_latch_plane = !(unit_read && pat_rd) || (gp[1:0] == read_plane);
-      assign patreg_lat[gp] = (!pat_latch_now || !pat_latch_plane) ? patreg[gp] :
-                              unit_word     ? quad_word[gp] :
-                              unit_ext      ? {quad_byte[gp], patreg[gp][7:0]}
-                                            : {patreg[gp][15:8], quad_byte[gp]};
-      assign fgc_quad[gp] = colour_plane(acc_fg, gp[1:0]);
-      assign bgc_quad[gp] = colour_plane(acc_bg, gp[1:0]);
-      // The compare reads the STAGED quad: cmp_w_eq/cmp_b_eq feed only the response, which
-      // assembles one state after the commit.
-      assign cmp_w_eq[gp] = plane_en[gp] ? ~(quad_word_q[gp] ^ fgc_quad[gp]) : 16'hFFFF;
-      assign cmp_b_eq[gp] = plane_en[gp] ? ~(quad_byte_q[gp] ^ fgc_quad[gp][7:0]) : 8'hFF;
-      assign pat_quad[gp] =
-          (fgbg_sel == 2'b01) ? bgc_quad[gp] :
-          (fgbg_sel == 2'b10) ? fgc_quad[gp] :
-          (fgbg_sel == 2'b11) ? (gp[1] ? bgc_quad[gp] : fgc_quad[gp]) :
-          // The ROP's pattern operand is the committed produce (`src_word`: the pipeline
-          // pair for a producing unit, the HELD sdata otherwise).
-          (pat_rd ? src_word[gp] : patreg_lat[gp]);
-      assign patreg_data[gp] =
-          (fgbg_sel == 2'b01) ? bgc_quad[gp] :
-          (fgbg_sel == 2'b10) ? fgc_quad[gp] : patreg_lat[gp];
-    end
-  endgenerate
+  // The HIGH byte's old contents, at dword byte lane+1 (lane 3 never has one: a word unit starts
+  // on an even lane, so the value there is a don't-care that the write enables never select).
+  wire [7:0]  wold_hi = (unit_lane == 4'd0) ? lv_b[15:8] :
+                        (unit_lane == 4'd1) ? lv_b[23:16] : lv_b[31:24];
 
   // ---------------------------------------------------------------
   // The shifter's feed and produce step for the current unit
@@ -558,8 +566,10 @@ module pc9821_egc (
   // The buffer reads: NP2kai's egcsftb_*_sub data paths (mem/memegc.c:109-369)
   // ---------------------------------------------------------------
   // The feed writes the unit's source bytes at inptr (S_FEED) and the produce reads the window at
-  // outptr the NEXT state (S_STEP_LO presents the address, S_STEP_HI consumes it), so the produce
-  // reads the COMMITTED entries and there is no `rd` bypass.
+  // outptr the NEXT state (S_STEP_LO presents the address, S_STEP_HI onwards consumes it), so the
+  // produce reads the COMMITTED entries and there is no `rd` bypass. The window address is a
+  // function of the pre-commit pointers, so the RAM keeps returning the same window through the
+  // whole plane loop (and through a write's destination fetch): stage A reads it at each plane.
   // The feed gate, NP2kai's `if (egc.stack <= 16)` in shiftinput_byte/incw/decw
   // (mem/memegc.c:590-637): when the stack is already past 16 the pointer, stack and
   // srcbit updates are skipped - but NOT the feed's ring write (EGCOPE_SHIFTB/W write
@@ -578,21 +588,22 @@ module pc9821_egc (
                                       ? (sft_dir ? -6'd1 : 6'd1) : 6'd0);
   wire [5:0]  ebuf_base = outptr_feed - (sft_dir ? 6'd2 : 6'd1);
   wire [4:0]  ebuf_m    = ebuf_base[5:1];
-  // `outptr_feed`/`ebuf_base` are functions of `outptr`/`srcbit`, which the commit state updates,
-  // so they are STABLE across S_FEED -> S_STEP_LO -> S_STEP_HI -> the commit; the window select and
-  // the RAM read addresses can read them live.
   wire [31:0] ebuf_e_q0, ebuf_e_q1, ebuf_o_q0, ebuf_o_q1;   // the two copies' read ports
-  function [7:0] rd(input [1:0] p, input [5:0] a);
-    reg [31:0] w;
+  // Stage A's plane byte of each window word: the plane select comes BEFORE the window select,
+  // so one byte-wide window and one sub_data pair serve whichever plane is stepping.
+  wire [7:0]  win_e0 = ebuf_e_q0[{pa, 3'b000} +: 8];
+  wire [7:0]  win_e1 = ebuf_e_q1[{pa, 3'b000} +: 8];
+  wire [7:0]  win_o0 = ebuf_o_q0[{pa, 3'b000} +: 8];
+  wire [7:0]  win_o1 = ebuf_o_q1[{pa, 3'b000} +: 8];
+  function [7:0] rd(input [5:0] a);
     begin
       // window bytes: even base = E[m],O[m],E[m+1],O[m+1]; odd base = O[m],E[m+1],O[m+1],E[m+2]
       case (a - ebuf_base)
-        6'd0:    w = ebuf_base[0] ? ebuf_o_q0 : ebuf_e_q0;
-        6'd1:    w = ebuf_base[0] ? ebuf_e_q0 : ebuf_o_q0;
-        6'd2:    w = ebuf_base[0] ? ebuf_o_q1 : ebuf_e_q1;
-        default: w = ebuf_base[0] ? ebuf_e_q1 : ebuf_o_q1;
+        6'd0:    rd = ebuf_base[0] ? win_o0 : win_e0;
+        6'd1:    rd = ebuf_base[0] ? win_e0 : win_o0;
+        6'd2:    rd = ebuf_base[0] ? win_o1 : win_e1;
+        default: rd = ebuf_base[0] ? win_e1 : win_o1;
       endcase
-      rd = w[{p, 3'b000} +: 8];
     end
   endfunction
 
@@ -600,19 +611,19 @@ module pc9821_egc (
   // (`db != 0`) branches emit ONE source byte and hold outptr; every other branch is the
   // two-byte combination. dnr/dnl move outptr FIRST, so they read `o-1` and `o` (egcsftb_dnr_sub
   // :267-296, egcsftb_dnl_sub :327-369).
-  function [7:0] sub_data(input [1:0] p, input [5:0] o, input [3:0] db);
+  function [7:0] sub_data(input [5:0] o, input [3:0] db);
     reg [7:0] b0, b1, bm0, bm1;
     begin
-      b0 = rd(p, o); b1 = rd(p, o + 6'd1);
+      b0 = rd(o); b1 = rd(o + 6'd1);
       case (efunc)
         3'd0, 3'd1: sub_data = b0;                                                 // upn/dnn
         3'd2: sub_data = (db != 4'd0) ? (b0 >> e_s8r)
                                       : ((b0 << e_s8l) | (b1 >> e_s8r));           // upr
         3'd4: sub_data = (b0 << e_s8l) | (b1 >> e_s8r);                            // upl
-        3'd3: begin bm0 = rd(p, o - 6'd1); bm1 = rd(p, o);
+        3'd3: begin bm0 = rd(o - 6'd1); bm1 = rd(o);
                     sub_data = (db != 4'd0) ? (b0 << e_s8r)
                                             : ((bm1 >> e_s8l) | (bm0 << e_s8r)); end
-        default: begin bm0 = rd(p, o - 6'd1); bm1 = rd(p, o);
+        default: begin bm0 = rd(o - 6'd1); bm1 = rd(o);
                     sub_data = (bm1 >> e_s8l) | (bm0 << e_s8r); end            // dnl
       endcase
     end
@@ -659,10 +670,11 @@ module pc9821_egc (
   reg  [12:0] pr_remain_1;
   reg  [3:0]  pr_db_lo;
 
-  // ---- step_hi: the second `mask_step`, computed in S_STEP_HI from the LATCHED step_lo outputs,
-  // ---- so neither state carries both mask_step cones. The second byte of a 16-bit unit, and only
+  // ---- step_hi: the second `mask_step`, from the LATCHED step_lo outputs, so neither state
+  // ---- carries both mask_step cones. The second byte of a 16-bit unit, and only
   // while bit length is left: NP2kai `if (egc.remain) { sub(H); if (egc.remain) return; } else
-  // srcmask._b[H] = 0;`. Its outputs the commit needs (`pr_db_n`, `pr_remain_n`) are latched here.
+  // srcmask._b[H] = 0;`. Its outputs the commit needs (`pr_db_n`, `pr_remain_n`) are latched in
+  // S_STEP_HI.
   wire        produce_hi = !produce_gated && unit_word && (pr_remain_1 != 13'd0);
   wire [24:0] step_hi = mask_step(pr_db_lo, pr_remain_1);
   wire [7:0]  m_hi_c   = produce_hi ? step_hi[24:17] : 8'h00;
@@ -673,26 +685,25 @@ module pc9821_egc (
 
   // DESCENDING the first produce step is the HIGH lane's (egcsftw_dnl0 calls dnl_sub(H) then _L), so
   // its mask - m_lo, the step_lo result - lands high; when the bit length ends after that one step
-  // the stale half is the LOW one (see prod_lo_ok). ASCENDING the low lane goes first. `m_lo_c` is
-  // a live wire (its inputs, `dstbit`/`remain`, only move at the commit) and `m_hi_c` is stable
-  // from S_STEP_LO's latch onward, so the assembly is a register/step read, not a second cone.
+  // the stale half is the LOW one (see prod_lo_ok). ASCENDING the low lane goes first.
   wire [15:0] srcmask_n   = (unit_word && sft_dir) ? {m_lo_c, m_hi_c} : {m_hi_c, m_lo_c};
   // egc.srcmask is a 16-BIT register and NP2kai writes only the produced lane of it: a byte feed
   // sets `srcmask._b[ext] = 0xff` and then that byte's mask, leaving the OTHER lane exactly as it
   // was (memegc.c shiftinput_byte + egcsftb_*0). `srcmask_n` puts the produced byte at lane 0
-  // always, so a byte unit at an odd lane must place it at lane 1 and keep lane 0; otherwise the
-  // mask a later word unit ANDs in carries a zeroed byte. mask2 reads the same register the update
-  // writes, so both uses take this value.
+  // always, so a byte unit at an odd lane must place it at lane 1 and keep lane 0.
   wire [15:0] srcmask_u   = unit_word ? srcmask_n :
                             (unit_ext ? {m_lo_c, srcmask[7:0]} : {srcmask[15:8], m_lo_c});
-  // The produce's own mask select for `mask2_w` below: `srcmask_u` is the value the produce is
-  // ABOUT to commit, which is what S_STEP_HI's fetch decision (`need_read_w`) must see before it.
-  // S_STEP_HI is the state where BOTH step masks exist (`m_lo_c` is live, `m_hi_c` comes from the
-  // latched step_lo outputs), so `srcmask_u` there is exactly the mask that commits. Every other
-  // use of the mask (the write lane's `mask2_w`) reads the registered `srcmask`. The ROP's src is
-  // the REGISTERED `sdata` the write lane reads from S_WR. `eval_fetch` must NOT appear
-  // here: `need_read_w` is derived from `mask2_w`, so gating this on the fetch closes a loop.
-  wire        produce_now = (state == S_STEP_HI) && do_produce;
+  // The mask the unit's write uses: NP2kai's `egc.mask2.w &= egc.srcmask.w` reads the register
+  // the feed commits at the same step, i.e. the POST-produce srcmask. Every consumer (S_STEP_HI's
+  // fetch decision and stage B's merge) runs before the commit, where `srcmask_u` is stable (its
+  // inputs `dstbit`/`remain`/`stack` move only at the commit, `pr_db_lo`/`pr_remain_1` only in
+  // S_STEP_LO), so the post-produce value is `srcmask_u` for a producing unit and the held
+  // register otherwise.
+  wire [15:0] srcmask_eff = do_produce ? srcmask_u : srcmask;
+  // Stage B reads it REGISTERED: S_STEP_HI latches it (both step masks exist there and nothing it
+  // depends on moves until the commit), so the plane loop's merge starts at a register instead of
+  // carrying the mask_step cone into the write accumulators.
+  reg  [15:0] srcmask_q;
   // A gated unit still FEEDS: NP2kai's shiftinput_* adds to the stack unconditionally and only
   // the produce step is gated, so discarding the feed here left `stack` frozen whenever
   // srcbit > dstbit and the shifter never produced at all (it emitted an all-zero srcmask).
@@ -711,55 +722,16 @@ module pc9821_egc (
   // and the high's only if bit length is left (produce_hi); DESCENDING the HIGH byte's step runs
   // first whenever the unit is not gated, the low's only if left. Each step reads the buffer at
   // outptr plus the previous step's move (`sub_data`/`sub_move` above); a dstbit >= 8 first step
-  // emits nothing and does not move, so the second step reads the same position. The two steps
-  // SHARE one `sub_data` lane per plane (the `lane_o`/`lane_db` operand mux below): `prod_lo` is
-  // consumed only at the S_STEP_HI edge (its latch into `pr_prod_lo`) and `prod_hi` only at the
-  // commit edge (its latch into `pr_prod_hi`), never in the same state, so one time-multiplexed
-  // lane replaces the two parallel ones. Both bytes land in pipeline registers and every
-  // consumer samples the pair one state after the commit (the consume edge below).
+  // emits nothing and does not move, so the second step reads the same position. Both lanes'
+  // operands exist from S_STEP_HI on (`pr_db_lo` is S_STEP_LO's latch), so stage A computes the
+  // plane's two bytes together.
   //
   // A BYTE unit runs ONE sub call - NP2kai's egcsftb_*0 dispatches one egcsftb_*_sub - so its
   // byte takes the FIRST step's slot (outptr_feed, the pre-step dstbit) in BOTH directions; the
-  // `outptr_feed + mv1` second-step slot is only the DESCENDING WORD's low lane. This select
-  // used to send every descending byte unit to the second-step slot, reading the ring one
-  // position early: egcsftb_dnn_sub reads outptr[0] before its move (:174-178) and
-  // egcsftb_dnl_sub moves first and then reads (outptr[1], outptr[0]) = (pre, pre-1)
-  // (memegc.c:145-179, :331-369) - both take the PRE-move outptr as their primary byte,
-  // which is sub_data at the pre-move `o`, not at o + mv1. (Correcting the review egc.md F2 claim: its "within-unit descending
-  // byte placement IS correct" held for the WORD units' two calls only; the byte unit's single
-  // call had the same missing direction term. Exposed by the extended matrix's descending
-  // byte-produce cases, which compare by value against NP2kai.)
-  reg [7:0] prod_lo [0:3];
-  reg [7:0] prod_hi [0:3];
-  reg [7:0] pr_prod_lo [0:3];   // the low lane's produce byte, latched at the S_STEP_HI edge
-  reg [7:0] sbyte_next [0:3];   // the byte a byte-unit returns/uses, post-produce
-  // THE PRE-EMPTIVE PIPELINE REGISTER (and its consume-side staging).
-  // `pr_prod_hi` is the shared lane's SECOND stage: the high lane's produce byte latched at the
-  // commit edge - exactly the value the pre-pipeline form wrote into sdata's high half there.
-  // Every consumer of the hi lane (sdata's assembly, the read response, the ROP's src/pat in
-  // S_WR) is retimed to sample the pipeline registers ONE STATE AFTER the commit, so the
-  // produce cone ends at pr_prod_hi/pr_prod_lo and the consumers' cones start at registers.
-  // The staging registers carry what the one-state-later consume needs and the unit walk has
-  // already moved by then: commit_q marks the consume cycle, do_prod_q is the staged
-  // `do_produce` gate on sdata's assembly, sbyte_held_q is the staged sbyte_next hold-select,
-  // and unit_word_q/unit_lane_q are the committed unit's own walk position.
-  reg [7:0] pr_prod_hi [0:3];   // the high lane's produce byte, latched at the commit edge
-  reg       commit_q;           // one cycle after a produce commit: the consume edge
-  reg       do_prod_q;          // staged do_produce (the sdata assembly gate)
-  reg       sbyte_held_q;       // staged (produce_gated || !do_produce) for sbyte_next
-  reg [3:0] unit_lane_q;        // the committed unit's lane/word shape for the late consume
-  reg       unit_word_q;
-  wire [4:0] unit_shift_q = unit_lane_q[1] ? 5'd16 : 5'd0;
-  wire       unit_ext_q   = unit_lane_q[0];
-  wire [15:0] sdata_next [0:3];   // the word the delayed sdata assembly writes
-  generate
-    for (gp = 0; gp < 4; gp = gp + 1) begin : g_src_word
-      assign sdata_next[gp] = unit_word_q ? {pr_prod_hi[gp], pr_prod_lo[gp]} :
-                              unit_ext_q  ? {pr_prod_lo[gp], sdata[gp][7:0]} :
-                                            {sdata[gp][15:8], pr_prod_lo[gp]};
-      assign src_word[gp] = sbyte_held_q ? sdata[gp] : sdata_next[gp];
-    end
-  endgenerate
+  // `outptr_feed + mv1` second-step slot is only the DESCENDING WORD's low lane:
+  // egcsftb_dnn_sub reads outptr[0] before its move (:174-178) and egcsftb_dnl_sub moves first
+  // and then reads (outptr[1], outptr[0]) = (pre, pre-1) (memegc.c:145-179, :331-369) - both take
+  // the PRE-move outptr as their primary byte.
   wire db_early   = (dstbit >= 4'd8);
   wire prod_hi_ok = unit_word && (sft_dir ? (!produce_gated && !db_early) : produce_hi);
   wire prod_lo_ok = !produce_gated && (unit_word && sft_dir ? produce_hi : !db_early);
@@ -772,212 +744,142 @@ module pc9821_egc (
   // the stack/srcbit updates above (`feed_gate`).
   wire [5:0] inptr_n     = sft_dir ? (inptr - (unit_word ? 6'd2 : 6'd1))
                                    : (inptr + (unit_word ? 6'd2 : 6'd1));
-  // SHARED PRODUCE LANE: one `sub_data` lane per plane, time-multiplexed over the two step
-  // slots by `produce_commit_step` - the exact phase predicate (prod_lo is consumed at the
-  // S_STEP_HI edge, prod_hi at the commit edge, never both in one state).
-  wire        lane_hi_phase = produce_commit_step;
-  wire  [5:0] lane_o  = lane_hi_phase ? (sft_dir ? outptr_feed : outptr_feed + mv1)
-                                      : ((unit_word && sft_dir) ? outptr_feed + mv1 : outptr_feed);
-  wire  [3:0] lane_db = lane_hi_phase ? (sft_dir ? dstbit : pr_db_lo)
-                                      : ((unit_word && sft_dir) ? pr_db_lo : dstbit);
-  integer pp;
-  always @* begin
-    for (pp = 0; pp < 4; pp = pp + 1) begin
-      prod_lo[pp] = prod_lo_ok
-                      ? sub_data(pp[1:0], lane_o, lane_db)
-                      : (unit_ext ? sdata[pp][15:8] : sdata[pp][7:0]);
-      prod_hi[pp] = prod_hi_ok
-                      ? sub_data(pp[1:0], lane_o, lane_db)
-                      : sdata[pp][15:8];
-      // A unit that FEEDS nothing leaves egc_src alone: NP2kai's byte WS_PATREG default returns
-      // egc_src, and with SHIFT_CPU clear (or a colour quad) no EGCOPE_SHIFTB ran, so the byte the
-      // write stores - and the byte a read would return - is the HELD sdata, not a produce the
-      // gate never committed. (`pr_prod_lo` is the committed produce; it is what the source
-      // register takes when `do_produce`.) Sampled one state after the commit, so the
-      // hold-select is the STAGED one and the held source is the pre-assembly sdata (the
-      // assembly happens at this same edge and a non-blocking read sees the old value, which is
-      // exactly the held byte the pre-pipeline form saw).
-      sbyte_next[pp] = sbyte_held_q
-                         ? (unit_ext_q ? sdata[pp][15:8] : sdata[pp][7:0]) : pr_prod_lo[pp];
-    end
-  end
+  wire  [5:0] lane_o_lo  = (unit_word && sft_dir) ? outptr_feed + mv1 : outptr_feed;
+  wire  [3:0] lane_db_lo = (unit_word && sft_dir) ? pr_db_lo : dstbit;
+  wire  [5:0] lane_o_hi  = sft_dir ? outptr_feed : outptr_feed + mv1;
+  wire  [3:0] lane_db_hi = sft_dir ? dstbit : pr_db_lo;
+  // Stage A. A lane that does not produce keeps the plane's held egc_src byte (the ok-mux
+  // fallbacks): the read response returns it and the assembly writes it back unchanged.
+  wire [15:0] sd_a     = (state == S_STEP_HI) ? sd_r0 : sd_r1;   // plane pa: slot 0 before the first rotation, slot 1 after
+  wire [7:0]  prod_lo  = prod_lo_ok ? sub_data(lane_o_lo, lane_db_lo)
+                                    : (unit_ext ? sd_a[15:8] : sd_a[7:0]);
+  wire [7:0]  prod_hi  = prod_hi_ok ? sub_data(lane_o_hi, lane_db_hi) : sd_a[15:8];
 
   // ---------------------------------------------------------------
-  // The unit's data quad and mask
+  // Stage B: the plane's egc_src, pattern, ROP, merge and read pick
   // ---------------------------------------------------------------
-  // The ROP result, per plane: NP2kai's opefn[] table (mem/memegc.c:935-997,
-  // with the per-class bodies at :709-960) is the 8-entry ternary truth table
-  // of (pat, src, dst) held in acc_ope[7:0] itself -- bit {src,dst,pat} of the
-  // code is the function's value for that triple (bit-identical to the old
-  // class/term networks for all 256 codes). Each output bit is one 8:1 select
-  // over that table instead of the minterm expansion.
-  wire [15:0] rop_out [0:3];
-  wire [7:0]  rop_out_byte [0:3];
+  // A unit that FEEDS nothing (or whose produce is gated) leaves egc_src alone: NP2kai's byte
+  // WS_PATREG default returns egc_src, and with SHIFT_CPU clear (or a colour quad) no
+  // EGCOPE_SHIFTB ran, so the byte the write stores - and the byte a read returns - is the HELD
+  // sdata, not a produce the gate never committed.
+  wire        held_src = produce_gated || !do_produce;
+  wire [15:0] sd_b  = sd_r0;                       // plane pb is always slot 0
+  wire [15:0] sdn_b = unit_word ? {st_hi, st_lo} :
+                      unit_ext  ? {st_lo, sd_b[7:0]} : {sd_b[15:8], st_lo};
+  wire [15:0] src_b = held_src ? sd_b : sdn_b;
+  // RL_MEMWRITE latches the pattern register from the destination BEFORE the ROP runs
+  // (mem/memegc.c:1337-1343 `egc.patreg.w[p] = ...; data = egc_opew(...)`), so the ROP's pattern
+  // operand is the post-latch value. Which planes latch is the MACHINE's split: a COMPAREREAD
+  // (OPE bit 13) read captures ALL FOUR planes from ONE read, a normal RL_MEMREAD read only the
+  // SELECTED PAT plane, and a PLOAD_W write all four. EGCREAD.CSV RD17_P_*
+  // (compare-plus-pload-captured-source) reports four DIFFERENT plane values after a compare
+  // read - 35DF D010 67D9 4912 - where RD02_PAT_S0..S3 (normal-pload-read-updates-selected-PAT-
+  // only) leaves the three unselected planes holding their previous values; B05_PLOAD_READ is the
+  // same rule from four normal reads; W10_PLOADW_CAPTURE (EGCWRITE.CSV) is the write's. README.TXT
+  // states the read split in words: "Normal PLOAD_R loads the selected PAT plane only.  Four-plane
+  // PAT setup uses four selected reads.  Compare+PLOAD_R is tested separately."
+  //
+  // The games issue the compare half: TH01's egc_copy_rect_1_to_0_16
+  // (rec98/th01/hardware/egcrect.cpp:23 (tmp = egc_chunk(vo))) and TH04/TH05's tiles_render_all
+  // (rec98/th04/main/tile/render_a.asm:21 (ax, es:[si])) do ONE read and ONE write per word under
+  // egc_setup_copy()'s 0x3100 (COMPAREREAD|WS_PATREG|RL_MEMREAD, egc_impl.hpp:4-12), so a
+  // selected-plane-only capture would leave three of the destination's four planes holding
+  // whatever the register last held (tb_pc9821_egc section 1b is the fail-first for it).
+  wire        lat_b = (unit_write && pat_wr) ||
+                      (unit_read && pat_rd && (ope_cmprd || (pb == read_plane)));
+  wire [15:0] pr_b  = pat_r0;
+  wire [15:0] patreg_new = !lat_b    ? pr_b :
+                           unit_word ? dq_w :
+                           unit_ext  ? {dq_b, pr_b[7:0]} : {pr_b[15:8], dq_b};
+  wire [15:0] fgc_b = colour_plane(acc_fg, pb);
+  wire [15:0] bgc_b = colour_plane(acc_bg, pb);
+  wire [15:0] pat_b = (fgbg_sel == 2'b01) ? bgc_b :
+                      (fgbg_sel == 2'b10) ? fgc_b :
+                      (fgbg_sel == 2'b11) ? (pb[1] ? bgc_b : fgc_b) :
+                      (pat_rd ? src_b : patreg_new);
+  wire [15:0] patreg_data_b = (fgbg_sel == 2'b01) ? bgc_b :
+                              (fgbg_sel == 2'b10) ? fgc_b : patreg_new;
+
+  // The ROP result: NP2kai's opefn[] table (mem/memegc.c:935-997, with the per-class bodies at
+  // :709-960) is the 8-entry ternary truth table of (pat, src, dst) held in acc_ope[7:0] itself
+  // -- bit {src,dst,pat} of the code is the function's value for that triple. Each output bit is
+  // one 8:1 select over that table.
+  wire [15:0] rop_b;
   genvar gb;
   generate
-    for (gp = 0; gp < 4; gp = gp + 1) begin : g_rop
-      wire [15:0] pat = pat_quad[gp];
-      // The ROP's src: the committed produce. The write lane presents from S_WR, one state after
-      // the produce edge, so the pipeline registers already hold this unit's produce -- feeding
-      // the live produce here kept `dstbit -> mask_step -> rd -> sub_data -> prod_lo/prod_hi -> ROP ->
-      // wr_din_p -> cl_wdata` one combinational edge the fitter cannot prove clear in S_WR.
-      // (sdata itself assembles one state later still, so the ROP reads `src_word` - the
-      // pipeline pair for a producing unit, the held sdata for one that never fed, whose
-      // lane byte the ok-mux fallbacks do NOT carry.)
-      wire [15:0] src = src_word[gp];
-      wire [15:0] dst = quad_word[gp];
-      for (gb = 0; gb < 16; gb = gb + 1) begin : g_rop_bit
-        assign rop_out[gp][gb] =
-            acc_ope[{1'b0, src[gb], dst[gb], pat[gb]}];
-      end
-      assign rop_out_byte[gp] = unit_ext ? rop_out[gp][15:8] : rop_out[gp][7:0];
+    for (gb = 0; gb < 16; gb = gb + 1) begin : g_rop_bit
+      assign rop_b[gb] = acc_ope[{1'b0, src_b[gb], dq_w[gb], pat_b[gb]}];
     end
   endgenerate
 
-  // Word path (NP2kai egc_opew), per mode. NP2kai's `egc.mask2.w &= egc.srcmask.w` reads the
-  // REGISTER, which the feed commits at the same step -- so the mask is `srcmask_u` only in the
-  // state whose edge commits it, and the registered `srcmask` everywhere else (S_WR presents the
-  // write's columns one state later, where the live stack has already moved on and a re-derived
-  // `srcmask_u` would differ from what the shifter actually wrote).
-  wire [15:0] mask2_w = acc_mask & (produce_now ? srcmask_u : srcmask);
-  wire [15:0] word_data [0:3];
-  generate
-    for (gp = 0; gp < 4; gp = gp + 1) begin : g_word_data
-      assign word_data[gp] =
-          (ope_mode == 2'b10) ? patreg_data[gp] :
-          (ope_mode == 2'b01) ? rop_out[gp] : cpu_word;
-    end
-  endgenerate
-
+  // Word path (NP2kai egc_opew), per mode, and the plane-independent masks.
+  wire [15:0] mask2_w = acc_mask & ((state == S_STEP_HI) ? srcmask_eff : srcmask_q);
+  wire [15:0] word_data_b = (ope_mode == 2'b10) ? patreg_data_b :
+                            (ope_mode == 2'b01) ? rop_b : cpu_word;
   // Byte path (NP2kai egc_opeb). Note the WS_PATREG default branch returns the
   // shifter output and ANDs srcmask, where the 16-bit path returns the pattern
   // register; and the WS_CPU byte path does not AND srcmask at all.
   wire [7:0] mask_b_sft = mask2_w[8*{2'b0, unit_ext} +: 8];
   wire [7:0] mask_b_reg = acc_mask[8*{2'b0, unit_ext} +: 8];
-  // The shifter byte the write stores. NP2kai reads egc_src, which only a FEED moves, so the
-  // byte is the committed one: `src_word` holds this unit's produce in S_WR, one state after the
-  // produce edge, where the live `stack` has moved on and re-deriving the produce from it gives a
-  // byte the shifter never emitted (the same rule as mask2_w above).
-  wire [7:0] sbyte_fed [0:3];
-  generate
-    for (gp = 0; gp < 4; gp = gp + 1) begin : g_sbyte_fed
-      assign sbyte_fed[gp] = unit_ext ? src_word[gp][15:8] : src_word[gp][7:0];
-    end
-  endgenerate
-  wire [7:0] byte_data [0:3];
-  wire [7:0] byte_mask [0:3];
-  generate
-    for (gp = 0; gp < 4; gp = gp + 1) begin : g_byte_data
-      assign byte_data[gp] =
-          (ope_mode == 2'b01) ? rop_out_byte[gp] :
-          (ope_mode == 2'b10) ? ((fgbg_sel == 2'b01) ? bgc_quad[gp][{unit_ext,3'b000} +: 8] :
-                                 (fgbg_sel == 2'b10) ? fgc_quad[gp][{unit_ext,3'b000} +: 8] :
-                                 sbyte_fed[gp]) :
-          cpu_byte;
-      // The colour-quad byte cases return BEFORE mask2 &= srcmask (memegc.c egc_opeb case 0x1000),
-      // and 0x6000 takes the default, so only 0x2000/0x4000 keep the plain mask register.
-      assign byte_mask[gp] =
-          (ope_mode == 2'b01) ? mask_b_sft :
-          (ope_mode == 2'b10) ? (byte_no_color ? mask_b_sft : mask_b_reg) :
-          mask_b_reg;
-    end
-  endgenerate
+  wire [7:0] byte_data_b =
+      (ope_mode == 2'b01) ? (unit_ext ? rop_b[15:8] : rop_b[7:0]) :
+      (ope_mode == 2'b10) ? ((fgbg_sel == 2'b01) ? bgc_b[7:0] :
+                             (fgbg_sel == 2'b10) ? fgc_b[7:0] :
+                             (unit_ext ? src_b[15:8] : src_b[7:0])) :
+      cpu_byte;
+  // The colour-quad byte cases return BEFORE mask2 &= srcmask (memegc.c egc_opeb case 0x1000),
+  // and 0x6000 takes the default, so only 0x2000/0x4000 keep the plain mask register.
+  wire [7:0] byte_mask =
+      (ope_mode == 2'b01) ? mask_b_sft :
+      (ope_mode == 2'b10) ? (byte_no_color ? mask_b_sft : mask_b_reg) :
+      mask_b_reg;
+  wire [15:0] wmask_w  = unit_word ? mask2_w : {2{byte_mask}};
+  wire [7:0]  wmask_lo = wmask_w[7:0];
+  wire [7:0]  wmask_hi = unit_word ? wmask_w[15:8] : 8'h00;
+  wire [15:0] wdata_b  = unit_word ? word_data_b : {2{byte_data_b}};
+  // Byte-by-byte merge: the reference does `mem &= ~mask2; mem |= data & mask2` on every enabled
+  // plane, which for the byte enables below is the same write.
+  wire [7:0]  wr_byte_lo = (wdata_b[7:0]  & wmask_lo) | (dq_b    & ~wmask_lo);
+  wire [7:0]  wr_byte_hi = (wdata_b[15:8] & wmask_hi) | (wold_hi & ~wmask_hi);
+  wire        wr_lane_lo = plane_en[pb] && (wmask_lo != 8'h00);
+  wire        wr_lane_hi = plane_en[pb] && unit_word && (wmask_hi != 8'h00);
 
-  // ---------------------------------------------------------------
-  // Column write issue: one D1 column per byte of the unit's plane dword
-  // ---------------------------------------------------------------
-  // An EGC unit is a 16-bit half of a dword of each plane. The D1 port carries
-  // one byte of every plane per access, so the per-plane enables and data this
-  // module already computes transpose into a per-column {P3,P2,P1,P0} pair:
-  // column i is byte i of each plane's dword, i.e. the plane byte at
-  // (cpu_offset & ~3) + i. Nothing about the transform changes -- only which
-  // wire the result leaves by.
-  wire [15:0] wdata_bits [0:3];
-  wire [15:0] wmask_bits [0:3];
-  wire [7:0]  wold_lo    [0:3];
-  wire [7:0]  wold_hi    [0:3];
-  wire [3:0]  wr_be_p    [0:3];   // one plane's byte enables within the dword
-  wire [31:0] wr_din_p   [0:3];   // one plane's merged dword
-  wire [3:0]  col_wbe    [0:3];   // per column: one enable per plane
-  wire [31:0] col_wdata  [0:3];
-  wire        col_en     [0:3];
-  wire        unit_needs_rmw_p [0:3];
-
-  generate
-    for (gp = 0; gp < 4; gp = gp + 1) begin : g_col_plane
-      wire [7:0] wmask_lo = wmask_bits[gp][7:0];
-      wire [7:0] wmask_hi;
-      wire [7:0] wdata_lo;
-      wire [7:0] wdata_hi;
-      wire       wr_lane_lo;
-      wire       wr_lane_hi;
-      wire [7:0] wr_byte_lo;
-      wire [7:0] wr_byte_hi;
-
-      assign wdata_bits[gp] = unit_word ? word_data[gp] : {2{byte_data[gp]}};
-      assign wmask_bits[gp] = unit_word ? mask2_w : {2{byte_mask[gp]}};
-      assign wmask_hi = unit_word ? wmask_bits[gp][15:8] : 8'h00;
-      assign wdata_lo = wdata_bits[gp][7:0];
-      assign wdata_hi = wdata_bits[gp][15:8];
-  /* verilator lint_off WIDTHTRUNC */   // the byte lane's offset within the dword, for the
-  // low byte. unit_lane is in [0,3] so {unit_lane,3'b000} is at most 24 and the 5-bit
-  // extraction index never wraps; the 7-bit source expression is what Verilator flags.
-      assign wold_lo[gp] = lastvram[gp][{unit_lane, 3'b000} +: 8];
-  /* verilator lint_on WIDTHTRUNC */
-  // The HIGH byte's old contents. `{unit_lane,3'b000} + 8` is 8/16/24 for lanes 0/1/2 and 32
-  // for lane 3 - a 32-bit vector indexed [39:32] is an OUT-OF-RANGE part select, which reads x
-  // (IEEE 1364-2005 5.2.1), and the stray `lint_on WIDTHTRUNC` that used to sit on this line
-  // left it outside the region its sibling is waived in. `wr_be_p` places the high byte at
-  // dword byte {lane+1}, so lanes 0/1/2 need [15:8]/[23:16]/[31:24] and lane 3's is never
-  // enabled at all ({wr_lane_lo, 3'b0}): the ternary is therefore value-identical wherever
-  // this can matter and in range everywhere.
-  // (`wr_din_p`'s high-byte shift by 32 is the deliberate 'this lane has no high byte' case.)
-      assign wold_hi[gp] = (unit_lane == 4'd0) ? lastvram[gp][15:8] :
-                           (unit_lane == 4'd1) ? lastvram[gp][23:16] :
-                                                 lastvram[gp][31:24];
-      assign wr_lane_lo = plane_en[gp] && (wmask_lo != 8'h00);
-      assign wr_lane_hi = plane_en[gp] && unit_word && (wmask_hi != 8'h00);
-
-      assign wr_be_p[gp] = (unit_lane == 4'd0) ? {2'b0, wr_lane_hi, wr_lane_lo} :
-                           (unit_lane == 4'd1) ? {1'b0, wr_lane_hi, wr_lane_lo, 1'b0} :
-                           (unit_lane == 4'd2) ? {wr_lane_hi, wr_lane_lo, 2'b0} :
-                                                 {wr_lane_lo, 3'b0};
-      // Byte-by-byte merge: the reference does `mem &= ~mask2; mem |= data & mask2`
-      // on every enabled plane, which for the byte enables above is the same write.
-      assign wr_byte_lo = (wdata_lo & wmask_lo) | (wold_lo[gp] & ~wmask_lo);
-      assign wr_byte_hi = (wdata_hi & wmask_hi) | (wold_hi[gp] & ~wmask_hi);
-  /* verilator lint_off WIDTHEXPAND */   // the shift amount must stay 6+ bits wide. For lane 3 the high byte shifts by 8+24 = 32,
-  /* verilator lint_off WIDTHTRUNC */
-  // and a 32-bit left shift by 32 is the deliberate 'this lane has no high byte' case.
-  // Narrowing the sum to 5 bits would make it 0 and write the high byte into the LOW
-  // position instead.
-      assign wr_din_p[gp] = ({24'd0, wr_byte_lo} << {unit_lane, 3'b000}) |
-                            (unit_word ? ({24'd0, wr_byte_hi} <<
-                                          ({unit_lane, 3'b000} + 5'd8)) : 32'd0);
-
-  /* verilator lint_on WIDTHEXPAND */
-  /* verilator lint_on WIDTHTRUNC */
-      // The read pass is skipped whenever the transform does not need the old
-      // contents: the target sequences' writes need neither destination bits nor
-      // a partial mask, so they cost four column writes and no reads.
-      assign unit_needs_rmw_p[gp] = (wmask_lo != 8'hFF && wr_lane_lo) ||
-                                    (unit_word && wmask_hi != 8'hFF && wr_lane_hi);
-
-      assign col_wbe[gp]   = {wr_be_p[3][gp], wr_be_p[2][gp],
-                              wr_be_p[1][gp], wr_be_p[0][gp]};
-      assign col_wdata[gp] = {wr_din_p[3][8*gp +: 8], wr_din_p[2][8*gp +: 8],
-                              wr_din_p[1][8*gp +: 8], wr_din_p[0][8*gp +: 8]};
-      assign col_en[gp]    = (col_wbe[gp] != 4'h0);
-    end
-  endgenerate
-
-  wire need_read_w = rop_needs_dst || (pat_wr && unit_write) ||
-                     unit_needs_rmw_p[0] || unit_needs_rmw_p[1] ||
-                     unit_needs_rmw_p[2] || unit_needs_rmw_p[3];
+  // The read pass is skipped whenever the transform does not need the old contents. The mask is
+  // the same for every plane, so "some enabled plane needs a merge" is one term.
+  wire any_plane_en = plane_en[0] || plane_en[1] || plane_en[2] || plane_en[3];
+  wire unit_needs_rmw = any_plane_en &&
+                        ((wmask_lo != 8'hFF && wmask_lo != 8'h00) ||
+                         (unit_word && wmask_hi != 8'hFF && wmask_hi != 8'h00));
+  wire need_read_w = rop_needs_dst || (pat_wr && unit_write) || unit_needs_rmw;
   // The access's own dword still has to be fetched. A WRITE that needs no destination and no
   // partial-mask merge is presented directly; only a read or a read-modify-write
   // spends a state fetching first.
   wire eval_fetch = (unit_read || need_read_w) && !dword_valid;
+
+  // The CPU read result. A SHIFT_CPU read returns the READ plane's memory (mem/memegc.c:1091-1098
+  // `mem[ad + planead[pl]]`, pl = fgbg[9:8]), not the addressed window plane.
+  //
+  // COMPAREREAD (OPE bit 13) is the EGC's colour-key compare, and the hardware returns a MASK,
+  // one bit per pixel of the unit, set where that pixel's four-plane colour equals the retained
+  // FG colour (0x4A6) - over the planes 0x4A0 ACCESS enables, a disabled plane being don't-care.
+  // The reference is FG whatever 0x4A2's pattern selector says (EGCREAD.CSV RD21/RD22) and the
+  // bit compares in the PAT mode as well (RD22_PATSEL - see the ope_cmprd block above), it is the
+  // UNSHIFTED plane data (RD18/RD23/RD24 are the suite's INFO fingerprints, where the hardware
+  // matches neither model exactly), and the aperture is irrelevant (RD13/RD14).
+  // NP2kai does not model this: egc_readword returns the addressed plane raw (`mem[addr]`,
+  // mem/memegc.c:1170-1172, the compare branch above it commented out) and egc_readbyte returns
+  // `mem[addr]` for the same bit (:1102). MAME pc9801_v.cpp:863-874 has the AND-of-equalities but
+  // gates it on 0x4A2's selector for the reference colour and ignores ACCESS; the Xe10 CSVs agree
+  // with neither on those two points, and the hardware wins. See docs/probes/egc-conformance/.
+  // The AND runs over the steps in `cmp_acc` and is exposed only in the commit step's response.
+  wire [15:0] eq_b = !plane_en[pb] ? 16'hFFFF :
+                     unit_word     ? ~(dq_w ^ fgc_b) : {8'hFF, ~(dq_b ^ fgc_b[7:0])};
+  wire [15:0] cmp_now  = (pb == 2'd0) ? eq_b : (cmp_acc & eq_b);
+  wire [15:0] pick_b   = ope_sftcpu ? (unit_word ? dq_w : {8'h00, dq_b}) :
+                         unit_word  ? {st_hi, st_lo} :
+                                      {8'h00, held_src ? (unit_ext ? sd_b[15:8] : sd_b[7:0]) : st_lo};
+  wire [15:0] pick_now = (pb == read_plane) ? pick_b : rp_pick;
+  wire [15:0] resp_piece = ope_cmprd ? cmp_now : pick_now;
 
   // ---------------------------------------------------------------
   // The ring's block-RAM ports
@@ -1016,7 +918,7 @@ module pc9821_egc (
   wire       scrub_we = scrubbing;
   // Port A takes the feed's write in S_FEED and the window's first read in S_STEP_LO onwards; port
   // B is the window's second read. `pc9821_dpram` is true-dual-port M10K, so both reads have a
-  // port. Port B's address is the live `ebuf_base`, which is stable across the four produce states.
+  // port. Port B's address is the live `ebuf_base`, which is stable from S_FEED to the commit.
   // THE TWO READ PORTS ARE NOT OPTIONAL, AND THE TDP SHAPE IS WHAT THEY COST. Measured (fitter RAM
   // Summary, base profile): each copy is `True Dual Port`, A 32x32 / B 32x32, 1,024 requested bits,
   // against 2 M10K blocks each - 4 for the pair at ~5 % fill. The MODE follows the port SHAPE, not
@@ -1024,9 +926,7 @@ module pc9821_egc (
   // port A reads as well as writes, and only a true 1-write + 1-read shape infers `Simple Dual
   // Port` (1 block; both priced in tools/res_exp_map.py). MLAB is not a fallback either - the
   // fitter answers `No - Unsupported Mode` for this geometry, and 32x32 of MLAB would be 2 LABs of
-  // the BINDING resource against 2 free M10K blocks. So the only way off the second block per copy
-  // is to give up a read port, i.e. to spread the window's two reads over two cycles: a longer
-  // produce, and a guest-visible latency change this module is not the right place to make.
+  // the BINDING resource against 2 free M10K blocks.
   pc9821_dpram #(.AW(5), .DW(32)) u_ebuf_e (
       .clock_a(clk), .address_a(scrub_we ? scrub : (we_e ? wa_e : ea0)),
       .data_a(scrub_we ? 32'd0 : wd_e), .wren_a(scrub_we | we_e), .q_a(ebuf_e_q0),
@@ -1036,18 +936,26 @@ module pc9821_egc (
       .data_a(scrub_we ? 32'd0 : wd_o), .wren_a(scrub_we | we_o), .q_a(ebuf_o_q0),
       .clock_b(clk), .en_b(1'b1), .address_b(oa1), .data_b(32'd0), .wren_b(1'b0), .q_b(ebuf_o_q1));
 
-  // The write pass as ONE request needs the unit's TWO columns -- a 16-bit unit is a pair of the
-  // dword's four byte lanes, and word_unit never forms a wider one -- enabled together AND each a
-  // FULL word: a partial column would need the controller's per-word read-modify-write, which a
-  // burst cannot carry. Any other enable set keeps the per-column walk.
-  wire wr_burst_lo = !col_en[2] && !col_en[3] && col_en[0] && col_en[1] &&
-                     (col_wbe[0] == 4'hF) && (col_wbe[1] == 4'hF);
-  wire wr_burst_hi = !col_en[0] && !col_en[1] && col_en[2] && col_en[3] &&
-                     (col_wbe[2] == 4'hF) && (col_wbe[3] == 4'hF);
-  wire wr_burst2 = wr_burst_lo || wr_burst_hi;
-  wire [1:0]  wb_c0    = wr_burst_hi ? 2'd2 : 2'd0;
-  wire [63:0] wb_data2 = wr_burst_hi ? {col_wdata[3], col_wdata[2]}
-                                     : {col_wdata[1], col_wdata[0]};
+  // ---------------------------------------------------------------
+  // The write pass: the accumulators' columns
+  // ---------------------------------------------------------------
+  // A unit is a byte (one column, the unit's lane) or a 16-bit pair of the dword's byte lanes (two
+  // columns, lanes L and L+1); word_unit never forms a wider one. `plane_idx` walks those columns
+  // in ascending order. The pair goes out as ONE request when both columns are FULL words (a
+  // partial column would need the array's per-lane enables, which the burst does not carry).
+  wire [1:0] col_lo   = unit_lane[1:0];
+  wire [1:0] col_last = unit_word ? (col_lo + 2'd1) : col_lo;
+  wire       wsel_hi  = (plane_idx != col_lo);
+  wire [3:0] cur_wbe  = wsel_hi ? wbe_hi : wbe_lo;
+  wire       cur_en   = (cur_wbe != 4'h0);
+  wire       wr_burst2 = unit_word && (wbe_lo == 4'hF) && (wbe_hi == 4'hF);
+  // The request's data are the accumulators themselves: they move only in stage B, which runs
+  // after the previous request was accepted (S_WR_B_ACC waits for the accept, S_WR_ACC for the
+  // completion), and the arbiter takes an EGC request's data in its accept cycle.
+  assign cl_wdata  = wsel_hi ? wacc_hi : wacc_lo;
+  assign cl_wdata2 = {wacc_hi, wacc_lo};
+  assign cl_datum0 = {(cl_wdata[31:24] == 8'h00), (cl_wdata[23:16] == 8'h00),
+                      (cl_wdata[15:8]  == 8'h00), (cl_wdata[7:0]   == 8'h00)};
 
   // The all-byte walks (be = 0110 / 1110 / 0111): NP2kai's odd memegc_wr16/rd16 pair
   // order restricted to each beat's lanes. be = 0110 is one odd wr16; be = 1110 /
@@ -1093,31 +1001,6 @@ module pc9821_egc (
   wire       next_word = word_unit(acc_be, next_set[1:0]);
   /* verilator lint_on WIDTHTRUNC */
 
-  // The CPU read result, and its placement in the response lanes. A SHIFT_CPU read returns the
-  // READ plane's memory (mem/memegc.c:1091-1098 `mem[ad + planead[pl]]`, pl = fgbg[9:8]), not the
-  // addressed window plane.
-  //
-  // COMPAREREAD (OPE bit 13) is the EGC's colour-key compare, and the hardware returns a MASK,
-  // one bit per pixel of the unit, set where that pixel's four-plane colour equals the retained
-  // FG colour (0x4A6) - over the planes 0x4A0 ACCESS enables, a disabled plane being don't-care.
-  // The reference is FG whatever 0x4A2's pattern selector says (EGCREAD.CSV RD21/RD22) and the
-  // bit compares in the PAT mode as well (RD22_PATSEL - see the ope_cmprd block above), it is the
-  // UNSHIFTED plane data (RD18/RD23/RD24 are the suite's INFO fingerprints, where the hardware
-  // matches neither model exactly), and the aperture is irrelevant (RD13/RD14).
-  // NP2kai does not model this: egc_readword returns the addressed plane raw (`mem[addr]`,
-  // mem/memegc.c:1170-1172, the compare branch above it commented out) and egc_readbyte returns
-  // `mem[addr]` for the same bit (:1102). MAME pc9801_v.cpp:863-874 has the AND-of-equalities but
-  // gates it on 0x4A2's selector for the reference colour and ignores ACCESS; the Xe10 CSVs agree
-  // with neither on those two points, and the hardware wins. See docs/probes/egc-conformance/.
-  wire [15:0] cmp_word = cmp_w_eq[0] & cmp_w_eq[1] & cmp_w_eq[2] & cmp_w_eq[3];
-  wire [7:0]  cmp_byte = cmp_b_eq[0] & cmp_b_eq[1] & cmp_b_eq[2] & cmp_b_eq[3];
-  wire [15:0] resp_word = ope_cmprd  ? cmp_word :
-                          ope_sftcpu ? quad_word_q[read_plane] :
-                          {pr_prod_hi[read_plane], pr_prod_lo[read_plane]};
-  wire [7:0]  resp_byte = ope_cmprd  ? cmp_byte :
-                          ope_sftcpu ? quad_byte_q[read_plane] :
-                          sbyte_next[read_plane];
-
   // ---------------------------------------------------------------
   // Operation telemetry
   // ---------------------------------------------------------------
@@ -1125,9 +1008,8 @@ module pc9821_egc (
   // picks the first unit. A UNIT is one byte/word lane group the sequencer walks within it - the
   // NP2kai wr16/rd16 split, so a 32-bit access is usually two word units, a 16-bit one one, and an
   // enable set with a hole walks a unit per enabled lane. `produce_commit_step` is high for the
-  // cycle a unit's produce commits (S_EVAL for a read, S_COMMIT for a write), which is exactly
-  // once per unit: every unit passes through S_FEED/S_STEP_LO/S_STEP_HI to one of those two, so EU
-  // is the transaction's work quantum and EU/ET the mean units per transaction.
+  // cycle a unit commits (the plane loop's last step), which is exactly once per unit, so EU is
+  // the transaction's work quantum and EU/ET the mean units per transaction.
   assign dbg_egc_txn  = (state == S_IDLE) && cpu_valid && !scrubbing;
   assign dbg_egc_unit = produce_commit_step;
 
@@ -1143,8 +1025,7 @@ module pc9821_egc (
   // The D1 request presentation, folded into ONE next-state expression (R2): three request
   // arms set it (the write pass's destination fetch in S_STEP_HI, the read burst's first
   // column in S_IDLE, and the write pass's column in S_WR, burst or single) and the accept
-  // clears it. The set used to be three separate `<=` sites inside the case with the clear
-  // ABOVE it, so the set won by position - the position was the mechanism. As booleans:
+  // clears it. As booleans:
   //   next = set | (old & ~cl_ready)   [an arm that presents this cycle sets;
   //                                     the accept clears every other cycle it lands on]
   // `req_acc` (below) is the taken flag that pairs with it: a posted write's completion
@@ -1153,8 +1034,7 @@ module pc9821_egc (
                        (acc_col0 != 3'd4)) ||
                       ((state == S_IDLE) && cpu_valid && !scrubbing && !cpu_write &&
                        (cpu_col0 != 3'd4)) ||
-                      ((state == S_WR) && ((wr_burst2 && (plane_idx == 2'd0)) ||
-                                           col_en[plane_idx]));
+                      ((state == S_WR) && ((wr_burst2 && (plane_idx == col_lo)) || cur_en));
   integer sp;
   integer rp;
   always @(posedge clk) begin
@@ -1178,15 +1058,12 @@ module pc9821_egc (
       cl_valid <= 1'b0;
       cl_write <= 1'b0;
       cl_addr  <= 16'd0;
-      cl_wdata <= 32'd0;
-      cl_datum0 <= 4'b1111;
       cl_wbe   <= 4'hF;
       cl_burst  <= 1'b0;
-      cl_wdata2 <= 64'd0;
       req_acc   <= 1'b0;
+      pat_r0 <= 16'h0000; pat_r1 <= 16'h0000; pat_r2 <= 16'h0000; pat_r3 <= 16'h0000;
+      sd_r0  <= 16'h0000; sd_r1  <= 16'h0000; sd_r2  <= 16'h0000; sd_r3  <= 16'h0000;
       for (sp = 0; sp < 4; sp = sp + 1) begin
-        patreg[sp] <= 16'h0000;
-        sdata[sp]  <= 16'h0000;
         lastvram[sp] <= 32'h0000;
       end
       srcmask <= 16'hFFFF;
@@ -1204,13 +1081,16 @@ module pc9821_egc (
       pr_db_lo <= 4'd0;
       pr_remain_n <= 13'd0;
       pr_db_n <= 4'd0;
-      for (sp = 0; sp < 4; sp = sp + 1) pr_prod_lo[sp] <= 8'h00;
-      for (sp = 0; sp < 4; sp = sp + 1) pr_prod_hi[sp] <= 8'h00;
-      commit_q     <= 1'b0;
-      do_prod_q    <= 1'b0;
-      sbyte_held_q <= 1'b0;
-      unit_word_q  <= 1'b0;
-      unit_lane_q  <= 4'd0;
+      srcmask_q <= 16'hFFFF;
+      pl       <= 3'd1;
+      st_lo    <= 8'h00;
+      st_hi    <= 8'h00;
+      wacc_lo  <= 32'd0;
+      wacc_hi  <= 32'd0;
+      wbe_lo   <= 4'd0;
+      wbe_hi   <= 4'd0;
+      cmp_acc  <= 16'hFFFF;
+      rp_pick  <= 16'h0000;
       acc_access <= 16'hFFF0;
       acc_fgbg   <= 16'h00FF;
       acc_ope    <= 16'h0000;
@@ -1225,8 +1105,6 @@ module pc9821_egc (
     end else begin
       cpu_ready <= 1'b0;
       cpu_resp_valid <= 1'b0;
-      commit_q  <= 1'b0;
-      do_prod_q <= 1'b0;
       // The 32-cycle ring scrub (see the port-A mux): walk both copies' 32 words once, then
       // stop. `S_IDLE`'s accept below is held off while `scrubbing`, so the first CPU access
       // after a reset cannot read the ring before it is clean.
@@ -1234,11 +1112,8 @@ module pc9821_egc (
         if (scrub == 5'd31) scrubbing <= 1'b0;
         scrub <= scrub + 5'd1;
       end
-      // The step_lo outputs the second step needs and the low lane's produce byte are latched at
-      // their own step edges, so no produce state carries both mask_step cones or both
-      // sub_data lanes. The masks m_lo_c/m_hi_c themselves are wires: m_lo_c is stable (its
-      // `dstbit`/`remain` inputs only move at the commit) and m_hi_c is stable from S_STEP_LO's
-      // latch onward.
+      // The step_lo outputs the second step needs are latched at S_STEP_LO, step_hi's at
+      // S_STEP_HI, so no produce state carries both mask_step cones.
       if (state == S_STEP_LO) begin
         pr_remain_1 <= rem1_c;
         pr_db_lo    <= dblo_c;
@@ -1246,7 +1121,27 @@ module pc9821_egc (
       if (state == S_STEP_HI) begin
         pr_remain_n <= remn_c;
         pr_db_n     <= dbn_c;
-        for (sp = 0; sp < 4; sp = sp + 1) pr_prod_lo[sp] <= prod_lo[sp];
+        srcmask_q   <= srcmask_eff;
+      end
+
+      // ---- the plane pipeline ----
+      if (st_load) begin
+        st_lo <= prod_lo;
+        st_hi <= prod_hi;
+      end
+      if (in_loop) begin
+        // Stage B of plane pb: its egc_src assembly (a non-producing unit writes the held value
+        // back unchanged, see held_src), its pattern latch, its write columns and its read pick.
+        {sd_r3, sd_r2, sd_r1, sd_r0} <= {do_produce ? sdn_b : sd_r0, sd_r3, sd_r2, sd_r1};
+        {pat_r3, pat_r2, pat_r1, pat_r0} <= {patreg_new, pat_r3, pat_r2, pat_r1};
+        // the write accumulators rotate the same way: plane pb's byte enters at the top, so after
+        // the fourth step byte p is plane p again
+        wacc_lo <= {wr_byte_lo, wacc_lo[31:8]};
+        wacc_hi <= {wr_byte_hi, wacc_hi[31:8]};
+        wbe_lo  <= {wr_lane_lo, wbe_lo[3:1]};
+        wbe_hi  <= {wr_lane_hi, wbe_hi[3:1]};
+        cmp_acc <= cmp_now;
+        rp_pick <= pick_now;
       end
 
       // The client port's accept, in every state, as ONE next-state expression (R2 - the
@@ -1283,52 +1178,9 @@ module pc9821_egc (
       if (shifter_arm)    shift_arm_pend <= 1'b0;
       else if (reg_shift_we) shift_arm_pend <= 1'b1;
 
-      // Registered state updates for the unit being committed: the read commits in S_EVAL (its
-      // response state) and the write in S_COMMIT, both after the three produce steps have run
-      // These states are never a fetch cycle (the write's fetch is decided in
-      // S_STEP_HI and runs before S_COMMIT), so no `eval_fetch` guard is needed.
+      // The unit's COMMIT, in the plane loop's last step (S_EVAL for a read, S_COMMIT for a
+      // write): every plane has passed stage B, so the shifter's shared state moves now.
       if (produce_commit_step) begin
-        if (unit_read && pat_rd) begin
-          // COMPAREREAD (OPE bit 13) captures ALL FOUR planes from ONE read; a normal read
-          // captures the SELECTED PAT plane only. The split is the MACHINE's, and it decides
-          // whether a copy works at all, because the WS_PATREG write that follows takes its
-          // datum from this register (NP2kai mem/memegc.c egc_opew case 0x1000 returns
-          // &egc.patreg; its byte case returns egc_src). EGCREAD.CSV RD17_P_*
-          // (compare-plus-pload-captured-source) reports four DIFFERENT plane values after a
-          // compare read - 35DF D010 67D9 4912 - where RD02_PAT_S0..S3
-          // (normal-pload-read-updates-selected-PAT-only) leaves the three unselected planes
-          // holding their previous values; B05_PLOAD_READ is the same rule from four normal
-          // reads (`four-normal-reads-load-four-PAT-planes`). README.TXT states the split in
-          // words: "Normal PLOAD_R loads the selected PAT plane only.  Four-plane PAT setup
-          // uses four selected reads.  Compare+PLOAD_R is tested separately."
-          //
-          // The games issue the compare half: TH01's egc_copy_rect_1_to_0_16
-          // (rec98/th01/hardware/egcrect.cpp:23 (tmp = egc_chunk(vo))) and TH04/TH05's tiles_render_all
-          // (rec98/th04/main/tile/render_a.asm:21 (ax, es:[si])) do ONE read and ONE write per word under
-          // egc_setup_copy()'s 0x3100 (COMPAREREAD|WS_PATREG|RL_MEMREAD, egc_impl.hpp:4-12),
-          // so a selected-plane-only capture leaves three of the destination's four planes
-          // holding whatever the register last held - a background of one flat colour.
-          // (tb_pc9821_egc section 1b is the fail-first for it; section 1 covers the normal
-          // read's selected-plane-only half through four selected reads.)
-          if (ope_cmprd) begin
-            for (sp = 0; sp < 4; sp = sp + 1) begin
-              if (unit_word) patreg[sp] <= quad_word[sp];
-              else if (unit_ext) patreg[sp][15:8] <= quad_byte[sp];
-              else patreg[sp][7:0] <= quad_byte[sp];
-            end
-          end else begin
-            if (unit_word) patreg[read_plane] <= quad_word[read_plane];
-            else if (unit_ext) patreg[read_plane][15:8] <= quad_byte[read_plane];
-            else patreg[read_plane][7:0] <= quad_byte[read_plane];
-          end
-        end else if (unit_write && pat_wr) begin
-          // PLOAD_W captures all four planes (W10_PLOADW_CAPTURE).
-          for (sp = 0; sp < 4; sp = sp + 1) begin
-            if (unit_word) patreg[sp] <= quad_word[sp];
-            else if (unit_ext) patreg[sp][15:8] <= quad_byte[sp];
-            else patreg[sp][7:0] <= quad_byte[sp];
-          end
-        end
         if (do_produce) begin
           srcmask <= srcmask_u;
           // egcshift() zeroes the buffer's bit count as well as its pointers, and the produce
@@ -1348,60 +1200,39 @@ module pc9821_egc (
             if (feed_gate) inptr <= inptr_n;
             outptr <= outptr_feed + (produce_gated ? 6'd0 : mv_total);
           end
-          // The feed's block-RAM write committed in S_FEED, in the port block beside
-          // `feed_commit`. (The two lane bytes land in the pipeline registers -
-          // pr_prod_lo at the S_STEP_HI edge, pr_prod_hi here - and sdata's assembly
-          // from the pair runs one state later, in the consume block below.)
-          for (sp = 0; sp < 4; sp = sp + 1) pr_prod_hi[sp] <= prod_hi[sp];
         end
-        // Consume-side staging: what the one-state-later consumers need and the unit
-        // walk has already moved by then.
-        commit_q     <= 1'b1;
-        do_prod_q    <= do_produce;
-        sbyte_held_q <= (produce_gated || !do_produce);
-        unit_word_q  <= unit_word;
-        unit_lane_q  <= unit_lane;
-      end
-
-      // THE CONSUME EDGE, one state after the commit. sdata's assembly and the read
-      // response read the pipeline registers - their cones START at registers - and the
-      // staged unit shape places the response piece exactly where the pre-pipeline form
-      // placed it at the commit edge. (A non-blocking read of sdata here sees the
-      // pre-assembly value, which is exactly the held byte the sbyte_next select wants.)
-      if (do_prod_q) begin
-        for (sp = 0; sp < 4; sp = sp + 1) sdata[sp] <= sdata_next[sp];
-      end
-      if (commit_q && unit_read) begin
-        if (unit_word_q) resp_data[unit_shift_q +: 16] <= resp_word;
-  /* verilator lint_off WIDTHTRUNC */   // the byte lane's offset within the dword. unit_lane_q is in [0,3], so the index is at most
+        // The read's response piece: the compare's AND over all four planes, or the read
+        // plane's pick, now that the last plane has been through stage B.
+        if (unit_read) begin
+          if (unit_word) resp_data[unit_shift +: 16] <= resp_piece;
+  /* verilator lint_off WIDTHTRUNC */   // the byte lane's offset within the dword. unit_lane is in [0,3], so the index is at most
   // 24 and 5 bits hold it; the 7-bit source expression is what Verilator flags.
-        else           resp_data[{unit_lane_q, 3'b000} +: 8] <= resp_byte;
+          else           resp_data[{unit_lane, 3'b000} +: 8] <= resp_piece[7:0];
   /* verilator lint_on WIDTHTRUNC */
+        end
       end
 
       case (state)
-        // The produce's four states. S_FEED writes the unit's source bytes into the
-        // ring; S_STEP_LO presents the window's first read and latches the first mask_step;
-        // S_STEP_HI consumes the window, latches the low lane's byte and the second mask_step;
-        // the COMMIT state (S_EVAL for a read, S_COMMIT for a write) assembles sdata/srcmask and
-        // moves the pointers. The produce reads the ring only after the feed's write committed.
+        // S_FEED writes the unit's source bytes into the ring; S_STEP_LO presents the window's
+        // read and latches the first mask_step; S_STEP_HI latches the second and runs stage A of
+        // plane 0; the plane loop (S_EVAL for a read, S_COMMIT for a write) does the rest.
         S_FEED:    state <= S_STEP_LO;
         S_STEP_LO: state <= S_STEP_HI;
-        // S_STEP_HI has BOTH step masks, so this is where the write's source-fetch decision is
-        // made (`need_read_w` needs the mask the produce is about to commit). A READ commits in
-        // S_EVAL (its source was already fetched in S_IDLE); a WRITE that needs its destination
-        // fetches it here and commits in S_COMMIT afterwards. The read burst is one request for
-        // the run [acc_col0, acc_col1], one cl_done per column in column
-        // order; a dead column costs no request and a 16-bit unit asks for two columns, not four.
-        S_STEP_HI: if (unit_read) state <= S_EVAL;
+        // S_STEP_HI has BOTH step masks, so this is where the write's destination-fetch decision
+        // is made (`need_read_w` needs the mask the produce is about to commit). A READ goes to
+        // its loop (its source was already fetched in S_IDLE); a WRITE that needs its destination
+        // fetches it here and enters its loop afterwards (stage A's plane 0 result waits in
+        // st_lo/st_hi, and the ring window holds). The read burst is one request for the run
+        // [acc_col0, acc_col1], one cl_done per column in column order.
+        S_STEP_HI: begin
+                   pl <= 3'd1;
+                   if (unit_read) state <= S_EVAL;
                    else if (eval_fetch && (acc_col0 != 3'd4)) begin
                      plane_idx <= acc_col0[1:0];
                      cl_write <= 1'b0;
                      cl_burst <= 1'b1;
                      cl_addr  <= {acc_page, unit_dword + {13'd0, acc_col0[1:0]}};
                      cl_wbe   <= acc_be;
-                     cl_wdata <= 32'd0;
-                     cl_datum0 <= 4'b1111;
                      req_acc  <= 1'b0;
                      state    <= S_RD_RESP;
                    end else begin
@@ -1409,12 +1240,15 @@ module pc9821_egc (
                      if (eval_fetch) dword_valid <= 1'b1;
                      state <= S_COMMIT;
                    end
-        // The write's commit state: the produce block above has committed at this edge, so the
-        // write pass presents the unit from the registered `sdata`/`srcmask` in S_WR.
+                   end
+        // The WRITE's plane loop. Its last step commits and hands the full accumulators to S_WR.
         S_COMMIT: begin
-          plane_idx <= 2'd0;
-          cl_burst  <= 1'b0;
-          state     <= S_WR;
+          if (!pl[2]) pl <= pl + 3'd1;
+          else begin
+            plane_idx <= col_lo;
+            cl_burst  <= 1'b0;
+            state     <= S_WR;
+          end
         end
 
         S_IDLE: if (cpu_valid && !scrubbing) begin
@@ -1435,13 +1269,15 @@ module pc9821_egc (
           acc_sft    <= reg_sft;
           acc_leng   <= reg_leng;
           // ACCEPT-AND-DECOUPLE: a CPU WRITE is ACCEPTED here and its ready pulses at the
-          // next edge; the produce pipeline (S_FEED -> S_STEP_LO -> S_STEP_HI -> S_COMMIT -> S_WR)
-          // and its writes to the array then complete BEHIND the CPU. The write-path tail
-          // states do not assert ready, so a ready z486 has consumed is never re-presented to
-          // it as the next request's accept. Coherency is the stall: the EGC does not accept the
-          // next CPU access until it is back in S_IDLE, so a later CPU read always sees the
-          // committed dword. A READ keeps its ready in S_EVAL (its data is not ready until the walk
-          // has captured it).
+          // next edge; the produce pipeline (S_FEED -> S_STEP_LO -> S_STEP_HI -> the plane loop
+          // -> S_WR) and its writes to the array then complete BEHIND the CPU. The write-path
+          // tail states do not assert ready, so a ready z486 has consumed is never re-presented
+          // to it as the next request's accept. Coherency is the stall: the EGC does not accept
+          // the next CPU access until it is back in S_IDLE, which is after the last plane step
+          // AND the last column request of the write, so a later CPU read always sees all four
+          // planes committed (tb_pc9821_egc_serial_equiv's read-after-posted-write section). A
+          // READ's ready comes from its last plane step (its data is not ready until the walk has
+          // captured it).
           unit_lane <= {2'b0, cpu_lane0};
           unit_write <= cpu_write;
           unit_read <= !cpu_write;
@@ -1462,8 +1298,6 @@ module pc9821_egc (
             cl_burst <= 1'b1;
             cl_addr  <= {cpu_page, cpu_offset[14:2], cpu_col0[1:0]};
             cl_wbe   <= cpu_be;
-            cl_wdata <= 32'd0;
-            cl_datum0 <= 4'b1111;
             req_acc  <= 1'b0;
             state    <= S_RD_RESP;
           end else if (!cpu_write) begin
@@ -1487,7 +1321,7 @@ module pc9821_egc (
             cl_burst    <= 1'b0;
             dword_valid <= 1'b1;
             // A read's source is done: the produce starts in S_FEED. A write's destination fetch
-            // returns to its commit.
+            // returns to its plane loop.
             state <= unit_write ? S_COMMIT : S_FEED;
           end else begin
             // The next word of the SAME request; nothing is presented again.
@@ -1495,56 +1329,43 @@ module pc9821_egc (
           end
         end
 
-        // The READ's commit state: the produce's pipeline registers capture the unit at this
-        // edge and the consume block above assembles the response piece one state later.
-        // The write side commits in S_COMMIT instead.
+        // The READ's plane loop. Its last step commits the unit and its response piece; the
+        // response's ready leaves from here (visible in S_HOLD) and the data from S_HOLD, the
+        // same ready-then-data order the responder contract requires.
         S_EVAL: begin
-          if (more_units) begin
+          if (!pl[2]) pl <= pl + 3'd1;
+          else if (more_units) begin
             unit_lane <= next_set;
             unit_word <= next_word;
             // The next unit reuses this access's dword (`dword_valid`), so it produces in place.
             state <= S_FEED;
           end else begin
-            state <= S_RESP2;
+            cpu_ready <= 1'b1;
+            state <= S_HOLD;
           end
         end
 
-        // The write pass reads the REGISTERED produce output and presents the unit: as ONE
-        // two-column burst when the unit's two columns are both fully masked, else one
-        // D1 column per byte of the dword in ascending order, each carrying that byte of every
-        // plane the access register enables. A column whose four plane enables are all clear is
-        // not a backend access at all, which is how a write of one plane costs one column and not
-        // four. Reading `sdata`/`srcmask` from S_WR is what registers the produce's cone.
+        // The write pass presents the unit's columns from the accumulators: as ONE two-column
+        // burst when both of a 16-bit unit's columns are full words, else one D1 column per
+        // enabled column in ascending order, each carrying that byte of every plane the access
+        // register enables. A column whose four plane enables are all clear is not a backend
+        // access at all, which is how a write of one plane costs one column and not four.
         S_WR: begin
-          if (wr_burst2 && plane_idx == 2'd0) begin
-            // The write pass as ONE request for the unit's two consecutive columns
-            // now presented here from the registered produce output rather than from the produce
-            // step itself.
+          if (wr_burst2 && plane_idx == col_lo) begin
             cl_burst  <= 1'b1;
-            cl_wdata2 <= wb_data2;
             cl_write  <= 1'b1;
-            cl_addr   <= {acc_page, unit_dword + {13'd0, wb_c0}};
+            cl_addr   <= {acc_page, unit_dword + {13'd0, col_lo}};
             cl_wbe    <= 4'hF;
-            cl_wdata  <= col_wdata[wb_c0];
-            cl_datum0 <= {(col_wdata[wb_c0][31:24] == 8'h00),
-                          (col_wdata[wb_c0][23:16] == 8'h00),
-                          (col_wdata[wb_c0][15:8]  == 8'h00),
-                          (col_wdata[wb_c0][7:0]   == 8'h00)};
             req_acc   <= 1'b0;
             state     <= S_WR_B_ACC;
-          end else if (col_en[plane_idx]) begin
+          end else if (cur_en) begin
             cl_burst <= 1'b0;
             cl_write <= 1'b1;
             cl_addr  <= {acc_page, unit_dword + {13'd0, plane_idx}};
-            cl_wbe   <= col_wbe[plane_idx];
-            cl_wdata <= col_wdata[plane_idx];
-            cl_datum0 <= {(col_wdata[plane_idx][31:24] == 8'h00),
-                          (col_wdata[plane_idx][23:16] == 8'h00),
-                          (col_wdata[plane_idx][15:8]  == 8'h00),
-                          (col_wdata[plane_idx][7:0]   == 8'h00)};
+            cl_wbe   <= cur_wbe;
             req_acc  <= 1'b0;
             state    <= S_WR_ACC;
-          end else if (plane_idx == 2'd3) begin
+          end else if (plane_idx == col_last) begin
             if (more_units) begin
               unit_lane <= next_set;
               unit_word <= next_word;
@@ -1557,7 +1378,7 @@ module pc9821_egc (
           end
         end
         S_WR_ACC: if (cl_done && req_acc) begin
-          if (plane_idx != 2'd3) begin
+          if (plane_idx != col_last) begin
             plane_idx <= plane_idx + 2'd1;
             state <= S_WR;
           end else if (more_units) begin
@@ -1569,10 +1390,8 @@ module pc9821_egc (
           end
         end
 
-        // The write pass's two-column burst is presented by S_EVAL itself.
-        // POSTED: the pass advances on the ACCEPT, not on `cl_done`, so the write
-        // drains in the WCB while the next unit's read proceeds; the WCB's read-after-write
-        // covers the gap.
+        // The write pass's two-column burst. POSTED: the pass advances on the ACCEPT, not on
+        // `cl_done`, so the write drains in the array while the next unit proceeds.
         S_WR_B_ACC: if (cl_valid && cl_ready) begin
           cl_burst <= 1'b0;
           if (more_units) begin
@@ -1584,30 +1403,16 @@ module pc9821_egc (
           end
         end
 
-        // The response piece assembles at this state's closing edge (the consume block
-        // above), so the read's completion and presentation both move one cycle later than
-        // the pre-pipeline form: cpu_ready registers here (visible in S_HOLD) and
-        // cpu_dout/cpu_resp_valid register in S_HOLD (visible the cycle after). That one
-        // cycle is the pipelined produce's whole guest-visible cost; writes are unchanged.
-        S_RESP2: begin
-          cpu_ready <= 1'b1;
-          state <= S_HOLD;
-        end
-
         // One cycle only, and UNCONDITIONAL (R6): `if (unit_write || !cpu_valid)` left this
         // state by observing a level drop, which is the banned shape - the GRCG's G_HOLD is the
-        // same state one module over and is unconditional, and the EGC's own read arm sits here
-        // for a cycle after its response registers either way. What the read arm needs is the
+        // same state one module over and is unconditional. What the read arm needs is the
         // CPU's accept gap, not the level: src/z486/memory.sv:519-523 `ext_valid_r <= 1'b0` clears it
         // at the ready edge, and a direct read's own `direct_rd_pending` keeps the next request off the
-        // bus until the response lands (since the pipelined produce the response registers at
-        // this state's closing edge, one cycle later than the pre-pipeline form registered it
-        // in S_RESP2), so the same request cannot be re-presented before S_IDLE is reached.
-        // The assertion in the VERILATOR block below pins it: a request taken twice would be
-        // the double-serve this change could allow.
+        // bus until the response lands, so the same request cannot be re-presented before S_IDLE is
+        // reached. The assertion in the VERILATOR block below pins it.
         S_HOLD: begin
-          // The read response lands one cycle after the ready above (see S_RESP2); a
-          // write has no response and pulses nothing here.
+          // The read response lands one cycle after the ready (S_EVAL's last step); a write has
+          // no response and pulses nothing here.
           if (unit_read) begin
             cpu_dout <= resp_data;
             cpu_resp_valid <= 1'b1;
@@ -1618,6 +1423,7 @@ module pc9821_egc (
       endcase
     end
   end
+
 
 `ifdef VERILATOR
   // ---------------------------------------------------------------------------

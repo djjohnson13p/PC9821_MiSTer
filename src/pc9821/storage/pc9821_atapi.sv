@@ -1,5 +1,8 @@
-// PC-98 ATAPI CD-ROM on the built-in IDE: bank 1's MASTER by default (AS_MASTER; the
-// 2026-10-08 layout), or its slave.
+// PC-98 ATAPI CD-ROM on the built-in IDE: ALWAYS bank 1's MASTER (IDE unit 2), the hard disk
+// always bank 0's master (unit 0) - the stock CD-equipped Xe10's layout and NP2kai's default (HDD
+// at unit 0, CD at unit 2). Fixed by the owner on 2026-10-11, independent of the build and of the
+// media: the Xe10 capture's disk on bank 1 (docs/probes/IDE.TXT) is the owner's CF card in the
+// CD connector, a quirk of that one machine, not the layout to model.
 //
 // NP2kai is the primary reference for every register value and command answer here:
 // NP2kai cbus/ideio.c (the task file, the ATA-level commands, the data port) and
@@ -7,11 +10,11 @@
 // this model differs from NP2kai it says so at the line, with the reason.
 //
 // WHY A SEPARATE DEVICE BESIDE pc9821_ata. The two IDE devices on a bank share one register
-// window and are told apart by DEV (0x064C bit 4). pc9821_ata is bank 1's master and already
-// treats DEV=1 as "not me" (its absent-slave rule: STATUS 0x00, commands not executed). This
-// module is the device that answers when DEV=1 on bank 1: it latches the bank select (0x0432)
-// and DEV itself, owns the read data of the task file while it is the selected device
-// (`io_own`, which the system's read mux honours), and executes the commands addressed to it.
+// window and are told apart by DEV (0x064C bit 4); the two banks share the ports and are told
+// apart by the 0x0432 bank select. pc9821_ata is bank 0's master and floats bank 1. This module
+// is bank 1's master: it latches the bank select (0x0432) and DEV itself, owns the read data of
+// the task file at bank 1 (`io_own`, which the system's read mux honours) - the absent slave's
+// answers included - and executes the commands addressed to it.
 // NP2kai stores a task-file write only into the SELECTED drive (ideio_o644..o64a call
 // getidedrv()), so this device latches those writes only while it is selected; 0x064C and
 // 0x074C reach both drives of the bank (ideio_o64c, ideio_o74c).
@@ -39,11 +42,6 @@ module pc9821_atapi #(
     // The CD-DA player: the audio commands, the play state and the audio fetch. 0 builds the
     // data-only drive - the audio commands then abort as unknown opcodes (atapicmd_a0 default).
     parameter AUDIO_EN = 1'b1,
-    // The drive's unit on bank 1: 1 = the MASTER (DEV 0), the layout the owner chose on
-    // 2026-10-08 so that NEC's own drivers find it (NECCDD.SYS selects 0xE0, NECCD.SYS talks to
-    // whatever DEV the BIOS left - DEV 0 - and both look at bank 1 only; storage report appendix
-    // A); the hard disk then sits on bank 0. 0 = the slave (the first build's layout).
-    parameter AS_MASTER = 1'b1,
     // A DEBUG INSTRUMENT, off in every shipped build (build_profile.py --cdrom-log): the drive's
     // own conversation as compact binary records on the debug UART (tools/decode_cdlog.py
     // decodes them). LOG_CLK_HZ is clk's rate, for the records' millisecond timestamp.
@@ -61,7 +59,7 @@ module pc9821_atapi #(
     // This device answers the current read: the system's IDE read mux takes io_dout over
     // pc9821_ata's when it is set.
     output wire        io_own,
-    output reg         irq,
+    output wire        irq,
 
     // The CD slot of hps_io (slot 4): the mount event, and the block request/ack/payload.
     input  wire        img_mounted,
@@ -97,6 +95,45 @@ module pc9821_atapi #(
   localparam [15:0] ASC_NONE = 16'h0000, ASC_INVALID_FIELD = 16'h0024,
                     ASC_NOT_READY_TO_READY = 16'h0028, ASC_NO_MEDIUM = 16'h003A,
                     ASC_LBA_OUT_OF_RANGE = 16'h0021;
+  // The sense data is kept as the codes of the few values the drive ever reports (REQUEST SENSE
+  // and the command log decode them): 4 + 16 flops and their per-site muxes became 2 + 3.
+  localparam [1:0] SKC_NONE = 2'd0, SKC_NOT_READY = 2'd1, SKC_ILLEGAL = 2'd2, SKC_ABORTED = 2'd3;
+  localparam [2:0] ASCC_NONE = 3'd0, ASCC_INVALID_FIELD = 3'd1, ASCC_NOT_READY_TO_READY = 3'd2,
+                   ASCC_NO_MEDIUM = 3'd3, ASCC_LBA_OUT_OF_RANGE = 3'd4;
+  function automatic [3:0] sk_val(input [1:0] c);
+    case (c)
+      SKC_NOT_READY: sk_val = SK_NOT_READY;
+      SKC_ILLEGAL:   sk_val = SK_ILLEGAL;
+      SKC_ABORTED:   sk_val = SK_ABORTED;
+      default:       sk_val = SK_NO_SENSE;
+    endcase
+  endfunction
+  function automatic [1:0] sk_enc(input [3:0] k);
+    case (k)
+      SK_NOT_READY: sk_enc = SKC_NOT_READY;
+      SK_ILLEGAL:   sk_enc = SKC_ILLEGAL;
+      SK_ABORTED:   sk_enc = SKC_ABORTED;
+      default:      sk_enc = SKC_NONE;
+    endcase
+  endfunction
+  function automatic [15:0] asc_val(input [2:0] c);
+    case (c)
+      ASCC_INVALID_FIELD:      asc_val = ASC_INVALID_FIELD;
+      ASCC_NOT_READY_TO_READY: asc_val = ASC_NOT_READY_TO_READY;
+      ASCC_NO_MEDIUM:          asc_val = ASC_NO_MEDIUM;
+      ASCC_LBA_OUT_OF_RANGE:   asc_val = ASC_LBA_OUT_OF_RANGE;
+      default:                 asc_val = ASC_NONE;
+    endcase
+  endfunction
+  function automatic [2:0] asc_enc(input [15:0] a);
+    case (a)
+      ASC_INVALID_FIELD:      asc_enc = ASCC_INVALID_FIELD;
+      ASC_NOT_READY_TO_READY: asc_enc = ASCC_NOT_READY_TO_READY;
+      ASC_NO_MEDIUM:          asc_enc = ASCC_NO_MEDIUM;
+      ASC_LBA_OUT_OF_RANGE:   asc_enc = ASCC_LBA_OUT_OF_RANGE;
+      default:                asc_enc = ASCC_NONE;
+    endcase
+  endfunction
   // atapicmd.c's daflag values: the READ SUB-CHANNEL audio status byte.
   localparam [2:0] DA_PLAY = 3'd1, DA_PAUSE = 3'd2, DA_DONE = 3'd3,
                    DA_NONE = 3'd5;   // 0x10 + value
@@ -104,18 +141,19 @@ module pc9821_atapi #(
   // ---- the window: which bank and which device are selected ----
   reg bank1;        // 0x0432 bit 0, latched like pc9821_ata's channel_reg (bit-7 writes ignored)
   reg dev1;         // 0x064C bit 4 of the last write at bank 1
-  // This drive is the selected device: its own DEV. As the master, DEV 1 on bank 1 is an ABSENT
-  // slave, answered here as pc9821_ata answers its own (ATA-3 r6 s.9.5.1: STATUS and ALTERNATE
-  // STATUS read 0x00 and a command for it is not executed, except EXECUTE DEVICE DIAGNOSTIC).
-  wire mine = AS_MASTER ? !dev1 : dev1;
+  // This drive is the selected device: DEV 0, bank 1's master. NEC's own drivers depend on that
+  // position: NECCDD.SYS selects 0xE0, NECCD.SYS talks to whatever DEV the BIOS left - DEV 0 -
+  // and both look at bank 1 only. DEV 1 on bank 1 is an ABSENT slave, answered here as
+  // pc9821_ata answers its own (ATA-3 r6 s.9.5.1: STATUS and ALTERNATE STATUS read 0x00 and a
+  // command for it is not executed, except EXECUTE DEVICE DIAGNOSTIC).
+  wire mine = !dev1;
   wire sel = bank1 && mine;
   wire tf_port = (io_addr[15:4] == 12'h064 && !io_addr[0]) ||
                  io_addr == 16'h0641 || io_addr == 16'h074C;
   // 0x0433 bit 1 = "the selected bank has a connected device" (NP2kai ideio_i433: bank[1] & 1,
   // and a device on that bank): with this drive on bank 1 that is true even with no hard disk.
-  // As the master the drive answers every task-file read at bank 1 (the absent slave's too);
-  // as the slave only those while DEV 1 is selected.
-  assign io_own = ((AS_MASTER ? bank1 : sel) && tf_port) || (bank1 && io_addr == 16'h0433);
+  // As the bank's master the drive answers every task-file read at bank 1 (the absent slave's too).
+  assign io_own = (bank1 && tf_port) || (bank1 && io_addr == 16'h0433);
 
   // ---- task file of this device ----
   // (FEATURES, 0x0642's write side, is not stored: ideio.c's CD arms never read drv->wp but
@@ -123,8 +161,18 @@ module pc9821_atapi #(
   reg [7:0] status, error, sc, sn, drhd;
   reg [15:0] cy;
   reg       nien, srst;
-  reg [3:0] sk;
-  reg [15:0] asc;   // {ASCQ, ASC} as NP2kai's drv->asc
+  // The interrupt-pending state, and INTRQ as the device drives it. ATA-3 s.7.2.9 (Device
+  // Control): "When nIEN=1, or the device is not selected, the INTRQ signal shall be in a high
+  // impedance state." The two banks' INTRQs are ORed onto IRQ9 (pc9821_system; MAME pc9801.cpp
+  // INPUT_MERGER_ANY_HIGH "ideirq"), so a polled driver's unacknowledged request must not hold
+  // the line, or it hides the other bank's next edge. tb_pc9821_atapi C18.
+  reg       irq_pend;
+  assign    irq = irq_pend && !nien;
+  reg [1:0] skc;    // NP2kai's drv->sk, as SKC_*
+  reg [2:0] ascc;   // {ASCQ, ASC} as NP2kai's drv->asc, as ASCC_*
+  /* verilator lint_off UNUSEDSIGNAL */   // read only by the LOG_EN instrument (Quartus 17 cannot index a call)
+  wire [15:0] asc_w = asc_val(ascc);
+  /* verilator lint_on UNUSEDSIGNAL */
 
   // ---- medium ----
   // The MEDIUM and the ENGINE are the slot's, not the guest's: a core reset neither unmounts
@@ -145,6 +193,13 @@ module pc9821_atapi #(
   reg [2:0]  daflag = 3'd5;
   reg [19:0] dacurpos = 20'd0;
   reg [19:0] dalength = 20'd0;
+  // A position command (PLAY/STOP/SEEK) executed while an audio sector fetch is still in
+  // flight SUPERSEDES that fetch: NP2kai's player is synchronous (atapicmd.c playaudio sets
+  // dacurpos/dalength and streams from there), so nothing of the old play may follow it - its
+  // samples are not written to the ring and its completion does not advance the new play
+  // (which skipped the new play's first sector and left dalength one short).
+  // tb_pc9821_atapi C17.
+  reg        da_stale = 1'b0;
 
   // ---- the packet ----
   reg [7:0] cdb [0:11];
@@ -204,6 +259,7 @@ module pc9821_atapi #(
   reg        hdr_pend = 1'b0, data_pend = 1'b0;
   reg        e_odd = 1'b0;     // audio: the next wanted word is a right sample
   wire e_done = (e_st == E_STREAM) && !sd_ack;
+  wire audio_in_flight = (e_st != E_IDLE) && (e_kind == EK_AUDIO);
   wire [12:0] e_rel = sd_buff_addr - {4'd0, e_w0};
   wire e_word = (e_st == E_STREAM) && sd_ack && sd_buff_wr &&
                 (sd_buff_addr >= {4'd0, e_w0}) && (e_rel < {2'd0, e_n});
@@ -247,21 +303,24 @@ module pc9821_atapi #(
   // 0x0F whose bytes 4/5 that code derives from page 0x2A's bytes 4..7: 0x11/0x18 default, 0/0
   // changeable). A block ROM, not a mux in the builder's word path. Word map (the ROM_* bases):
   //   0..255 IDENTIFY PACKET, 256..273 INQUIRY, 288.. the pages, default then changeable.
-  localparam [8:0] ROM_INQ = 9'd256;
-  localparam [8:0] ROM_P01 = 9'd288, ROM_P0D = 9'd296, ROM_P0E = 9'd304, ROM_P2A = 9'd320,
-                   ROM_P0F = 9'd340;
-  // the changeable-values copy of each page follows its default copy
-  localparam [8:0] ROM_C01 = 9'd292, ROM_C0D = 9'd300, ROM_C0E = 9'd312, ROM_C2A = 9'd330,
-                   ROM_C0F = 9'd348;
+  localparam [9:0] ROM_INQ = 10'd256;
+  // The MODE SENSE pages are laid out by the address the builder forms, NOT by where NP2kai keeps
+  // them: {1, page, changeable, word}, 64 words per page, the two copies (default, changeable) 32
+  // words apart, so the address is a concatenation. The page index is 0 = 0x01, 1 = 0x0D, 2 = 0x0E,
+  // 3 = 0x2A, 4 = 0x0F, 5 = the run of all four (0x3F, and any code the drive does not know: atapicmd.c
+  // falls through 0x01, 0x0D, 0x0E, 0x2A in that order), whose words are copied here rather than
+  // chased by a chain of base-plus-offset arms (the pre-change drive's address function, in
+  // tests/pc9821/pc9821_atapi_ref.sv, is the proof: tb_pc9821_atapi_equiv sweeps every page, both
+  // value sets and every allocation length against it). 0..255 IDENTIFY PACKET, 256..273 INQUIRY.
   // An initialised array read through a register: Quartus infers the block ROM from this shape
   // (a registered case statement it built in LUTs). Words not listed are zero.
-  (* romstyle = "M10K" *) reg [15:0] rom [0:511];
+  (* romstyle = "M10K" *) reg [15:0] rom [0:1023];
   initial begin
-    for (int k = 0; k < 512; k++) rom[k] = 16'h0000;
+    for (int k = 0; k < 1024; k++) rom[k] = 16'h0000;
     rom[0] = 16'h8580;
     rom[10] = 16'h312E;
     rom[11] = 16'h3020;
-    rom[12] = AS_MASTER ? 16'h0032 : 16'h0033;   // '0' + sxsidrv: unit 2 (master) / 3
+    rom[12] = 16'h0032;   // '0' + sxsidrv: unit 2 (bank 1's master)
     rom[13] = 16'h2020;
     rom[14] = 16'h2020;
     rom[15] = 16'h2020;
@@ -299,7 +358,7 @@ module pc9821_atapi #(
     rom[64] = 16'h0003;
     rom[80] = 16'h003E;
     rom[82] = 16'h0214;
-    rom[93] = AS_MASTER ? 16'h407B : 16'h4B00;   // ideio.c setidentify: master / slave
+    rom[93] = 16'h407B;   // ideio.c setidentify: the master's value
     rom[256] = 16'h8005;
     rom[257] = 16'h2100;
     rom[258] = 16'h001F;
@@ -317,36 +376,183 @@ module pc9821_atapi #(
     rom[271] = 16'h2038;
     rom[272] = 16'h2E31;
     rom[273] = 16'h2030;
-    rom[288] = 16'h0601;
-    rom[293] = 16'hFF37;
-    rom[296] = 16'h060D;
-    rom[298] = 16'h3C00;
-    rom[299] = 16'h4B00;
-    rom[301] = 16'h0F00;
-    rom[302] = 16'hFFFF;
-    rom[303] = 16'hFFFF;
-    rom[304] = 16'h0E0E;
-    rom[305] = 16'h0004;
-    rom[307] = 16'h4B00;
-    rom[308] = 16'hFF01;
-    rom[309] = 16'hFF02;
-    rom[313] = 16'h0002;
-    rom[315] = 16'hFFFF;
-    rom[316] = 16'hFF0F;
-    rom[317] = 16'hFF0F;
-    rom[320] = 16'h122A;
-    rom[322] = 16'h6571;
-    rom[323] = 16'h0729;
-    rom[324] = 16'hC202;
-    rom[325] = 16'hFF00;
-    rom[326] = 16'h8000;
-    rom[327] = 16'hC202;
-    rom[334] = 16'hC202;
-    rom[335] = 16'h0200;
-    rom[337] = 16'hC202;
-    rom[340] = 16'h100F;
-    rom[342] = 16'h1811;
-    rom[348] = 16'h100F;
+    // page 0x01, default values
+    rom[512] = 16'h0601;   // word 0
+    rom[517] = 16'hFF37;   // word 5
+    rom[520] = 16'h060D;   // word 8
+    rom[522] = 16'h3C00;   // word 10
+    rom[523] = 16'h4B00;   // word 11
+    rom[525] = 16'h0F00;   // word 13
+    rom[526] = 16'hFFFF;   // word 14
+    rom[527] = 16'hFFFF;   // word 15
+    rom[528] = 16'h0E0E;   // word 16
+    rom[529] = 16'h0004;   // word 17
+    rom[531] = 16'h4B00;   // word 19
+    rom[532] = 16'hFF01;   // word 20
+    rom[533] = 16'hFF02;   // word 21
+    rom[537] = 16'h0002;   // word 25
+    rom[539] = 16'hFFFF;   // word 27
+    rom[540] = 16'hFF0F;   // word 28
+    rom[541] = 16'hFF0F;   // word 29
+    // page 0x01, changeable values
+    rom[545] = 16'hFF37;   // word 1
+    rom[548] = 16'h060D;   // word 4
+    rom[550] = 16'h3C00;   // word 6
+    rom[551] = 16'h4B00;   // word 7
+    rom[553] = 16'h0F00;   // word 9
+    rom[554] = 16'hFFFF;   // word 10
+    rom[555] = 16'hFFFF;   // word 11
+    rom[556] = 16'h0E0E;   // word 12
+    rom[557] = 16'h0004;   // word 13
+    rom[559] = 16'h4B00;   // word 15
+    rom[560] = 16'hFF01;   // word 16
+    rom[561] = 16'hFF02;   // word 17
+    rom[565] = 16'h0002;   // word 21
+    rom[567] = 16'hFFFF;   // word 23
+    rom[568] = 16'hFF0F;   // word 24
+    rom[569] = 16'hFF0F;   // word 25
+    rom[572] = 16'h122A;   // word 28
+    rom[574] = 16'h6571;   // word 30
+    rom[575] = 16'h0729;   // word 31
+    // page 0x0D, default values
+    rom[576] = 16'h060D;   // word 0
+    rom[578] = 16'h3C00;   // word 2
+    rom[579] = 16'h4B00;   // word 3
+    rom[581] = 16'h0F00;   // word 5
+    rom[582] = 16'hFFFF;   // word 6
+    rom[583] = 16'hFFFF;   // word 7
+    rom[584] = 16'h0E0E;   // word 8
+    rom[585] = 16'h0004;   // word 9
+    rom[587] = 16'h4B00;   // word 11
+    rom[588] = 16'hFF01;   // word 12
+    rom[589] = 16'hFF02;   // word 13
+    rom[593] = 16'h0002;   // word 17
+    rom[595] = 16'hFFFF;   // word 19
+    rom[596] = 16'hFF0F;   // word 20
+    rom[597] = 16'hFF0F;   // word 21
+    rom[600] = 16'h122A;   // word 24
+    rom[602] = 16'h6571;   // word 26
+    rom[603] = 16'h0729;   // word 27
+    rom[604] = 16'hC202;   // word 28
+    rom[605] = 16'hFF00;   // word 29
+    rom[606] = 16'h8000;   // word 30
+    rom[607] = 16'hC202;   // word 31
+    // page 0x0D, changeable values
+    rom[609] = 16'h0F00;   // word 1
+    rom[610] = 16'hFFFF;   // word 2
+    rom[611] = 16'hFFFF;   // word 3
+    rom[612] = 16'h0E0E;   // word 4
+    rom[613] = 16'h0004;   // word 5
+    rom[615] = 16'h4B00;   // word 7
+    rom[616] = 16'hFF01;   // word 8
+    rom[617] = 16'hFF02;   // word 9
+    rom[621] = 16'h0002;   // word 13
+    rom[623] = 16'hFFFF;   // word 15
+    rom[624] = 16'hFF0F;   // word 16
+    rom[625] = 16'hFF0F;   // word 17
+    rom[628] = 16'h122A;   // word 20
+    rom[630] = 16'h6571;   // word 22
+    rom[631] = 16'h0729;   // word 23
+    rom[632] = 16'hC202;   // word 24
+    rom[633] = 16'hFF00;   // word 25
+    rom[634] = 16'h8000;   // word 26
+    rom[635] = 16'hC202;   // word 27
+    // page 0x0E, default values
+    rom[640] = 16'h0E0E;   // word 0
+    rom[641] = 16'h0004;   // word 1
+    rom[643] = 16'h4B00;   // word 3
+    rom[644] = 16'hFF01;   // word 4
+    rom[645] = 16'hFF02;   // word 5
+    rom[649] = 16'h0002;   // word 9
+    rom[651] = 16'hFFFF;   // word 11
+    rom[652] = 16'hFF0F;   // word 12
+    rom[653] = 16'hFF0F;   // word 13
+    rom[656] = 16'h122A;   // word 16
+    rom[658] = 16'h6571;   // word 18
+    rom[659] = 16'h0729;   // word 19
+    rom[660] = 16'hC202;   // word 20
+    rom[661] = 16'hFF00;   // word 21
+    rom[662] = 16'h8000;   // word 22
+    rom[663] = 16'hC202;   // word 23
+    rom[670] = 16'hC202;   // word 30
+    rom[671] = 16'h0200;   // word 31
+    // page 0x0E, changeable values
+    rom[673] = 16'h0002;   // word 1
+    rom[675] = 16'hFFFF;   // word 3
+    rom[676] = 16'hFF0F;   // word 4
+    rom[677] = 16'hFF0F;   // word 5
+    rom[680] = 16'h122A;   // word 8
+    rom[682] = 16'h6571;   // word 10
+    rom[683] = 16'h0729;   // word 11
+    rom[684] = 16'hC202;   // word 12
+    rom[685] = 16'hFF00;   // word 13
+    rom[686] = 16'h8000;   // word 14
+    rom[687] = 16'hC202;   // word 15
+    rom[694] = 16'hC202;   // word 22
+    rom[695] = 16'h0200;   // word 23
+    rom[697] = 16'hC202;   // word 25
+    rom[700] = 16'h100F;   // word 28
+    rom[702] = 16'h1811;   // word 30
+    // page 0x2A, default values
+    rom[704] = 16'h122A;   // word 0
+    rom[706] = 16'h6571;   // word 2
+    rom[707] = 16'h0729;   // word 3
+    rom[708] = 16'hC202;   // word 4
+    rom[709] = 16'hFF00;   // word 5
+    rom[710] = 16'h8000;   // word 6
+    rom[711] = 16'hC202;   // word 7
+    rom[718] = 16'hC202;   // word 14
+    rom[719] = 16'h0200;   // word 15
+    rom[721] = 16'hC202;   // word 17
+    rom[724] = 16'h100F;   // word 20
+    rom[726] = 16'h1811;   // word 22
+    rom[732] = 16'h100F;   // word 28
+    // page 0x2A, changeable values
+    rom[740] = 16'hC202;   // word 4
+    rom[741] = 16'h0200;   // word 5
+    rom[743] = 16'hC202;   // word 7
+    rom[746] = 16'h100F;   // word 10
+    rom[748] = 16'h1811;   // word 12
+    rom[754] = 16'h100F;   // word 18
+    // page 0x0F, default values
+    rom[768] = 16'h100F;   // word 0
+    rom[770] = 16'h1811;   // word 2
+    rom[776] = 16'h100F;   // word 8
+    // page 0x0F, changeable values
+    rom[800] = 16'h100F;   // word 0
+    // page 0x3F / other, default values
+    rom[832] = 16'h0601;   // word 0
+    rom[836] = 16'h060D;   // word 4
+    rom[838] = 16'h3C00;   // word 6
+    rom[839] = 16'h4B00;   // word 7
+    rom[840] = 16'h0E0E;   // word 8
+    rom[841] = 16'h0004;   // word 9
+    rom[843] = 16'h4B00;   // word 11
+    rom[844] = 16'hFF01;   // word 12
+    rom[845] = 16'hFF02;   // word 13
+    rom[848] = 16'h122A;   // word 16
+    rom[850] = 16'h6571;   // word 18
+    rom[851] = 16'h0729;   // word 19
+    rom[852] = 16'hC202;   // word 20
+    rom[853] = 16'hFF00;   // word 21
+    rom[854] = 16'h8000;   // word 22
+    rom[855] = 16'hC202;   // word 23
+    rom[862] = 16'hC202;   // word 30
+    rom[863] = 16'h0200;   // word 31
+    // page 0x3F / other, changeable values
+    rom[865] = 16'hFF37;   // word 1
+    rom[869] = 16'h0F00;   // word 5
+    rom[870] = 16'hFFFF;   // word 6
+    rom[871] = 16'hFFFF;   // word 7
+    rom[873] = 16'h0002;   // word 9
+    rom[875] = 16'hFFFF;   // word 11
+    rom[876] = 16'hFF0F;   // word 12
+    rom[877] = 16'hFF0F;   // word 13
+    rom[884] = 16'hC202;   // word 20
+    rom[885] = 16'h0200;   // word 21
+    rom[887] = 16'hC202;   // word 23
+    rom[890] = 16'h100F;   // word 26
+    rom[892] = 16'h1811;   // word 28
   end
 
   // The synthesised header of an ISO: one data track at LBA 0 and the lead-out at the capacity,
@@ -381,7 +587,7 @@ module pc9821_atapi #(
   // SUB-CHANNEL scan state (S_PREP)
   reg [2:0]  pp;                // prep phase
   reg [6:0]  sc_e, sc_r;        // entry being read, best entry
-  reg [19:0] sc_rpos;           // best entry's LBA
+  reg [19:0] sc_rel;            // the best entry's distance to the position: sc_pos - its LBA (mod 2^20)
   // The position the report is built from, latched once per command. atapicmd.c readsubch:
   // `pos = drv->dacurpos; if ((daflag == 0x12) || (daflag == 0x13)) pos += (rand() & 7);` - a
   // paused or completed drive reports a position that wanders by up to 7 frames from poll to
@@ -392,6 +598,8 @@ module pc9821_atapi #(
   reg [19:0] sc_pos;
   reg [7:0]  sc_rnd = 8'h5A;
   reg [3:0]  sc_hi;            // byte 1 of the entry's big-endian LBA (bits 19:16)
+
+  wire [20:0] sc_diff = {1'b0, sc_pos} - {1'b0, sc_hi, hq[7:0], hq[15:8]};
 
   // TOC word geometry
   wire [8:0] bt   = bi_a - 9'd2;
@@ -418,25 +626,25 @@ module pc9821_atapi #(
     else                               buf_raddr = {1'b0, ptr};
   end
 
-  // The ROM address for the builder's stage A (bi_a): the constant replies, and MODE SENSE's
-  // page run (0x3F = pages 0x01, 0x0D, 0x0E, 0x2A in that order, atapicmd.c's fallthrough).
-  wire [8:0] mq = bi_a - 9'd4;   // the word within the pages
-  reg  [8:0] rom_addr;
+  // The ROM address for the builder's stage A (bi_a): the constant replies, and MODE SENSE's pages.
+  wire [4:0] mq = bi_a[4:0] - 5'd4;   // the word within the pages (the low five bits are all the table spans)
+  reg  [2:0] ms_pidx;
+  always @* begin
+    case (ms_page)
+      6'h01:   ms_pidx = 3'd0;
+      6'h0D:   ms_pidx = 3'd1;
+      6'h0E:   ms_pidx = 3'd2;
+      6'h2A:   ms_pidx = 3'd3;
+      6'h0F:   ms_pidx = 3'd4;
+      default: ms_pidx = 3'd5;
+    endcase
+  end
+  reg  [9:0] rom_addr;
   always @* begin
     case (bk)
-      K_IDENT: rom_addr = bi_a;
-      K_INQ:   rom_addr = ROM_INQ + bi_a;
-      default: case (ms_page)   // K_MSENSE (the other kinds do not read the ROM)
-        6'h0F:   rom_addr = (ms_chg ? ROM_C0F : ROM_P0F) + mq;
-        6'h01:   rom_addr = (ms_chg ? ROM_C01 : ROM_P01) + mq;
-        6'h0D:   rom_addr = (ms_chg ? ROM_C0D : ROM_P0D) + mq;
-        6'h0E:   rom_addr = (ms_chg ? ROM_C0E : ROM_P0E) + mq;
-        6'h2A:   rom_addr = (ms_chg ? ROM_C2A : ROM_P2A) + mq;
-        default: rom_addr = (mq < 9'd4)  ? (ms_chg ? ROM_C01 : ROM_P01) + mq :
-                            (mq < 9'd8)  ? (ms_chg ? ROM_C0D : ROM_P0D) + mq - 9'd4 :
-                            (mq < 9'd16) ? (ms_chg ? ROM_C0E : ROM_P0E) + mq - 9'd8 :
-                                           (ms_chg ? ROM_C2A : ROM_P2A) + mq - 9'd16;
-      endcase
+      K_IDENT: rom_addr = {1'b0, bi_a};
+      K_INQ:   rom_addr = ROM_INQ + {1'b0, bi_a};
+      default: rom_addr = {1'b1, ms_pidx, ms_chg, mq};   // K_MSENSE (the other kinds do not read the ROM)
     endcase
   end
   // No reset and no power-up value on the read register, or the ROM is refused (AGENTS.md).
@@ -454,9 +662,9 @@ module pc9821_atapi #(
       // REQUEST SENSE (atapicmd.c 0x03): fixed format, sense key, length 11, ASC/ASCQ.
       K_SENSE: case (bi_b[3:0])
                  4'd0: bword = 16'h0070;
-                 4'd1: bword = {12'd0, sk};
+                 4'd1: bword = {12'd0, sk_val(skc)};
                  4'd3: bword = 16'h0B00;
-                 4'd6: bword = asc;
+                 4'd6: bword = asc_val(ascc);
                  default: ;
                endcase
       // READ CAPACITY: NP2kai returns sxsi->totals (the sector COUNT, not the last LBA that
@@ -591,6 +799,10 @@ module pc9821_atapi #(
                          (mount_edge && img_size < 64'd2048));
   wire player_flag_cmd = player_pos_cmd ||
                          (AUDIO_EN && exec_go && cmd == 8'hA0 && cdb[0] == 8'h4B);
+  // The superseded audio fetch (da_stale, above): from the position command's own cycle its
+  // samples are dropped, and its completion advances nothing.
+  wire audio_stale_now = da_stale || (player_pos_cmd && audio_in_flight);
+  wire audio_adv       = e_done && (e_kind == EK_AUDIO) && !da_stale;
   // The MSF converter's three starts (READ SUB-CHANNEL's two, the ISO mount's one) - at most one
   // per cycle, and only from an idle or just-finishing converter.
   wire cv_start_abs = (st == S_PREP) && (pp == 3'd4) && !cv_busy;
@@ -612,34 +824,34 @@ module pc9821_atapi #(
     begin
       sc <= INTR_IO | INTR_CD;
       status <= (status & ~(ST_BSY | ST_DRQ | ST_DSC | ST_ERR)) | ST_DRDY | ST_DSC;
-      error <= 8'h00; sk <= SK_NO_SENSE; asc <= ASC_NONE;
+      error <= 8'h00; skc <= SKC_NONE; ascc <= ASCC_NONE;
       st <= S_IDLE;
-      if (!nien) irq <= 1'b1;
+      if (!nien) irq_pend <= 1'b1;
     end
   endtask
   task automatic t_senderror(input [3:0] key, input [15:0] code, input set);
     begin
       sc <= INTR_IO | INTR_CD;
       status <= (status & ~(ST_BSY | ST_DMRD | ST_DSC | ST_DRQ)) | ST_ERR | ST_DSC;
-      if (set) begin error <= {key, error[3:0]}; sk <= key; asc <= code; end
+      if (set) begin error <= {key, error[3:0]}; skc <= sk_enc(key); ascc <= asc_enc(code); end
       st <= S_IDLE;
-      if (!nien) irq <= 1'b1;
+      if (!nien) irq_pend <= 1'b1;
     end
   endtask
   task automatic t_sendabort;
     begin
-      sk <= SK_ABORTED; error <= ERR_ABRT;
+      skc <= SKC_ABORTED; error <= ERR_ABRT;
       sc <= INTR_IO | INTR_CD;
       status <= (status & ~(ST_BSY | ST_DMRD | ST_DSC | ST_DRQ)) | ST_ERR | ST_DSC;
       st <= S_IDLE;
-      if (!nien) irq <= 1'b1;
+      if (!nien) irq_pend <= 1'b1;
     end
   endtask
   task automatic t_ata_abort;   // ideio.c cmdabort
     begin
       status <= ST_DRDY | ST_ERR; error <= ERR_ABRT;
       st <= S_IDLE;
-      if (!nien) irq <= 1'b1;
+      if (!nien) irq_pend <= 1'b1;
     end
   endtask
   task automatic t_signature;   // ideio.c drvreset, IDETYPE_CDROM: 0x01/0x01/0x14/0xEB
@@ -676,8 +888,8 @@ module pc9821_atapi #(
       // outranks NP2kai, and with 0x00 the ROM drops the CD before identifying it.
       status <= 8'h00; error <= ERR_AMNF;
       sc <= 8'h01; sn <= 8'h01; cy <= 16'hEB14; drhd <= 8'h00;
-      nien <= 1'b0; srst <= 1'b0; sk <= SK_NO_SENSE; asc <= ASC_NONE;
-      irq <= 1'b0;
+      nien <= 1'b0; srst <= 1'b0; skc <= SKC_NONE; ascc <= ASCC_NONE;
+      irq_pend <= 1'b0;
       st <= S_IDLE; cmd <= 8'h00; pkt_words <= 3'd0; data_lo <= 8'h00;
       ptr <= 10'd0; dp_words <= 11'd0; dp_read <= 1'b0; rd_lba <= 20'd0; rd_left <= 16'd0;
       bk <= K_IDENT; bi_a <= 9'd0; bi_b <= 9'd0; bv_b <= 1'b0; b_full <= 12'd0; b_alloc <= 16'd0;
@@ -685,7 +897,7 @@ module pc9821_atapi #(
       sub_full <= 1'b0; sub_ctrl <= 8'h00; sub_point <= 8'h00;
       ab_m <= 8'd0; ab_s <= 8'd0; ab_f <= 8'd0; rl_m <= 8'd0; rl_s <= 8'd0; rl_f <= 8'd0;
       damsfbcd <= 1'b0;
-      pp <= 3'd0; sc_e <= 7'd0; sc_r <= 7'd0; sc_rpos <= 20'd0; sc_hi <= 4'h0;
+      pp <= 3'd0; sc_e <= 7'd0; sc_r <= 7'd0; sc_rel <= 20'd0; sc_hi <= 4'h0;
       buf_we <= 1'b0; buf_waddr <= 11'd0; buf_wdata <= 16'd0;
       for (int i = 0; i < 12; i++) cdb[i] <= 8'h00;
     end else begin
@@ -697,7 +909,7 @@ module pc9821_atapi #(
           16'h0432: if (!io_din[7]) bank1 <= io_din[0];
           16'h064C: if (bank1) begin
                       dev1 <= io_din[4];
-                      if (AS_MASTER || io_din[4]) drhd <= io_din;
+                      drhd <= io_din;
                     end
           16'h074C: if (bank1) begin
                       nien <= io_din[1];
@@ -739,7 +951,7 @@ module pc9821_atapi #(
             end
             8'h08: begin   // DEVICE RESET: drvreset (status 0), ERROR 0x01, interrupt
               t_signature; status <= 8'h00; error <= ERR_AMNF; st <= S_IDLE;
-              if (!nien) irq <= 1'b1;
+              if (!nien) irq_pend <= 1'b1;
             end
             default: if (st == S_IDLE || st == S_PKT || st == S_DATA) case (io_din)
               8'hA0: begin   // PACKET: DRDY|DRQ|DSC, interrupt reason CoD, no interrupt
@@ -753,20 +965,20 @@ module pc9821_atapi #(
                 st <= S_EXEC;
               end
               8'hEC: begin t_signature; t_ata_abort; end   // drvreset + cmdabort
-              8'h40, 8'h41: begin status <= status & ~ST_BSY; if (!nien) irq <= 1'b1; end
-              8'hE0: if (!nien) irq <= 1'b1;
+              8'h40, 8'h41: begin status <= status & ~ST_BSY; if (!nien) irq_pend <= 1'b1; end
+              8'hE0: if (!nien) irq_pend <= 1'b1;
               8'hE1: if (status[6]) begin
-                       status <= ST_DRDY | ST_DSC; error <= 8'h00; if (!nien) irq <= 1'b1;
+                       status <= ST_DRDY | ST_DSC; error <= 8'h00; if (!nien) irq_pend <= 1'b1;
                      end else t_ata_abort;
-              8'hE5: begin sc <= 8'hFF; status <= status & ~ST_BSY; if (!nien) irq <= 1'b1; end
-              8'hE7: begin status <= ST_DRDY; error <= 8'h00; if (!nien) irq <= 1'b1; end
+              8'hE5: begin sc <= 8'hFF; status <= status & ~ST_BSY; if (!nien) irq_pend <= 1'b1; end
+              8'hE7: begin status <= ST_DRDY; error <= 8'h00; if (!nien) irq_pend <= 1'b1; end
               8'hDE, 8'hDF: begin
                 status <= (status | ST_DRDY) & ~(ST_BSY | ST_DMRD | ST_DRQ | ST_ERR);
-                if (!nien) irq <= 1'b1;
+                if (!nien) irq_pend <= 1'b1;
               end
               8'hF8: begin
                 sn <= totals[7:0]; cy <= {4'd0, totals[19:8]}; drhd[3:0] <= 4'd0;
-                if (!nien) irq <= 1'b1;
+                if (!nien) irq_pend <= 1'b1;
               end
               8'h10, 8'h11, 8'h12, 8'h13, 8'h14, 8'h15, 8'h16, 8'h17,
               8'h18, 8'h19, 8'h1A, 8'h1B, 8'h1C, 8'h1D, 8'h1E, 8'h1F,
@@ -781,7 +993,7 @@ module pc9821_atapi #(
       // ---------------- reads ----------------
       if (io_rd && sel) begin
         // ideio_i64e: a status read lowers the interrupt (when nIEN is clear)
-        if (io_addr == 16'h064E && !nien) irq <= 1'b0;
+        if (io_addr == 16'h064E && !nien) irq_pend <= 1'b0;
         // An ERROR read does NOT clear STATUS.ERR (CHK) here. NP2kai's ideio_i642 clears it, but
         // the machine's own IDE ROM rules that out for this drive: its interrupt handler reads
         // ERROR and THEN STATUS (Xe10 IDE ROM BANK3@0x1A1C-0x1A27) and its IDENTIFY DEVICE
@@ -818,13 +1030,13 @@ module pc9821_atapi #(
           // senddata: interrupt reason IO, the byte count, DRQ|DSC, the sense cleared.
           // (An IDENTIFY PACKET's page goes out with DRDY|DSC|DRQ and touches neither.)
           if (cmd == 8'hA0) begin
-            sc <= INTR_IO; cy <= bxfer; sk <= SK_NO_SENSE; asc <= ASC_NONE;
+            sc <= INTR_IO; cy <= bxfer; skc <= SKC_NONE; ascc <= ASCC_NONE;
           end
           status <= (status & ~(ST_BSY | ST_DMRD | ST_DSC | ST_ERR)) | ST_DRQ | ST_DSC;
           error <= 8'h00;
           ptr <= 10'd0; dp_words <= {2'd0, bn}; dp_read <= 1'b0;
           st <= S_DATA;
-          if (!nien) irq <= 1'b1;
+          if (!nien) irq_pend <= 1'b1;
         end
       end
 
@@ -881,7 +1093,7 @@ module pc9821_atapi #(
             else if (cdb[3] != 8'h01) t_senderror(4'd0, 16'd0, 1'b0);
             else if (!AUDIO_EN || daflag == DA_NONE) t_build(K_SUBCH, 12'd16, cdb_len78);
             else begin
-              pp <= 3'd0; sc_e <= 7'd0; sc_r <= 7'd0; sc_rpos <= 20'd0; st <= S_PREP;
+              pp <= 3'd0; sc_e <= 7'd0; sc_r <= 7'd0; sc_rel <= 20'd0; st <= S_PREP;
               sc_pos <= dacurpos + ((daflag == DA_PAUSE || daflag == DA_DONE) ?
                                     {17'd0, sc_rnd[2:0]} : 20'd0);
               sc_rnd <= {sc_rnd[6:0], 1'b0} ^ (sc_rnd[7] ? 8'h1D : 8'h00);
@@ -912,9 +1124,11 @@ module pc9821_atapi #(
           3'd0: pp <= 3'd1;                              // 256+2e presented
           3'd1: begin sc_hi <= hq[11:8]; pp <= 3'd2; end // BE LBA byte 1; 257+2e presented
           3'd2: begin
-            // entry sc_e's LBA, from its big-endian field: {byte1, byte2, byte3}
-            if ({sc_hi, hq[7:0], hq[15:8]} <= sc_pos || sc_e == 7'd0) begin
-              sc_r <= sc_e; sc_rpos <= {sc_hi, hq[7:0], hq[15:8]};
+            // entry sc_e's LBA, from its big-endian field: {byte1, byte2, byte3}. The last entry
+            // that starts at or before the position wins (entry 0 always starts the scan): the
+            // subtraction's borrow IS the compare, and its difference IS the relative position.
+            if (!sc_diff[20] || sc_e == 7'd0) begin
+              sc_r <= sc_e; sc_rel <= sc_diff[19:0];
             end
             if (sc_e + 7'd1 >= tracks[6:0]) pp <= 3'd3;
             else begin sc_e <= sc_e + 7'd1; pp <= 3'd0; end
@@ -941,10 +1155,10 @@ module pc9821_atapi #(
         rd_lba <= rd_lba + 20'd1; rd_left <= rd_left - 16'd1;
         sc <= INTR_IO; cy <= 16'd2048;
         status <= (status & ~(ST_BSY | ST_DMRD | ST_DSC | ST_ERR)) | ST_DRQ;
-        error <= 8'h00; sk <= SK_NO_SENSE; asc <= ASC_NONE;
+        error <= 8'h00; skc <= SKC_NONE; ascc <= ASCC_NONE;
         ptr <= 10'd0; dp_words <= 11'd1024; dp_read <= 1'b1;
         st <= S_DATA;
-        if (!nien) irq <= 1'b1;
+        if (!nien) irq_pend <= 1'b1;
       end
 
     end
@@ -975,8 +1189,7 @@ module pc9821_atapi #(
     if (cv_start_abs || cv_start_rel || cv_start_iso) begin
       cv_busy <= 1'b1; cv_ph <= 1'b0; cv_m <= 7'd0; cv_s <= 6'd0;
       cv_owner_mount <= cv_start_iso;
-      cv_x <= cv_start_iso ? iso_cap + 20'd150 :
-              cv_start_abs ? sc_pos + 20'd150 : sc_pos - sc_rpos;
+      cv_x <= cv_start_rel ? sc_rel : (cv_start_iso ? iso_cap : sc_pos) + 20'd150;
       if (cv_start_iso) iso_msf_pend <= 1'b0;
     end else if (cv_done) begin cv_busy <= 1'b0; cv_owner_mount <= 1'b0; end
     else if (cv_busy) begin
@@ -1031,8 +1244,13 @@ module pc9821_atapi #(
       end else if (player_flag_cmd) begin   // 0x4B
         if (cdb[8][0]) begin if (daflag == DA_PAUSE) daflag <= DA_PLAY; end
         else if (daflag == DA_PLAY) daflag <= DA_PAUSE;
+        // PAUSE/RESUME leaves the position alone, so a sector completing in this same cycle
+        // still advances it (R4: both events land; it used to be swallowed by this arm).
+        if (audio_adv) begin
+          dacurpos <= dacurpos + 20'd1; dalength <= dalength - 20'd1;
+        end
       end else begin
-        if (e_done && e_kind == EK_AUDIO) begin
+        if (audio_adv) begin
           dacurpos <= dacurpos + 20'd1; dalength <= dalength - 20'd1;
         end
         // the end of play: the length is spent, the lead-out is reached, or there is no PCD
@@ -1041,6 +1259,12 @@ module pc9821_atapi #(
           daflag <= DA_DONE;
       end
     end
+
+    // da_stale: set by a position command against an in-flight audio fetch (that fetch then
+    // ends without effect), cleared when the fetch ends. One next-state (R4).
+    if (AUDIO_EN)
+      da_stale <= (player_pos_cmd && audio_in_flight && !e_done) ||
+                  (da_stale && !(e_done && e_kind == EK_AUDIO));
 
     // ---- the engine: header (mount) > data (READ) > audio ----
     case (e_st)
@@ -1097,7 +1321,7 @@ module pc9821_atapi #(
         // {R, L} is assembled in the output register itself (src/soc/cdda.v samples CDDA_DATA
         // only in the cycle after the cdda_wr edge, and the next L cannot land before it).
         if (!e_odd) cdda_data[15:0] <= sd_buff_dout;
-        else begin cdda_wr <= 1'b1; cdda_data[31:16] <= sd_buff_dout; end
+        else begin cdda_wr <= !audio_stale_now; cdda_data[31:16] <= sd_buff_dout; end
       end
     end
   end
@@ -1207,8 +1431,8 @@ module pc9821_atapi #(
                            default: r_byte = l_cmd_st; endcase
           4'd2: r_byte = cdb[4'(r_i - 5'd4)];
           4'd3, 4'd4: case (r_i) 5'd4: r_byte = status; 5'd5: r_byte = error; 5'd6: r_byte = sc;
-                           5'd7: r_byte = cy[7:0]; 5'd8: r_byte = cy[15:8]; 5'd9: r_byte = {4'd0, sk};
-                           5'd10: r_byte = asc[7:0]; 5'd11: r_byte = asc[15:8];
+                           5'd7: r_byte = cy[7:0]; 5'd8: r_byte = cy[15:8]; 5'd9: r_byte = {4'd0, sk_val(skc)};
+                           5'd10: r_byte = asc_w[7:0]; 5'd11: r_byte = asc_w[15:8];
                            5'd12: r_byte = d_sum[15:8]; 5'd13: r_byte = d_sum[7:0];
                            5'd14: r_byte = d_xor[15:8]; 5'd15: r_byte = d_xor[7:0];
                            5'd16: r_byte = d_n[15:8];   default: r_byte = d_n[7:0]; endcase

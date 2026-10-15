@@ -24,7 +24,7 @@
 // 4-state simulator, run by hand outside the build path (tools/check_wiring.py's
 // no-iverilog-in-the-build-path rule stands). Its `--selftest` ablates each seed this
 // bench's checks reach and REQUIRES the run to FAIL: `ch`'s `= 4'd0`, and the
-// samples_out/valid initial block (the shift register X-locks on itself). Both are caught.
+// out_q/valid initial block (the captured fields read X until first captured). Both are caught.
 
 `timescale 1ns / 1ps
 
@@ -107,31 +107,38 @@ module tb_pc9821_audio_volume_x;
       $display("FAIL: valid pulsed %0d times in %0d clks, want >= 3", valids, 4 * NUM_CH);
       errors = errors + 1;
     end
-
-    // ==== the assembled mix: unity gains, one distinct constant per channel ====
-    // The shift register rotates freely (it is written every clk), so the check
-    // is the INSERT stream: the new product lands at the TOP chunk each clk and
-    // must walk the channels in order (0x0100, 0x0200, ... 0x0A00, wrap).
-    begin : insert_stream
-      reg [15:0] ins[0:3*NUM_CH-1];
-      reg [15:0] want;
-      for (i = 0; i < 3 * NUM_CH; i = i + 1) begin
-        @(negedge clk);
-        ins[i] = samples_out[NUM_CH*SAMPLE_WIDTH-1 -: SAMPLE_WIDTH];
-      end
-      if (ins[0] < 16'h0100 || ins[0] > 16'h0100 * NUM_CH ||
-          ins[0] % 16'h0100 != 0) begin
-        $display("FAIL: insert stream starts at %04x, not a channel product", ins[0]);
-        errors = errors + 1;
-      end
-      for (i = 1; i < 3 * NUM_CH; i = i + 1) begin
-        want = (ins[i-1] == 16'h0100 * NUM_CH) ? 16'h0100 : ins[i-1] + 16'h0100;
-        if (ins[i] !== want) begin
-          $display("FAIL: insert stream out of channel order at #%0d: got %04x want %04x",
-                   i, ins[i], want);
+    // The FRAME the consumer latches on valid: channel 0 at bits [15:0] and channel k at
+    // [16k +: 16], every channel its own unity-gain product. The next-epochs check below
+    // proves the capture order, so a valid that pulses one channel late (a frame
+    // rotated by one slot) is caught by this one (bench-audit mutation, 2026-10-12).
+    begin : frame_at_valid
+      integer k;
+      @(negedge clk);
+      while (!valid) @(negedge clk);
+      for (k = 0; k < NUM_CH; k = k + 1)
+        if (samples_out[k*SAMPLE_WIDTH +: SAMPLE_WIDTH] !== 16'h0100 * (k + 1)) begin
+          $display("FAIL: at valid, channel %0d's slot holds %04x, want %04x", k,
+                   samples_out[k*SAMPLE_WIDTH +: SAMPLE_WIDTH], 16'h0100 * (k + 1));
           errors = errors + 1;
-          i = 3 * NUM_CH;
         end
+    end
+
+    // ==== the assembled mix on the next epochs ====
+    // samples_out is meaningful on `valid` (each field is captured once per epoch and held), so
+    // the rotation check is the FRAME at each of the next three valids, in channel order: a
+    // channel captured an epoch late or into the wrong field shows as a wrong constant here.
+    begin : next_epochs
+      integer k, e;
+      for (e = 0; e < 3; e = e + 1) begin
+        @(negedge clk);
+        while (valid) @(negedge clk);
+        while (!valid) @(negedge clk);
+        for (k = 0; k < NUM_CH; k = k + 1)
+          if (samples_out[k*SAMPLE_WIDTH +: SAMPLE_WIDTH] !== 16'h0100 * (k + 1)) begin
+            $display("FAIL: epoch %0d at valid, channel %0d's slot holds %04x, want %04x", e, k,
+                     samples_out[k*SAMPLE_WIDTH +: SAMPLE_WIDTH], 16'h0100 * (k + 1));
+            errors = errors + 1;
+          end
       end
     end
 

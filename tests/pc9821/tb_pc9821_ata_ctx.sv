@@ -174,7 +174,7 @@ module tb_pc9821_ata_ctx;
     // its four registers (drive_head[6] selects LBA mode), and READ SECTORS 0x20
     // latches current_lba and asks the block engine. The record must name the sector:
     // ALB=00123456 with ASE=0400 (four sectors owed, no error).
-    write_byte(16'h0432, 8'h01);          // select the built-in IDE bank
+    write_byte(16'h0432, 8'h00);          // select the built-in IDE bank
     write_byte(16'h0644, 8'h04);          // sector_count = 4
     write_byte(16'h0646, 8'h56);          // sector_number (LBA 7:0)
     write_byte(16'h0648, 8'h34);          // cylinder_low  (LBA 15:8)

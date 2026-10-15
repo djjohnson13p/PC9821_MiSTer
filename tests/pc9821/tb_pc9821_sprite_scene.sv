@@ -121,9 +121,12 @@ module tb_pc9821_sprite_scene;
     // direction is the client's own LATCHED `c_write_q`, not the live `cpu_write`: r13/322
     // decouples the store, so z486 drops `cpu_write` the cycle the walk accepts the access.
     if (dut.u_arb.cc_plain_ready && dut.u_arb.c_write_q) plane_bytes <= plane_bytes + popcount4(dut.u_arb.cc_lane_be);
-    // Plane bytes the EGC commits: one per enabled plane lane of the column it presents.
-    if (dut.u_arb.cc_egc_ready && dut.u_egc.cl_write && (dut.u_egc.state == 4'd5))
-      plane_bytes <= plane_bytes + popcount4(dut.u_egc.col_wbe[dut.u_egc.plane_idx]);
+    // Plane bytes the EGC commits: one per enabled plane lane of each write request the arbiter
+    // accepts, two columns for a burst - observed at the client handshake, not on the engine's
+    // internals (this used to read a state number and a private column array, and the state
+    // number named the read-response state, so the EGC's bytes were never counted).
+    if (dut.u_arb.cc_egc_ready && dut.u_egc.cl_write)
+      plane_bytes <= plane_bytes + (dut.u_egc.cl_burst ? 2 : 1) * popcount4(dut.u_egc.cl_wbe);
     // The EGC's own unit count, taken from the EGC's CPU-ready (one pulse per completed unit) and
     // the direction it latched for that unit. It used to read two private state numbers, which is
     // why the sequencer's state renumbering broke it: observe the

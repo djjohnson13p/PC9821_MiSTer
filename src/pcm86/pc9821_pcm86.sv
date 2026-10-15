@@ -172,7 +172,14 @@ module pc9821_pcm86 #(
                                         // on read (pcm86io.c:303) and tests val & 0x10
                                         // on write (:114)
   reg [7:0]  dactrl;     // 0xA46A when 0xA468 bit 5 is clear
-  reg [15:0] fifosize;   // 0xA46A when 0xA468 bit 5 is set: the IRQ threshold
+  // 0xA46A when 0xA468 bit 5 is set: the IRQ threshold. Every value the register can hold
+  // is {1'b0, N, 7'b0} (N = val + 1, 1..255; the reset value 0x0080 is N = 1) or 0x7FFC,
+  // which is N = 255 with the low seven bits 7'h7C: so it is kept as N plus one flag, 9
+  // flip-flops instead of 16, and the constant low bits fold out of the `count <= fifosize`
+  // compares.
+  reg [7:0]  fs_n;
+  reg        fs_ceil;
+  wire [15:0] fifosize = {1'b0, fs_n, fs_ceil ? 7'h7C : 7'h00};
   reg [3:0]  vol5;       // 0xA466: DAC volume, (~val) & 0xF when (val & 0xE0)==0xA0
 
   reg        irq_pending;  // reported at 0xA468 bit 4
@@ -304,7 +311,8 @@ module pc9821_pcm86 #(
   // law to within an LSB and needs no divider. Reset value 0: NP2kai's reset
   // memsets vol5, so an out-of-reset card is SILENT until 0xA466 is programmed,
   // which is a register contract rather than an accident.
-  wire [15:0] vol_scale = {12'd0, vol5} * 16'd4369;
+  // 4369 = 16'h1111, so vol5 * 4369 is the nibble repeated four times: no multiplier.
+  wire [15:0] vol_scale = {vol5, vol5, vol5, vol5};
   /* verilator lint_off UNUSEDSIGNAL */  // Q16 scaling: the DAC takes the TOP 16 bits,
   wire signed [31:0] l_scaled = hold_l * $signed({1'b0, vol_scale});   // so the low half is
   wire signed [31:0] r_scaled = hold_r * $signed({1'b0, vol_scale});   // the fraction
@@ -355,7 +363,19 @@ module pc9821_pcm86 #(
   // (pc9821_pic.sv:121; wired in at pc9821_system.sv:1012). tb_pc9821_pcm86_irqmask.
   wire irq_query = (irq_pending || (count <= fifosize)) && fifo[5];
 
-  assign irq = irq_query;
+  // EVERY ARMED THRESHOLD EVENT IS A FRESH REQUEST. NP2kai delivers each one with its own
+  // pic_setirq (sound/pcm86c.c pcm86_cb: `pcm86->irqflag = 1; ... pic_setirq(pcm86->irq);`),
+  // but this wire is a level into an edge-latched PIC (pc9821_pic.sv `ir_set = ir_in &
+  // ~ir_prev`). When the line is ALREADY high as an event fires - an ISR that acknowledged
+  // while the buffer was still at the threshold (the flag re-latches, pcm86_oa468's force)
+  // and then refilled - the event made no edge, the next interrupt never came and playback
+  // stalled. The producer's own one-cycle bubble (SCED R6) drops the line for exactly the
+  // cycle after such an event, so the PIC sees the new rising edge. irq_line_q is the line
+  // as it stood BEFORE the event's cycle: a first event from a low line rises once, unbubbled.
+  // tb_pc9821_pcm86_irq_rearm.
+  reg irq_line_q;
+  reg irq_bubble;
+  assign irq = irq_query && !irq_bubble;
 
   // ------------------------------------------------------------------
   // Port reads.
@@ -398,7 +418,8 @@ module pc9821_pcm86 #(
       fifo        <= 8'h00;
       // NP2kai's reset: dactrl 0x32 (16-bit stereo), threshold 0x80.
       dactrl      <= 8'h32;
-      fifosize    <= 16'h0080;
+      fs_n        <= 8'd1;
+      fs_ceil     <= 1'b0;
       vol5        <= 4'h0;
       irq_pending <= 1'b0;
       irq_arm     <= 1'b0;
@@ -413,7 +434,11 @@ module pc9821_pcm86 #(
       nbyte_rg    <= 3'd0;
       acc         <= 32'd0;
       rd_addr     <= 15'd0;
+      irq_line_q  <= 1'b0;
+      irq_bubble  <= 1'b0;
     end else begin
+      irq_line_q <= irq;
+      irq_bubble <= irq_set && irq_line_q;
       // The phase accumulator free-runs (see the header): a driver calibrates
       // the card by watching 0xA466 bit 0 before it enables playback.
       phase <= phase_sum[31:0];
@@ -447,8 +472,8 @@ module pc9821_pcm86 #(
           // (val + 1) << 7 bytes, with 0xFF meaning 0x7FFC. The 128-byte
           // granularity and the 0x7FFC ceiling are the driver-visible statement
           // of the buffer's size.
-          fifosize <= (io_din == 8'hFF) ? 16'h7FFC
-                                        : ({8'd0, io_din} + 16'd1) << 7;
+          fs_n    <= (io_din == 8'hFF) ? 8'hFF : io_din + 8'd1;
+          fs_ceil <= (io_din == 8'hFF);
         end else if (io_din[3:0] != 4'hF) begin
           // The low nibble's meaning is unknown. The guard above is NP2kai's own,
           // verbatim - pcm86_oa46a (cbus/pcm86io.c:155-160) returns early on
@@ -475,15 +500,20 @@ module pc9821_pcm86 #(
       if (wr_data && !buf_rst) begin
         wrptr <= wrptr + 15'd1;
         // A byte is accepted even when the 32 KiB buffer is full; the oldest
-        // byte is dropped, i.e. the read pointer moves with the write pointer.
-        // NP2kai appends past full and slips its read pointer by four
-        // (PCM86_REALBUFSIZE = 0x8000 + rescue); the rescue margin is an
-        // artifact of its 64 KiB host ring, so the slip is not reproduced, but
-        // the direction -- the newest data survives, which is what a circular
-        // buffer does -- is (r12/35 section 3).
-        if (count == 16'h8000)
-          rdptr <= rdptr + 15'd1;
-        else
+        // bytes are dropped, so the newest data survives (r12/35 section 3).
+        // NP2kai appends past full into a rescue margin (PCM86_REALBUFSIZE =
+        // 0x8000 + rescue, an artifact of its 64 KiB host ring) that this ring
+        // does not have; the slip granularity below is its.
+        // THE SLIP IS A WHOLE 4-BYTE GROUP, NOT ONE BYTE (NP2kai pcm86_oa46c:
+        // `g_pcm86.realbuf -= 4; g_pcm86.readpos = (g_pcm86.readpos + 4) & PCM86_BUFMSK;`).
+        // 4 is a multiple of every format's frame (1, 2 or 4 bytes), so the drain stays
+        // frame-aligned; a 1-byte slip swapped L/R and split samples for the rest of the
+        // session (tb_pc9821_pcm86_overflow_align). The newest byte joins and the four
+        // oldest leave: 0x8000 + 1 - 4.
+        if (count == 16'h8000) begin
+          rdptr <= rdptr + 15'd4;
+          count <= 16'h7FFD;
+        end else
           count <= count + 16'd1;
         irq_arm <= 1'b1;
       end
@@ -535,23 +565,14 @@ module pc9821_pcm86 #(
           // Without this a byte written as a frame completed was LOST
           // (tb_pc9821_pcm86_bufrst's write sweep found it once the drain's timing moved:
           // count 2497 -> 2495).
-          //   The FULL case owes the read pointer BOTH terms (review2/datapaths.md F7 /
-          //   review2/buffers.md F6): this frame's own advance (rdptr + nbyte_rg) AND the
-          //   write arm's drop-oldest slip (rdptr + 1) - the block's documented "the
-          //   oldest byte is dropped, the newest data survives". The new byte, stored at
-          //   the slot this frame just vacated, then sits at the tail of
-          //   [rdptr, rdptr+count) and is the newest survivor; count keeps its non-full
-          //   fold-out because at full the write replaces the dropped oldest rather than
-          //   adding a byte (0x8000 + 1 written - nbyte played - 1 dropped = 0x8000 -
-          //   nbyte). Pre-fix the slip was lost here and the +1 credit was gated out with
-          //   it, so the new byte fell OUTSIDE the managed range (dropped - the opposite
-          //   of "newest survives") and count under-reported the occupancy by one
-          //   (count != wrptr - rdptr mod 0x8000, leaking one byte per recurrence).
-          rdptr  <= ((wr_data && !buf_rst && (count == 16'h8000))
-                     ? rdptr + {12'd0, nbyte_rg} + 15'd1
-                     : rdptr + {12'd0, nbyte_rg});
+          //   The fold is the SERIALIZED order NP2kai always sees (its drain runs at
+          // sound_sync, before the port write is handled): the frame leaves first, so the
+          // buffer is no longer full when the byte arrives and no slip is owed. The byte
+          // lands in the slot the frame just vacated and count is old - nbyte + 1, which
+          // never exceeds 0x8000. count == (wrptr - rdptr) mod 0x8000 holds either way.
+          rdptr  <= rdptr + {12'd0, nbyte_rg};
           count  <= count - {13'd0, nbyte_rg}
-                  + ((wr_data && !buf_rst && (count != 16'h8000)) ? 16'd1 : 16'd0);
+                  + ((wr_data && !buf_rst) ? 16'd1 : 16'd0);
           hold_l <= frame_l;
           hold_r <= frame_r;
           dstate <= D_IDLE;

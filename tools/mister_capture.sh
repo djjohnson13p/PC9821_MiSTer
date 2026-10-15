@@ -112,7 +112,7 @@ esac
 REMOTE
 }
 
-SSH=("${SSHPASS_CMD[@]}" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$HOST")
+SSH=("${SSHPASS_CMD[@]}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$HOST")
 quiet() { grep -viE 'WARNING: (connection|post)|vulnerable|store now|upgraded|openssh.com/pq' || true; }
 
 # run_remote ACTION TAG: the remote script, here or on the card
@@ -129,7 +129,7 @@ run_remote() {
 card() { if [ -n "$LOCAL" ]; then sh -c "$1"; else "${SSH[@]}" "$1" 2>&1 | quiet; fi; }
 
 fetch_file() {  # fetch_file REMOTE LOCAL
-  if [ -n "$LOCAL" ]; then cp "$1" "$2"; else "${SSHPASS_CMD[@]}" scp -O -o StrictHostKeyChecking=no -o LogLevel=ERROR "$HOST:$1" "$2"; fi
+  if [ -n "$LOCAL" ]; then cp "$1" "$2"; else "${SSHPASS_CMD[@]}" scp -O -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$HOST:$1" "$2"; fi
 }
 
 cap_dir() { if [ -n "$LOCAL" ]; then echo "$LOCAL"; else echo "$CARD_TMP"; fi; }

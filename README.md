@@ -1,6 +1,6 @@
 # PC-9821 z486 MiSTer core
 
-A PC-9821 (NEC Xe10/Xe) core for
+A PC-9821 (NEC Xe10) core for
 [MiSTer](https://github.com/MiSTer-devel/Main_MiSTer), with the 486 CPU in
 `src/z486/` maintained in this repository (Apache-2.0; the licence files in that
 directory carry the grant). It emulates a
@@ -11,7 +11,7 @@ from your own machine.
 
 ## What works
 
-- Boots the authentic NEC Xe10/Xe firmware set to DOS.
+- Boots the authentic NEC Xe10 firmware set to DOS. The Xe firmware set does not work yet.
 - Runs Touhou 1-5, including sprite-heavy gameplay.
 - 640x400 16-colour planar GVRAM with GRCG/EGC drawing, ANK and JIS kanji,
   palette, 848x440 GDC timing.
@@ -24,7 +24,7 @@ from your own machine.
 ## Requirements
 
 - A MiSTer DE10-Nano with the SDRAM addon board.
-- Your own PC-9821 Xe/Xe10 ROM dump: `BANK0.BIN`..`BANK7.BIN`, `BIOS.ROM`,
+- Your own PC-9821 Xe10 ROM dump: `BANK0.BIN`..`BANK7.BIN`, `BIOS.ROM`,
   `FONT.ROM`, plus optional YM2608 rhythm samples. The pack is not
   redistributable and is **not included**. `make pack` builds it; the OSD
   `Load ROM pack` (`F0,BIN`) loads it.
@@ -33,16 +33,26 @@ from your own machine.
 ## DOS setup and drivers
 
 The core runs your own NEC MS-DOS installation from a hard-disk image. None of the drivers
-below are included: they come from your machine's NEC MS-DOS and from the games themselves.
+below are included: they come from your machine's NEC MS-DOS.
 Inside DOS the hard disk is `A:` and the CD is `Q:` in the configuration below.
 
 ### CD-ROM
 
 The drive is ATAPI on the built-in IDE, at **bank 1's master**, the position NEC's own
-built-in-CD drivers look at. The hard disk moves to bank 0 when the CD is built in. Mount a disc
+built-in-CD drivers look at. The hard disk is always **bank 0's master**, with or without the CD
+built in - the layout of a stock CD-equipped Xe10. Mount a disc
 with the OSD's `Mount CD-ROM` and remove it with `Eject CD-ROM`. Images are `.ISO` (data only)
-or `.PCD`. A PCD carries the track list, so mixed-mode discs with CD-DA audio need one. Convert
-a CUE/BIN set with `python3 tools/cue2pcd.py game.cue game.pcd`.
+or `.PCD`. A PCD carries the track list, so mixed-mode discs with CD-DA audio need one. The core
+cannot mount a `.cue` directly: a core only sees the one file an OSD slot opens, never the BIN
+files a CUE names. Convert a CUE/BIN set (single or multiple BIN files, data and audio tracks,
+pregaps) into a PCD in either of two ways:
+
+- **On the MiSTer:** put the `.cue` and its `.bin` files anywhere under `games/PC9821/` and run
+  `pc9821_cue2pcd` from the main menu's Scripts entry (`tools/mister_load.sh` installs it in
+  `Scripts/`). It writes a `.pcd` beside each `.cue` that does not already have an up-to-date one,
+  checks free space first, and never changes the `.cue`/`.bin` files. Delete them yourself once the
+  PCD works if you want the space back. A 650 MB disc takes a minute or two.
+- **On a PC:** `python3 tools/cue2pcd.py game.cue game.pcd`.
 
 The configuration verified on the MiSTer is NEC's `NECCD.SYS` plus Microsoft's `MSCDEX.EXE`:
 
@@ -57,33 +67,25 @@ LH A:\DOS\MSCDEX.EXE /D:CD_101 /L:Q
 ```
 
 - **`NECCD.SYS`** is the driver to use. Its banner reads "Sony ATAPI CDROM Device Driver 2.10".
-  It reads data, plays CD-DA through MSCDEX, and runs Policenauts. It works both with HIMEM
-  only and with EMM386 `/UMB`.
+  It reads data and plays CD-DA through MSCDEX, and handles programs that call the driver
+  directly. It works both with HIMEM only and with EMM386 `/UMB`.
 - **The `/D:` name must match** between the driver and MSCDEX. `CD_101` is NEC's convention;
   any name works if both lines use it.
 - **`PATACD.SYS /D:CD_101`**, the generic ATAPI driver, finds the drive and DOS can read files
-  through it. It rejects the IOCTL calls some games make directly (Policenauts' `ITP.EXE` stops
-  at its CD check), so prefer `NECCD.SYS`.
+  through it. It rejects some IOCTL calls that programs make to the driver directly, so prefer
+  `NECCD.SYS`.
 - **`NECCDM.SYS` and `NECCDD.SYS`**, NEC's other built-in-CD drivers, expect the same bank-1
   master position but are **not verified** on this core. `NECCDA.SYS`/`NECCDB.SYS` are for SCSI
   cards and do not apply.
 - **A CD-DA play blocks file reads.** While an audio track plays, NECCD answers file reads with
   `CDR101: Not ready`. This is NEC driver behaviour: it polls the drive, sees "audio playing" and
   refuses before reading. It matches NP2kai's drive model.
-- **Some games ship a stub `NECCD.SYS`** on their boot floppy. Policenauts' 162-byte one is one:
-  it calls into emulator BIOS space and works neither here nor on real hardware. Install the
-  game to the hard disk and use the system's `NECCD.SYS`. Policenauts also needs its own
-  `AVSDRV.SYS` (`DEVICE=A:\PN\AVSDRV.SYS`, for an install in `A:\PN`), and starts with
-  `NAUTS /PQ:\pac\ /C`.
 
 ### Memory managers
 
 - **`HIMEM.SYS`** is needed by almost everything (`DOS=HIGH`).
 - **`EMM386.EXE /UMB`** works for EMS and upper memory, including with the CD drivers loaded
   high.
-- **DOOM needs a boot without EMM386.** It does not start under EMM386 on this core, so use a
-  HIMEM-only configuration. A boot menu such as SELSYS with one `noemm` entry keeps
-  both available.
 
 ## Building and running
 
@@ -128,6 +130,11 @@ and `--no-cdrom-audio` builds a data-only drive. Deeper detail lives in
 
 ## Known issues and limitations
 
+**Supported machine**
+
+- Only the Xe10 firmware set is supported. The tools can build and load an Xe pack
+  (`--machine xe`), but the core does not run the Xe firmware yet.
+
 **Timing and builds**
 
 - Every build runs past timing closure (real closure is about 54 MHz; the shipping `base` build
@@ -141,10 +148,11 @@ and `--no-cdrom-audio` builds a data-only drive. Deeper detail lives in
 **DOS, drivers and games**
 
 - DOOM does not start under EMM386 on this core: boot it with HIMEM only.
+- Flame Zapper Kotsujin fails with NEC's `EMM.SYS` (1989) as its EMS driver: the intro runs
+  slowly with sprites left uncleared, or the screen stays black. It runs correctly under
+  `EMM386.EXE /UMB`. Whether a real Xe10 runs it under `EMM.SYS` is not known.
 - CD-ROM: use `NECCD.SYS` + `MSCDEX.EXE` (see above). `NECCDM.SYS` and `NECCDD.SYS` are
-  untested; `PATACD.SYS` reads files but rejects the IOCTLs some games use.
-- CD file reads fail with `Not ready` while a CD-DA track plays. This is the NEC driver's own
-  behaviour and matches NP2kai.
+  untested; `PATACD.SYS` reads files but rejects some direct driver calls.
 
 **Hardware not modelled, or partial**
 
@@ -159,6 +167,10 @@ and `--no-cdrom-audio` builds a data-only drive. Deeper detail lives in
   control and the WRITE family (WDAT/VECTW/CSRW/WRITE) are implemented; the line, rectangle,
   arc and character drawing figures are not.
 - The serial port is not modelled.
+- Only the 24 kHz (640x400) display timing is modelled; the 15 kHz and 31 kHz modes are not.
+- Text mode always uses 16-line character rows, so the 20- and 30-line text modes do not
+  display correctly. Only the first text scroll area is shown (no split screen), smooth
+  scrolling is not modelled, and the monochrome graphics mode (`0x68` bit 1) shows colour.
 - MIDI out (an MPU-PC98II) exists only in the opt-in `midilink` build profile, out only.
 - Some rarely used ports are approximations pending real-machine captures (for example `0x66`,
   `0x6C`, `0x60` bit 6, the `0x043F` read-back and the IDE work-RAM window at `0xDA000`);

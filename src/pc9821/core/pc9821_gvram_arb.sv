@@ -83,7 +83,9 @@ module pc9821_gvram_arb #(
     input  wire        egc_cl_write,
     input  wire [15:0] egc_cl_addr,
     input  wire [31:0] egc_cl_wdata,
+    /* verilator lint_off UNUSEDSIGNAL */  // the EGC's flags are never the selected owner where lane_skip_hold uses them (see lane_datum0_hold)
     input  wire [3:0]  egc_cl_datum0,    // byte-zero flags of egc_cl_wdata, precomputed there
+    /* verilator lint_on UNUSEDSIGNAL */
     input  wire [3:0]  egc_cl_wbe,
     input  wire        egc_cl_burst,
     input  wire [63:0] egc_cl_wdata2,
@@ -212,7 +214,6 @@ module pc9821_gvram_arb #(
   reg         c_cl_valid;
   reg [15:0]  c_cl_addr;
   reg [31:0]  c_cl_wdata;
-  reg [3:0]   c_cl_datum0;
   reg [3:0]   c_cl_wbe;
 
   assign cc_valid = cc_owns_plain ? c_cl_valid :
@@ -485,7 +486,6 @@ module pc9821_gvram_arb #(
       c_cl_valid  <= 1'b0;
       c_cl_addr   <= 16'd0;
       c_cl_wdata  <= 32'd0;
-      c_cl_datum0 <= 4'b1111;
       c_cl_wbe    <= 4'hF;
     end else begin
       if (cc_plain_ready) c_cl_valid <= 1'b0;
@@ -520,7 +520,6 @@ module pc9821_gvram_arb #(
             c_cl_valid <= 1'b1;
             c_cl_addr  <= {access_page, {win_offset[14:2], 2'b00}};
             c_cl_wdata <= cpu_din;
-            c_cl_datum0 <= cpu_din_datum0;
             c_cl_wbe   <= 4'hF;
             // A STORE is ACCEPTED here and its ready pulses in the NEXT clk_sys; the
             // walk completes behind it. A READ's ready stays in C_RESP.
@@ -533,14 +532,16 @@ module pc9821_gvram_arb #(
           c_cl_valid <= 1'b1;
           c_cl_addr  <= {access_page, c_col};
           c_cl_wdata <= 32'd0;
-          c_cl_datum0 <= 4'b1111;
           c_cl_wbe   <= 4'hF;
           cs         <= C_WAIT;
         end
 
         C_WAIT: if (cc_plain_done) begin
-          c_line_r[{c_line_n[3:0], 3'b000} +: 8] <=
-              cc_rdata[{c_plane, 3'b000} +: 8];
+          // The line datum is COLLECTED BY SHIFTING: each column's byte enters at the top and the
+          // register moves down a byte, so after the 16 columns the first one sits at [7:0] - the
+          // same 128 bits the indexed byte write built, without a 16-way write decode. (Only the
+          // strobed value is read, see the contract above; tb_pc9821_gvram_arb_equiv.)
+          c_line_r <= {cc_rdata[{c_plane, 3'b000} +: 8], c_line_r[127:8]};
           if (c_line_n == 5'd15) begin
             c_line_n <= 5'd16;
             cs       <= C_RESP;
@@ -669,13 +670,15 @@ module pc9821_gvram_arb #(
   // store that changes nothing (a sprite erase's empty mask row, the audit's data-0x00 case) stops
   // paying a read and a write per lane. Every other enabled lane is live. The old read test asked
   // the whole 32-bit mask, so a single-plane put or a mixed 32-bit datum paid a read on every lane.
-  // `lane_datum0` is PRECOMPUTED at the client data registers: each client exports the exact
-  // byte-zero image of its own cl_wdata (c_cl_datum0 latched beside c_cl_wdata, the GRCG's
-  // capture mux included), so this is a 4-bit owner mux instead of four byte comparators
-  // over the 32-bit cc_wdata mux - the write-data mux and the comparators are OUTSIDE the
+  // `lane_datum0_hold` is PRECOMPUTED at the GRCG's data registers: the GRCG exports the exact
+  // byte-zero image of its own cl_wdata (its capture mux included), so no byte comparators sit
+  // on the 32-bit cc_wdata mux - the write-data mux and the comparators are OUTSIDE the
   // gma_we cone this feeds, and the value is bit-exact for the GRCG RMW zero-lane skip.
-  wire [3:0]  lane_datum0_hold = cc_owns_plain ? c_cl_datum0 :
-                                 cc_owns_grcg  ? grcg_cl_hold_datum0 : egc_cl_datum0;
+  // The skip applies ONLY under lane_rmw_hold, which requires cc_owns_grcg, and then the owner mux
+  // below could only ever pick the GRCG's flags: the plain path's own flags (c_cl_datum0, dropped)
+  // and the EGC's (egc_cl_datum0, now unused here) are never selected where the result is used
+  // (tools/equiv/arb_lane_skip.sv proves lane_skip_hold unchanged).
+  wire [3:0]  lane_datum0_hold = grcg_cl_hold_datum0;
   wire        lane_rmw_hold = ef_wr && cc_owns_grcg && grcg_cl_hold_rmw;
   wire        lane_rmw_cap  = ef_wr && cc_owns_grcg && grcg_cl_cap_rmw;
   // The lane enables per CASE, muxed on the RESULT (mux-late), formed from the RAW arm
@@ -725,19 +728,37 @@ module pc9821_gvram_arb #(
   // resolves. Issuing it there removes a dispatch bubble: the access below is a function of
   // `w_lane` alone
   // so no second presentation state is needed. `w_base` is the same choice for the address.
-  wire [2:0]  w_lane = m_mode ? m_lane : w_first_lane;
+  //
+  // THE CAPTURE ARM IS SELECTED LATE. lane_live is `cap_arm ? lane_live_cap : lane_live_hold`,
+  // and cap_arm is the deep select here (the GRCG's cl_cap carries the plane-window decode of
+  // the CPU address, the C7 cone of docs/timing.md), while both arms are shallow (the capture
+  // arm reads the live cpu_be/datum flags, the hold arm registers). So every function of
+  // lane_live this cycle's ACCESS needs - the first live lane, whether any lane is live, the
+  // lane's merge class below - is formed on each arm and cap_arm picks the result:
+  // f(cap_arm ? a : b) == (cap_arm ? f(a) : f(b)) for every f. cap_arm implies !m_mode (the
+  // step-5 invariant asserted above), so under it w_lane is the capture arm's first lane.
+  wire [2:0]  w_first_cap  = first_live(lane_live_cap);
+  wire [2:0]  w_first_hold = first_live(lane_live_hold);
+  wire [2:0]  w_lane_hold  = m_mode ? m_lane : w_first_hold;
+  wire [2:0]  w_lane = cap_arm ? w_first_cap : w_lane_hold;
   // The base word's LOW two bits are always 0 (every walk client presents the base word), so the
   // address takes them from w_lane and carries only the upper 14 here.
   wire [15:2] w_base = m_mode ? m_base : cc_addr[15:2];
 
   // The first live lane, and the next live lane strictly above `w_lane`: both descend so the walk
   // ascends.
+  function automatic [2:0] first_live(input [3:0] l);
+    integer fi;
+    begin
+      first_live = 3'd4;
+      for (fi = 3; fi >= 0; fi = fi - 1)
+        if (l[fi]) first_live = fi[2:0];
+    end
+  endfunction
+  wire [2:0] w_first_lane = cap_arm ? w_first_cap : w_first_hold;
   integer mi;
-  reg [2:0] w_first_lane, w_next_lane;
+  reg [2:0] w_next_lane;
   always @* begin
-    w_first_lane = 3'd4;
-    for (mi = 3; mi >= 0; mi = mi - 1)
-      if (lane_live[mi]) w_first_lane = mi[2:0];
     w_next_lane = 3'd4;
     for (mi = 3; mi >= 0; mi = mi - 1)
       if (lane_live[mi] && (mi[2:0] > w_lane)) w_next_lane = mi[2:0];
@@ -748,7 +769,7 @@ module pc9821_gvram_arb #(
   // no access, and is not a walk); `walk_act` is the union of the two, for the access below; and
   // `walk_gr` marks the GRCG's store arm of it.
   wire walk_first  = (gstate == G_IDLE) && accept_ok && !m_mode && cc_valid && cc_lane_many &&
-                     (w_first_lane != 3'd4);
+                     (cap_arm ? (|lane_live_cap) : (|lane_live_hold));
   wire walk_act    = m_mode || walk_first;
   wire walk_gr     = walk_act && cc_owns_grcg;
 
@@ -781,8 +802,8 @@ module pc9821_gvram_arb #(
   // constant 1 and whose state step never consults gr_merge - so the capture arm reads
   // cpu_din_datmid directly, bit-exact on every observed cycle.
   wire        gr_merge  = walk_gr &&
-              (cap_arm ? (lane_rmw_cap  && cpu_din_datmid[w_lane[1:0]])
-                       : (lane_rmw_hold && grcg_cl_hold_mergeable[w_lane[1:0]]));
+              (cap_arm ? (lane_rmw_cap  && cpu_din_datmid[w_first_cap[1:0]])
+                       : (lane_rmw_hold && grcg_cl_hold_mergeable[w_lane_hold[1:0]]));
 
   // ---- The EGC's read pass as ONE burst, now over the array ----
   // The unit's enabled columns are a contiguous run; the client asks for all of them at once and
@@ -1150,12 +1171,55 @@ module pc9821_gvram_arb #(
   // machine's (see tb_pc9821_gvram_latency). A single store after an idle GVRAM is not held.
   assign cpu_ready           = cc_owns_plain ? ((cs == C_RESP) || c_store_ready_q) :
                                cc_owns_grcg  ? grcg_cpu_ready : egc_cpu_ready;
-  assign cpu_resp_valid      = cc_owns_plain ? ((cs == C_RESP2) && !c_line_mode) :
-                               cc_owns_grcg  ? grcg_cpu_resp_valid :
-                                               egc_cpu_resp_valid;
-  assign cpu_dout            = cc_owns_plain ? c_dout_r :
-                               cc_owns_grcg  ? grcg_cpu_dout : egc_cpu_dout;
-  assign cpu_line_resp_valid = cc_owns_plain && (cs == C_RESP2) && c_line_mode;
+  // THE RESPONSE SIDE IS ROUTED BY THE RESPONSES, NOT BY THE LIVE OWNER (docs/timing.md TB).
+  // The owner mux `cc_owns_plain ? plain : cc_owns_grcg ? grcg : egc` put the whole live
+  // dispatch decode (gvr_write/gdc_own_q -> cc_owns_grcg_comb -> own_grcg -> cc_owns_plain) in
+  // front of the CPU's read data and its strobe, the platform half of the TB cone. Each arm's
+  // strobe already says whose answer it is:
+  //  - the plain strobes need cs == C_RESP2, so any_inflight holds and the owner is own_*_q,
+  //    which the C_IDLE accept (`cpu_valid && cc_owns_plain`) set to plain and which cannot move
+  //    until cs is back in C_IDLE: cs == C_RESP2 implies cc_owns_plain;
+  //  - grcg_cpu_resp_valid is pc9821_grcg's `(gstate == G_RESP2) && !wr_q`, so grcg_dbg_busy
+  //    holds, and the GRCG leaves G_IDLE only on its cpu_valid, which pc9821_memory_subsystem
+  //    gates with own_grcg: the strobe implies cc_owns_grcg;
+  //  - egc_cpu_resp_valid is registered one cycle after S_HOLD, when the EGC is back in S_IDLE
+  //    and any_inflight may be 0 (pc9821_egc S_HOLD); in that cycle cs is C_IDLE and the GRCG
+  //    idle (the EGC owned the port the cycle before, so neither could take a request).
+  //    tools/check_arb_resp_inv.py proves these by induction over the real cluster.
+  // The EGC strobe is NOT gated by the live owner. The old mux gated it, so the two forms differ
+  // only if the live owner has left the EGC in the strobe's cycle (T1, one after S_HOLD's ready
+  // cycle T0), and no legal execution reaches that: z486 holds its request through the ready
+  // edge (src/z486/bus_unit.sv `if (ready) begin`, which clears ext_valid_r AT it) and the throttle
+  // bridge's hold is registered (pc9821_cpu_bus_bridge.sv `assign p_valid = c_valid && !acc_pend;`),
+  // so cpu_req is high through T0 and pc9821_gvram_share's grant (`gdc_valid && !cpu_req && ...`)
+  // lands at T1's end at the earliest: in T1 the port still presents the CPU, whose line_read is 0
+  // (ext_valid_r is 0, and `direct_rd_pending` keeps it off the bus) and whose EGC gate cannot move
+  // (no I/O while a read is outstanding), so the old mux chose the EGC too. The new form is
+  // therefore cycle-identical to the old mux in every legal execution; ungated, it would also
+  // answer that unreachable state rather than mask it. tools/equiv/arb_resp_route.sv proves the
+  // strobes, the line strobe and the strobed datum equal the owner mux in every state the
+  // invariants allow except that one (tb_pc9821_egc_resp_owner guards the routing with a GDC visit
+  // granted behind the EGC read). The datum is read only while its strobe is high
+  // (pc9821_memory_subsystem selects gvram_cpu_dout on gvram_cpu_resp_valid; pc9821_gvram_share's
+  // gdc_rdata on gdc_resp_valid).
+  wire plain_resp2 = (cs == C_RESP2);
+  assign cpu_resp_valid      = (plain_resp2 && !c_line_mode) || grcg_cpu_resp_valid ||
+                               egc_cpu_resp_valid;
+  assign cpu_dout            = grcg_cpu_resp_valid ? grcg_cpu_dout :
+                               egc_cpu_resp_valid  ? egc_cpu_dout : c_dout_r;
+  assign cpu_line_resp_valid = plain_resp2 && c_line_mode;
+`ifdef VERILATOR
+  // The three implications the response routing above rests on (proven by
+  // tools/check_arb_resp_inv.py; asserted here so every bench that builds the arbiter checks them).
+  always @(posedge clk) begin
+    if (!reset && plain_resp2 && !cc_owns_plain)
+      $error("pc9821_gvram_arb: cs == C_RESP2 without the plain owner - the response routing's first implication failed");
+    if (!reset && grcg_cpu_resp_valid && !cc_owns_grcg)
+      $error("pc9821_gvram_arb: a GRCG response strobe without the GRCG owner - the response routing's second implication failed");
+    if (!reset && egc_cpu_resp_valid && (plain_resp2 || grcg_cpu_resp_valid))
+      $error("pc9821_gvram_arb: an EGC response strobe beside a plain or GRCG one - the response routing's third implication failed");
+  end
+`endif
   assign cpu_line_dout       = c_line_r;
 
   // ---------------------------------------------------------------------------

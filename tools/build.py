@@ -507,6 +507,35 @@ def apply_profile_args(opts) -> None:
         raise SystemExit(1)
 
 
+def running_build(status_json: Path = STATUS_JSON) -> int | None:
+    """The pid of a LIVE build already recorded in this tree's status file, else None.
+
+    Two builds of one tree share the scratch (`.build/quartus` is wiped at the start of every
+    build) and the status file, so the second one corrupts the first's fit. A recorded
+    `running` whose pid is dead is a crashed build and is ignored.
+    """
+    try:
+        rec = json.loads(Path(status_json).read_text())
+    except (OSError, ValueError):
+        return None
+    pid = rec.get("pid")
+    if rec.get("state") != "running" or not isinstance(pid, int) or pid == os.getpid():
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        return pid
+    try:
+        with open(f"/proc/{pid}/stat") as h:
+            if h.read().split(") ", 1)[1][0] == "Z":
+                return None
+    except (OSError, IndexError):
+        pass
+    return pid
+
+
 def launch_detached(opts) -> int:
     """Re-exec this program in its own session; return as soon as it has started."""
     log = Path(opts.log) if opts.log else DEFAULT_LOG
@@ -558,6 +587,13 @@ def main(argv: list[str]) -> int:
     DRY = opts.dry_run
     if not opts.child:
         apply_profile_args(opts)
+    if not DRY and not opts.child:
+        other = running_build()
+        if other:
+            eprint(f"BUILD: FAIL - a build of this tree is already running (pid {other}, "
+                   f"{STATUS_JSON}); it owns {REPO_ROOT / '.build' / 'quartus'}. Wait for it "
+                   f"(tools/wait_build.py) or fit from another tree (tools/seed_sweep.py).")
+            return 1
     if opts.detach and not opts.child and not DRY:
         return launch_detached(opts)
     # In sync mode a --log is tee'd to; the detached child's stdout is already the log,

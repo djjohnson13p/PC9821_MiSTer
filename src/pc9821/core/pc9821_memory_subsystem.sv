@@ -31,6 +31,8 @@ module pc9821_memory_subsystem #(
     input wire top_shadow_en,
     // 0x0461 window-0 base (see pc9821_memory_map.sv).
     input wire [7:0] win0_sel,
+    // pc9821_iobus's registered `win0_sel != 8'h08` (see pc9821_memory_map.sv).
+    input wire       win0_sel_moved,
     // 0x043B bit 2: the 15-16 MiB system-space window (hole + mirror). Reset leaves it OFF,
     // so 15-16 MiB is RAM until the guest clears the bit (see pc9821_iobus).
     input wire sys16m_en,
@@ -95,7 +97,7 @@ module pc9821_memory_subsystem #(
     input wire [15:0] egc_leng,
     input wire        egc_shift_we,
 
-    // The graphics GDC's draw-engine visit (pc9821_gdc2's WRITE path, item 63 slice 1):
+    // The graphics GDC's draw-engine visit (pc9821_gdc2's WRITE path, the GDC2 WRITE slice):
     // one store/read at a time on the GVRAM's CPU-side port share (pc9821_gvram_share),
     // carried as the same plane-window operands a CPU access of that shape would present
     // so the GRCG/EGC store paths and the plain lane walk serve it unchanged.
@@ -224,7 +226,7 @@ module pc9821_memory_subsystem #(
 
     // THE uPD71071's BUS-MASTER PORT (pc9821_iobus's u_dma): the third owner of the
     // physical backend. It STORES for a port-to-memory transfer (a floppy READ) and, since
-    // the floppy write path (item 59 Stage B), READS for a memory-to-port one (WRITE DATA:
+    // the floppy write path (Stage B), READS for a memory-to-port one (WRITE DATA:
     // the engine reads a byte, then strobes it to the FDC). A read owes one response beat,
     // so its accept is recorded in the response-route queue with a DMA tag and its beat is
     // delivered here (dma_resp_valid/dma_dout) instead of to the mapper.
@@ -392,8 +394,9 @@ module pc9821_memory_subsystem #(
   // bits), and
   // tb_pc9821_gvram_porta_equiv pins the port stream through every alias - including its
   // 9d corner (the 0xAB08_0000 class), which is exactly the dead-term case.
+  // win0_sel_moved: pc9821_iobus's registered `win0_sel != 8'h08`, equal to it every cycle.
   wire win0_moved = !(|cpu_addr[31:20]) && (cpu_addr[19:17] == 3'b100) &&
-                    (win0_sel != 8'h08);
+                    win0_sel_moved;
   // Inside the window the bias add touches bit 16 upward only: eff_addr - 0x80000 is exactly
   // eff_addr[16:0], and win0_sel << 16 lands the page in [23:16]. So this is a 9-bit add with the
   // low 16 bits wired through, not the 32-bit carry chain `+ {8'd0,win0_sel,16'd0} - 0x80000`
@@ -402,7 +405,9 @@ module pc9821_memory_subsystem #(
   // cpu_addr[16] (eff_addr[16] is cpu_addr[16] under every arm: the mirror and the PEGC
   // splice keep [19:0] and [23:0] verbatim), so the increment's carry term skips the mux.
   wire [8:0] win0_hi = {1'b0, win0_sel} + {8'd0, cpu_addr[16]};
+  /* verilator lint_off UNUSEDSIGNAL */   // route_addr[11:0]: the >= guest_ram_bytes compare moved to the map (addr_ge_ram)
   wire [31:0] route_addr = win0_moved ? {7'd0, win0_hi, eff_addr[15:0]} : eff_addr;
+  /* verilator lint_on UNUSEDSIGNAL */
   // The PEGC extended-VRAM window (the decode commented above): on route_addr,
   // the post-window-0 address every other route uses, so the overlay and its
   // direct encoding agree (aliases.md A6).
@@ -424,6 +429,7 @@ module pc9821_memory_subsystem #(
   wire map_gvram_window;
   wire gvram_select = map_gvram_window;
   wire map_pegc_reg_win, map_pegc_nc, map_pegc_packed;
+  wire map_addr_ge_ram;
   wire peg_reg_select = map_pegc_reg_win;
   wire [1:0]  map_gvram_plane;
   wire [14:0] map_gvram_offset;
@@ -521,7 +527,7 @@ module pc9821_memory_subsystem #(
   wire open_select = !cg_win_select && !peg_window &&
                      (map_absent_area || map_pegc_nc || map_ems_open_bus || sys16m_hole ||
                       tram_gap ||
-                      ((route_addr >= guest_ram_bytes) &&
+                      (map_addr_ge_ram &&
                        !(&route_addr[31:15]))) ||
                      peg_aperture_open;
   wire [31:0] open_cpu_dout;
@@ -675,7 +681,7 @@ module pc9821_memory_subsystem #(
       .top_bank(top_bank), .ide_rom_enable(ide_rom_enable), .d8_bank(d8_bank),
       .ide_ram_gate(ide_ram_gate),
       .ems_state(ems_state), .ems_page_base(ems_page_base),
-      .bios_ram_gate(bios_ram_gate), .win0_sel(win0_sel),
+      .bios_ram_gate(bios_ram_gate), .win0_sel(win0_sel), .win0_sel_moved(win0_sel_moved),
       .top_shadow_en(top_shadow_en), .fw_shadow_dirty(fw_shadow_dirty),
       .fw_shadow_base(fw_shadow_base), .fw_shadow_store(fw_shadow_store),
       .pack_base(pack_base), .guest_ram_bytes(guest_ram_bytes),
@@ -699,6 +705,10 @@ module pc9821_memory_subsystem #(
       .gvram_window(map_gvram_window), .gvram_win_plane(map_gvram_plane),
       .gvram_win_offset(map_gvram_offset),
       .cpu_addr(eff_addr), .cpu_din(cpu_din),
+      // ... and the untranslated address with eff_addr's arm, so the map's control decodes
+      // select the translation last (the three arms are mutually exclusive: the mirror needs
+      // [31:24] zero, the PEGC alias [31:24] all ones with bit 19 clear, the BIOS alias bit 19 set).
+      .cpu_addr_raw(cpu_addr), .xl_low20(sys16m_mirror || bios_top), .xl_peg(peg_high),
       // The mapper's WORD response is sourced from the backend below (the only port-0 reader);
       // its own cpu_dout/cpu_resp_valid answer its unreachable local open-bus path and stay open.
       // Its LINE response (cpu_line_dout/cpu_line_resp_valid) IS wired out: the 128-bit line
@@ -712,7 +722,7 @@ module pc9821_memory_subsystem #(
       .cpu_write(cpu_write),
       .cpu_ready(map_cpu_ready), .cpu_resp_valid(), .cpu_line_resp_valid(map_cpu_line_resp_valid),
       /* verilator lint_on PINCONNECTEMPTY */
-      .absent_area(map_absent_area), .ems_open_bus(map_ems_open_bus),
+      .absent_area(map_absent_area), .addr_ge_ram(map_addr_ge_ram), .ems_open_bus(map_ems_open_bus),
       .mem_addr(map_addr), .mem_din(map_din), .mem_dout(mem_dout),
       .mem_be(map_be),
       .mem_burstcount(map_burstcount),
@@ -1348,11 +1358,17 @@ module pc9821_memory_subsystem #(
   assign mem_din = owner_is_load ? load_din : (dma_owns ? dma_din : buf_mem_din);
   // The pair's second dword: only the buffer's two-word drain writes it (port 0's
   // WRITE_BURST path, sdram.v's din0_hi); every other owner has no second word.
-  assign mem_din_hi = owner_is_load ? 32'd0 : (dma_owns ? 32'd0 : buf_mem_din_hi);
+  // Neither the loader (burstcount 1) nor the DMA (burstcount 0) asks for the two-word write, and the
+  // controller reads din_hi only for a burstcount-2 non-gather write, so the buffer's word needs no
+  // owner gating (sdram_sync_bridge's frozen-payload assertion qualifies it the same way).
+  assign mem_din_hi = buf_mem_din_hi;
   // The gather session's qualifier and entries: the buffer's group drains only
   // (the loader and the DMA send ordinary requests).
   assign mem_gath = owner_is_load ? 1'b0 : (dma_owns ? 1'b0 : buf_mem_gath);
-  assign mem_gath_extra = owner_is_load ? 441'd0 : (dma_owns ? 441'd0 : buf_mem_gath_extra);
+  // The controller reads entry j of the extras only for j < burstcount of a request whose mem_gath is
+  // set (sdram.v's slot maps), and mem_gath above is already zero for the loader and the DMA, so the
+  // buffer's slots pass ungated.
+  assign mem_gath_extra = buf_mem_gath_extra;
   assign mem_be = owner_is_load ? load_be : (dma_owns ? dma_be : buf_mem_be);
   // One byte per DMA transaction: a burst count of 0 is one dword (the same convention
   // every other request in this file uses), and the DMAC's one-hot byte enable picks the

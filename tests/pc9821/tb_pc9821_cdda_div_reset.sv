@@ -100,6 +100,14 @@ module tb_pc9821_cdda_div_reset;
     if (pulses == 0) begin
       fail("AUDIO_CE never pulsed: the 44.1 kHz strobe is dead");
     end
+    // ...and at the DIVIDED RATE, not merely alive: CD-DA is 44 100 frames/s (Red Book), so
+    // 200 CLK_AUDIO ticks at this bench's CLK_AUDIO_RATE carry 200 * 44100 / 352800 = 25
+    // AUDIO_CE pulses (+-1 for the window's two ends). Only `pulses == 0` was checked, so a
+    // divider stepping for 48 kHz (27 pulses) passed (bench-audit mutation, 2026-10-12).
+    else if (pulses < 24 || pulses > 26) begin
+      $display("FAIL: AUDIO_CE pulsed %0d times in 200 CLK_AUDIO ticks, want 25 +-1 (44.1 kHz)", pulses);
+      errors = errors + 1;
+    end
 
     // ==== one CDDA word round-trips through the ring ====
     @(negedge CLK);

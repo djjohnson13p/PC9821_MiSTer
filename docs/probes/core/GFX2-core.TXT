@@ -1,0 +1,51 @@
+BEGIN:GFXBENC2
+GFXBENC2: per-subsystem real-machine graphics benchmark (Xe10). Each case is a
+  cli-timed body around the ARTIC counter. ANCHOR: ARTIC 005C/005F = 307200 Hz (the
+  documented free-running tick; egcport.s measures it 0 per-mille off). CLK50 = ARTIC
+  ticks * 50000000 / 307200 = ticks * 162.7604, i.e. clk_sys at the core's 50 MHz.
+  PER = CLK50 * 1000 / UNITS = MILLI-clk_sys per unit (1952 clk_sys/sprite = 1952000).
+  The text-TRAM section scribbles the visible console: redirect stdout to a file.
+  The GVRAM is scribbled by design; the EGC/GRCG end off and 0xA6 ends at 0. Disk: untouched.
+; ---- 1. PLANE-WINDOW DRAW (gfx_scene A: the plain 0xA8000+ window path) ----
+; PW1 = 1-plane window write, 16 word writes/sprite
+GFX2 PW1 UNITS=2000 ARTIC=4387 CLK50=714029 PER=357014
+; PW2 = 2-plane window write, 32 word writes/sprite
+GFX2 PW2 UNITS=2000 ARTIC=8320 CLK50=1354166 PER=677083
+; PW3 = 3-plane window write, 48 word writes/sprite
+GFX2 PW3 UNITS=2000 ARTIC=11514 CLK50=1874023 PER=937011
+; PW4 = 4-plane window write, 64 word writes/sprite
+GFX2 PW4 UNITS=2000 ARTIC=15446 CLK50=2513997 PER=1256998
+; CTRLPW = PW4RW's loop shell with each GVRAM access replaced (control row)
+GFX2 CTRLPW UNITS=2000 ARTIC=15200 CLK50=2473958 PER=1236979
+; PW4RW = 4-plane read-modify-write (scene_draw), 128 accesses/sprite
+GFX2 PW4RW UNITS=2000 ARTIC=24171 CLK50=3934082 PER=1967041
+; ---- 2. EGC BLIT (gfx_scene B: the Touhou EGC shapes) ----
+; EGC3100 = EGC 0x3100 put, page1->page0, 16 units/sprite (gfx_scene B)
+GFX2 EGC3100 UNITS=1000 ARTIC=7988 CLK50=1300130 PER=1300130
+; EGC3100SP = EGC 0x3100 put, same page (no 0xA6 switch), 16 units/sprite
+GFX2 EGC3100SP UNITS=1000 ARTIC=3050 CLK50=496419 PER=496419
+; EGC28F0 = EGC 0x28F0 shifted copy sft=2, page1->page0, 16 units/sprite
+GFX2 EGC28F0 UNITS=1000 ARTIC=7988 CLK50=1300130 PER=1300130
+; EGC1400 = EGC 0x1400 solid colour fill, 16 units/sprite
+GFX2 EGC1400 UNITS=1000 ARTIC=1514 CLK50=246419 PER=246419
+; EGC0CF0 = EGC 0x0CF0 ROP F0 write feed, 16 units/sprite
+GFX2 EGC0CF0 UNITS=1000 ARTIC=1515 CLK50=246582 PER=246582
+; ---- 3. GRCG (graphics clear / scroll) ----
+; CTRLGC = GRCG_TDW/GRCG_RMW's loop shell, store replaced (control row)
+GFX2 CTRLGC UNITS=2000 ARTIC=2397 CLK50=390136 PER=195068
+; GRCG_TDW = GRCG TDW tile clear (0x7C=0x80), 16 plane-expanded stores/sprite
+GFX2 GRCG_TDW UNITS=2000 ARTIC=2658 CLK50=432617 PER=216308
+; GRCG_RMW = GRCG RMW erase (0x7C=0xC0, scene_erase), 16 stores/sprite
+GFX2 GRCG_RMW UNITS=2000 ARTIC=2658 CLK50=432617 PER=216308
+; CTRLCP = PLANE_COPY's loop shell, both accesses replaced (control row)
+GFX2 CTRLCP UNITS=2000 ARTIC=3895 CLK50=633951 PER=316975
+; PLANE_COPY = plain plane-0 -> plane-1 copy, 16 read+write pairs/sprite
+GFX2 PLANE_COPY UNITS=2000 ARTIC=6061 CLK50=986490 PER=493245
+; ---- 4. GDC TEXT (TRAM fill + the CG font read) ----
+; TRAM_FILL = text-plane fill, 80 code + 80 attribute words per line
+GFX2 TRAM_FILL UNITS=1000 ARTIC=11606 CLK50=1888997 PER=1888997
+; CG_FONT = CG font read: 0xA1/0xA3 code then 16 rows of 0xA5/0xA9 per glyph
+GFX2 CG_FONT UNITS=500 ARTIC=1173 CLK50=190917 PER=381834
+; TXT_LINE = whole text subsystem per line: 160 TRAM writes + 80x16 font reads
+GFX2 TXT_LINE UNITS=100 ARTIC=19920 CLK50=3242187 PER=32421870
+END:GFXBENC2

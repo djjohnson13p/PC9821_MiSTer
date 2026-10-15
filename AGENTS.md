@@ -156,17 +156,19 @@ binaries are never committed (`.gitignore` covers `pc98pack*.bin`, `*.img`, `*.E
 
 `build_profile.py` (repo root) applies a configuration: clk_sys, the SDRAM pin-clock phase,
 `TRACE_EN`, `PERF_LOG_EN`, `IO_LATENCY_PROFILE`, `MPU_EN`, the CD-ROM fields, the framework
-features `alsa_en`/`yc_en` (off by default) and the fit technique. The SDRAM controller runs on
+features `alsa_en`/`yc_en` (off by default) and the fit technique (`AREA` in every preset: the
+design is LAB-bound and `AREA` frees LABs, `docs/trade-candidates.md` T40; `--fit-technique SPEED`
+for an A/B). The SDRAM controller runs on
 clk_sys in every build: one core clock, no SDRAM clock-domain crossing.
 
 | profile | clk_sys = SDRAM | note |
 |---|---|---|
 | `base` | 80 MHz | the default and shipping build, hardware-verified |
 | `lightoc` | 80 MHz | an alias of `base`, kept so old commands keep working |
-| `trace` | 80 MHz | the debug build: base + instruction-trace ring + perf telemetry, fit with `OPTIMIZATION_TECHNIQUE AREA` |
+| `trace` | 80 MHz | the debug build: base + instruction-trace ring + perf telemetry |
 | `iofaithful` | 80 MHz | base + the machine-timed I/O class table |
 | `midilink` | 80 MHz | base + the MPU-PC98II MIDI card on the framework UART |
-| `mediumoc` | 100 MHz | overclock; does not boot reliably |
+| `mediumoc` | 100 MHz | overclock; builds the SDRAM at CL3 (CL2 runs only below 100 MHz, `docs/trade-candidates.md` T58); CL3 stability pending hardware confirmation |
 | `heavyoc` | 120 MHz | overclock at the board SDRAM's ~120 MHz limit |
 
 Any field can be overridden or a custom configuration defined:
@@ -247,11 +249,32 @@ so a change is judged only from a real fit: read `output_files/z486_mister.fit.s
 ### Seed sweeps
 
 `python3 tools/seed_sweep.py --profile <p> --count N --jobs N` (`--seeds 1,5-8` for specific
-seeds, `--report` to rank, `--dir` for a fresh directory). Its resume logic skips any `seedNNN/`
-that already has a `summary.txt` regardless of profile or source, so wipe the sweep directory or
-pass a fresh `--dir` whenever either changes. `tools/host_slots.py` caps concurrent fits on a
+seeds, `--report` to rank, `--dir` for a fresh directory). Each seed's `summary.txt` (written last, atomically, after
+`output_files/` and `metrics.json`) records an `identity=` hash of {resolved configuration, RTL source
+hash, fit knobs such as `QUARTUS_FIT_SETTINGS`}; a re-run skips only seeds whose identity matches and
+REFUSES (exit 1) when it finds a seed of another source/profile, instead of mixing designs in one
+ranking: `--restart-stale` renames those to `seedNNN.stale-<time>` (kept) and refits, `--retry-failed`
+does the same for `verdict=failed` seeds, `--trust-existing` accepts summaries that predate
+identities. `--selftest` covers the logic. `--slot-dir DIR --slot-max N` (env `FIT_SLOT_DIR` /
+`FIT_SLOT_MAX`) makes each seed hold a `tools/host_slots.py` slot while it fits (`--slot-all` also
+counts containers other launchers started, `--max-load L` waits on host load). `tools/build.py`
+refuses to start when a live build of the same tree owns `.build/quartus`. `tools/host_slots.py` caps concurrent fits on a
 shared host. **Never delete a sweep's `seedNNN/output_files/`** - it is that placement's only
 record (the RBF and the fit/STA reports); clean only the `seedNNN/tree/` copies.
+
+### Fitting on another machine (`tools/remote_fit.py`)
+
+`FIT_HOST=<ssh host> tools/remote_fit.py run --label X --slot-max N -- --profile base --seeds 2,3
+--jobs 2` snapshots the working tree (tracked files as on disk, uncommitted edits included, plus
+untracked non-ignored files under 1 MiB) to `<host>:~/fits/<run-id>/tree`, starts `seed_sweep.py`
+there in its own session under a shared `host_slots` ceiling (`--slot-max`, default 12, with a load gate at the host's core count, `--max-load`; slots in
+`~/.fit-slots`, counting every running container), waits, then rsyncs the whole `sweep/` back to
+`.build/remote-fit/<run-id>/` (every `seedNNN/output_files`, `summary.txt`, `metrics.json`, logs) and
+prints the ranking. Nothing is deleted on either side. `--no-wait` returns at once; `status`,
+`fetch`, `report` and `list` take `--run-id` (default: the last launch); `--selftest` covers the
+snapshot and argument logic. Needs keys-only ssh, python3, rsync and the container runtime on the
+host (`--remote-env CONTAINER_RUNTIME=docker`). Local fits obey the machine ceiling the same way:
+`FIT_SLOT_DIR=<dir> FIT_SLOT_MAX=3 python3 tools/seed_sweep.py ...`.
 
 ### Timing and area facts
 
@@ -317,6 +340,10 @@ python3 build_profile.py --check             # top level, qsf record, generated 
 python3 build_profile.py --selftest          # and the guard can still fail
 python3 tools/check_wiring.py                # bench manifest/sources/ports, reset and speaker paths
 python3 tools/check_tests.py                 # every bench's structure and verdict (+ --selftest)
+python3 tools/bench.py --selftest            # the runner's verdict rules on planted outputs
+python3 tools/gen_egc_compare_vectors.py --check   # the EGC capture vectors are the generator's output
+python3 tools/gen_gdc_compare_vectors.py --check   # and the GDC conformance clusters
+python3 tools/mutate_bench.py --plan tests/pc9821/mutations.json --check-plan   # the mutation record still applies
 python3 tools/check_dbglog_contract.py       # the debug-UART record table (+ --selftest)
 python3 tools/check_telemetry_contract.py    # the WDG/PRF/GFX telemetry records vs their decoder
 python3 tools/check_osd_contract.py          # CONF_STR vs pc9821_osd.sv vs pc9821_system.sv (+ --selftest)
@@ -334,6 +361,14 @@ python3 tools/check_todo_split.py            # todo/ items, the index, and every
 By hand, outside the gates: `python3 tools/check_4state_xlock.py` runs the X-lock benches under
 iverilog (4-state; Verilator is 2-state and cannot show an X-lock), and
 `python3 tools/check_decode_equiv.py` proves a decode rewrite.
+
+**A bench must be able to FAIL.** `python3 tools/mutate_bench.py BENCH --file SRC --from OLD --to
+NEW` plants a defect in a COPY of one source and requires the bench to fail through the gate's own
+verdict rule (the unmutated control must pass first). Run it when you write or strengthen a bench,
+with a defect in the code path its claim covers. `tests/pc9821/mutations.json` is the record of
+mutants each named bench kills; `--plan tests/pc9821/mutations.json` re-runs it (slow: one build per
+bench plus one per mutant), and an entry whose `from` text no longer matches is re-pointed, not
+deleted. A bench `tools/bench.py` passes also prints no line opening with `FAIL` or `MISMATCH`.
 
 `tools/check_tests.py` and `tools/check_tool_citations.py` carry visible, shrink-only ledgers: an
 entry that stops being true fails the check, so a ledger can only get shorter.
@@ -472,7 +507,7 @@ created.
 - Items (`--items`, comma-separated, default all): `keymap`, `probe` (runs `INTEG.COM` from
   `tools/hwprobe/integ` in the guest and checks HDD/floppy/CD files against manifests built on the
   host from the same images), `probe-cda` (the same while CD-DA plays; needs `--cd` and MSCDEX),
-  and the game items `doom`, `th05`, `rusty`, `policenauts`.
+  and the game items `doom`, `th05`, `rusty`, `policenauts`, `flamezap` (EGC-heavy).
 - Game items run the command list in `--scenarios FILE` (JSON; the shape is
   `tools/mister/regress_scenarios.example.json`: per item `boot_wait`, `steps` of
   `type`/`wait`/`click`/`key`, `run`, `shot_every`, `max_static_s`, `min_changes`, `known_frame`,
@@ -485,6 +520,17 @@ created.
   `--fdd0`/`--fdd1`, `--cd` (`--cd-layout iso|pcd|raw`, `--cd-drive`), `--pack` (the pack already
   on the card), `--boot-wait`, `--probe-timeout`, `--uart` (capture `/dev/ttyS1` as well),
   `--out` (default `.build/mister-regress/<time>`). `--selftest` exercises the hardware-free logic.
+
+### Several MiSTers
+
+Every tool takes its card from `MISTER_HOST` (or `--host`), password `MISTER_PASS` (default `1`,
+empty = keys), uses no known_hosts state, and keeps its local scratch per card (`.build/mister/<host>/`
+for `run_on_mister.sh`, `--out` per run for the regression runner), so two runs against two cards can
+overlap. Fresh cards work: missing `games/PC9821`, `_Computer`, `config` and screenshots directories are
+created or listed tolerantly. `tools/mister_regress.py --lock-wait S` waits for another run's card
+lock; only the lock's holder ever cleans up. `tools/mister_multi.py --hosts a,b --mode split|repeat --
+<regress args>` runs one regression on several cards at once (`split` deals the items out, `repeat`
+runs every item on every card), one `--out` subdirectory per card and a combined `summary.txt`.
 
 ### Rules for testing on a MiSTer
 
@@ -535,3 +581,8 @@ Parallel work runs in git worktrees inside the repo: `tools/worktree.py new|stat
 status-tag legend in `todo/README.md`. Item numbers are stable IDs cited as `item NN` across the
 tree: never renumber or reuse one. A closed item is deleted and its number retired;
 `python3 tools/check_todo_split.py` holds the files, the index and every reference together.
+`todo/` holds only work still to follow up or verify (a capture whose answer would change guest-
+visible behaviour, a divergence, a re-check, an open owner decision): a known limitation with no
+plan goes in README's "Known issues and limitations", a latency/area trade in
+`docs/trade-candidates.md`, a standing rule here - otherwise the list fills with finished history
+and stops being a work list (owner, 2026-10-11).

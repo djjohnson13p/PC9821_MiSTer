@@ -69,7 +69,7 @@ module pc9821_window_responder (
     input  wire        cpu_line_read,
     input  wire        cpu_valid,
     input  wire        cpu_write,
-    output reg  [31:0] cpu_dout,
+    output wire [31:0] cpu_dout,
     output wire [127:0] cpu_line_dout,
     output reg         cpu_ready,
     output reg         cpu_resp_valid,
@@ -110,6 +110,12 @@ module pc9821_window_responder (
   // read_data IS the assembled line. Its top byte is written on the same edge that enters
   // S_RESP, so a second 128-bit cpu_line_dout register would be a pure duplicate.
   assign cpu_line_dout = read_data;
+  // A word read assembles bytes 0..3 of read_data (byte_index 0..3), its last byte on the edge
+  // that raises cpu_ready, so the word the CPU gets IS read_data[31:0] by the response cycle and a
+  // separate 32-bit cpu_dout register would be a duplicate. It is only consumed behind
+  // cpu_resp_valid (pc9821_memory_subsystem's response mux); after a line read it holds that
+  // line's first dword instead of the previous word, which nothing reads.
+  assign cpu_dout = read_data[31:0];
   reg line_request;
 
   // base_addr is lane-aligned on the transfer's base and byte_index walks lanes from it, so
@@ -151,7 +157,6 @@ module pc9821_window_responder (
       byte_count <= 5'd0;
       read_data <= 128'd0;
       line_request <= 1'b0;
-      cpu_dout <= 32'hFFFF_FFFF;
       cpu_ready <= 1'b0;
       cpu_resp_valid <= 1'b0;
       cpu_line_resp_valid <= 1'b0;
@@ -206,7 +211,6 @@ module pc9821_window_responder (
             // Accept (cpu_ready) and deliver (cpu_resp_valid) in SEPARATE cycles: z486's
             // direct read path registers the accept and clears its in-flight flag on the
             // response, so a same-cycle response wedges the CPU. Matches the open-bus responder.
-            if (!line_request) cpu_dout <= {read_lane, read_data[23:0]};
             cpu_ready <= 1'b1;
             state <= S_RESP;
           end else begin

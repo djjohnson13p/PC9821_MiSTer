@@ -17,7 +17,7 @@ THIS machine (the owner's Xe10, 100 MHz): the long-standing "13.8 MB/s =
 in docs/probes/ and its source does not name which machine produced it, so this
 run is the authoritative one and settles whether that number is machine-portable.
 
-TIME BASE (item 41's lesson): the device clock only - ARTIC ticks x 3255.208 ns,
+TIME BASE (the /TIME ladder's lesson): the device clock only - ARTIC ticks x 3255.208 ns,
 no run-local scale, no PIT (so none of the item-10/41 defect classes apply). The
 timed windows are 256 KiB of `rep` string ops (no per-iteration loop shell to
 net out; the two ARTIC bracket reads bias a ~20-37 ms window by well under

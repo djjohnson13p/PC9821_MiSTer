@@ -12,6 +12,11 @@
 // data-out needs. A bench against pc9821_opna alone would not see the decode.
 
 module tb_pc9821_opna;
+  // The FM/rhythm audibility bounds (see CHK-11/12): skip this many clk of a window for
+  // an earlier note's release, and require a tone to cross +-FM_MIN_SWING.
+  localparam integer FM_SETTLE    = 300_000;
+  localparam integer FM_MIN_SWING = 2048;
+
   // System port C bit 3: the beeper's MUTE (pc9821_iobus, ANDed with the PIT's
   // channel 2 in pc9821_system). This bench does not drive the beeper, but it
   reg [3:0]  bios_set = 4'd0;      // OSD BIOS set: 0 = PC-9821Xe10 (the default strap)
@@ -50,6 +55,7 @@ module tb_pc9821_opna;
   reg  [11:0] rhythm_waddr = 12'd0;
   reg  [15:0] rhythm_wdata = 16'd0;
   wire [7:0] win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire sys16m_en;   // 0x043B bit 2, the 15-16 MiB system-space window
   wire a20_enable, cpu_reset_req;
   wire [15:0] unmapped_writes, unmapped_reads, last_unmapped_port;
@@ -504,6 +510,15 @@ module tb_pc9821_opna;
         fail("the six FM channels stay silent: a keyed FM channel emits nothing");
       if (fm_lo >= 0)
         fail("the keyed FM channel never swings negative: it is drifting, not sounding");
+      // ...and at a TONE's amplitude, not a tail's. CHK-9's SSG square was just set to
+      // level 0, and the board's AC coupling leaves a ONE-SIGNED decaying step of up to
+      // the SSG's coupled peak (<= 1110, tb_pc9821_opna_ssg_level's band) - which on its
+      // own satisfied both tests above with the FM missing entirely (bench-audit
+      // mutation: mix_l without fm_l PASSED). One TL=0 carrier is the operator's full
+      // scale, +-4096 in this junction's units (qemu fmopn.c:3023-3025 halving its
+      // 8192; pc9821_opna.sv's join comment), so a sounding note must cross +-2048.
+      if (fm_hi < FM_MIN_SWING || fm_lo > -FM_MIN_SWING)
+        fail("the keyed FM channel never swings past +-2048: what moves is a tail, not the FM");
 
       // The SAME channel, keyed on again the way a driver keys a note: the
       // key-on first and a register write right behind it. That is the one
@@ -522,14 +537,18 @@ module tb_pc9821_opna;
       fm_lo = 0; fm_hi = 0;
       for (n = 0; n < 600_000; n = n + 1) begin
         @(posedge clk);
-        if (opna_snd_l > fm_hi) fm_hi = opna_snd_l;
-        if (opna_snd_l < fm_lo) fm_lo = opna_snd_l;
+        // The first half of the window is skipped: it can hold the PREVIOUS note's
+        // RR=15 release tail (a few ms), which swings both ways on its own.
+        if (n >= FM_SETTLE && opna_snd_l > fm_hi) fm_hi = opna_snd_l;
+        if (n >= FM_SETTLE && opna_snd_l < fm_lo) fm_lo = opna_snd_l;
       end
       $display("  OPNA key-on+write snd_l swing: %0d .. %0d", fm_lo, fm_hi);
       if (fm_hi === 0 && fm_lo === 0)
         fail("a key-on immediately followed by a write stayed silent: the key-on was dropped");
       if (fm_lo >= 0)
         fail("the key-on immediately followed by a write did not sound: drifting, not a tone");
+      if (fm_hi < FM_MIN_SWING || fm_lo > -FM_MIN_SWING)
+        fail("key-on+write: no +-2048 swing after the old note's release (key-on dropped)");
 
       // The OTHER three FM channels, written the way the card makes them reachable:
       // the second port pair 0x18C/0x18E, which jt12_mmr decodes as the high part
@@ -557,14 +576,18 @@ module tb_pc9821_opna;
       fm_lo = 0; fm_hi = 0;
       for (n = 0; n < 600_000; n = n + 1) begin
         @(posedge clk);
-        if (opna_snd_l > fm_hi) fm_hi = opna_snd_l;
-        if (opna_snd_l < fm_lo) fm_lo = opna_snd_l;
+        // The first half of the window is skipped: it can hold the PREVIOUS note's
+        // RR=15 release tail (a few ms), which swings both ways on its own.
+        if (n >= FM_SETTLE && opna_snd_l > fm_hi) fm_hi = opna_snd_l;
+        if (n >= FM_SETTLE && opna_snd_l < fm_lo) fm_lo = opna_snd_l;
       end
       $display("  OPNA ext-bank FM (ch4) snd_l swing: %0d .. %0d", fm_lo, fm_hi);
       if (fm_hi === 0 && fm_lo === 0)
         fail("the extended-bank FM channels stay silent: channels 4-6 reach the chip only at 0x18C/0x18E");
       if (fm_lo >= 0)
         fail("the extended-bank FM channel did not sound: drifting, not a tone");
+      if (fm_hi < FM_MIN_SWING || fm_lo > -FM_MIN_SWING)
+        fail("ext-bank FM ch4: no +-2048 swing after channel 1's release");
     end
 
     // ---- 12. the rhythm (ADPCM-A) channel sounds, on a loaded image -------
@@ -591,6 +614,14 @@ module tb_pc9821_opna;
       end
       @(negedge clk);
       rhythm_we = 1'b0;
+      // Key the FM notes CHK-11 left sounding (channels 1 and 4) off and let their
+      // RR=15 release finish first: a sustained FM note swings both ways on its own,
+      // so with it still playing the "the drum emits something" test below could not
+      // fail (bench-audit, 2026-10-12). What remains is CHK-9's one-signed SSG
+      // coupling tail (<= 1110), which the amplitude bound below clears.
+      sound_o(8'h28, 8'h00);
+      sound_o(8'h28, 8'h04);
+      repeat (FM_SETTLE) @(posedge clk);
       sound_o(8'h11, 8'h3F);   // rhythm total level: no attenuation
       sound_o(8'h18, 8'hDF);   // instrument 0: level 31 (loudest), both pans
       sound_o(8'h10, 8'h01);   // trigger instrument 0 (bass drum)
@@ -603,6 +634,8 @@ module tb_pc9821_opna;
       $display("  OPNA rhythm snd_l swing: %0d .. %0d", rh_lo, rh_hi);
       if (rh_hi === 0 && rh_lo === 0)
         fail("the rhythm channel stays silent: a triggered ADPCM-A instrument emits nothing");
+      if (rh_hi < FM_MIN_SWING && rh_lo > -FM_MIN_SWING)
+        fail("the rhythm channel never moved past +-2048: what moved is a tail, not the drum");
     end
 
     // ---- 13. the FM's timer interrupt (the driver's IRQ5) fires ----------

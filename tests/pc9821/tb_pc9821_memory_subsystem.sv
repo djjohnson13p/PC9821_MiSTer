@@ -21,10 +21,11 @@ module tb_pc9821_memory_subsystem;
   // load/arbitration, and the shadow's routing has its own bench (tb_pc9821_shadow_romsum).
   reg top_shadow_en = 0;
   reg [7:0] win0_sel = 8'h08;
+  wire       win0_sel_moved = (win0_sel != 8'h08);   // pc9821_iobus's registered compare
   // 0x043B bit 2, the 15-16 MiB system-space window. The machine's reset value is ON,
   // so these benches drive the same state the card comes up in.
   reg  sys16m_en = 1'b1;
-  reg [31:0] pack_base = 32'h01F8_0000;
+  reg [31:0] pack_base = 32'h0200_0000;
   reg [31:0] guest_ram_bytes = 32'h0200_0000;
   reg gvram_access_page = 0;
   // EGC: held disabled here. tb_pc9821_egc.sv is the bench that drives the
@@ -165,7 +166,7 @@ module tb_pc9821_memory_subsystem;
   wire        dma_ready, dma_resp_valid;
   wire [31:0] dma_dout;
 /* verilator lint_on UNUSEDSIGNAL */
-  // The GDC draw engine's visit (item 63 slice 1) is not this bench's subject: tied
+  // The GDC draw engine's visit (the GDC2 WRITE slice) is not this bench's subject: tied
   // off, so the CPU side permanently owns the GVRAM port share.
   wire        gdc_mem_valid = 1'b0;
   wire        gdc_mem_write = 1'b0;
@@ -650,7 +651,7 @@ module tb_pc9821_memory_subsystem;
     ioctl_download = 0;
     repeat (3) @(posedge clk);
     if (!rom_ready || !cpu_run || load_error || writes != 1 ||
-        last_write_addr !== 32'h01F80000 ||
+        last_write_addr !== 32'h02000000 ||
         last_write_data !== 32'h0000BEEF || last_write_be !== 4'b0011) begin
       $display("FAIL load/arbitration ready=%b run=%b writes=%0d addr=%08x",
                rom_ready, cpu_run, writes, last_write_addr);
@@ -665,7 +666,7 @@ module tb_pc9821_memory_subsystem;
     cpu_burstcount = 8'd4;
     #1;
     if (!cpu_ready || !mem_valid || mem_write ||
-        mem_addr !== 32'h01F87FF0 || mem_burstcount != 8'd4) begin
+        mem_addr !== 32'h02007FF0 || mem_burstcount != 8'd4) begin
       $display("FAIL CPU mapped request addr=%08x ready=%b", mem_addr, cpu_ready);
       errors = errors + 1;
     end
@@ -1313,7 +1314,7 @@ module tb_pc9821_memory_subsystem;
     ioctl_download = 0;
     repeat (3) @(posedge clk);
     if (font_writes != 1 || last_font_addr != 18'd0 ||
-        last_font_data != 16'h3412 || last_write_addr != 32'h01FB_0000) begin
+        last_font_data != 16'h3412 || last_write_addr != 32'h0203_0000) begin
       $display("FAIL font tap count=%0d addr=%05x data=%04x physical=%08x",
                font_writes, last_font_addr, last_font_data, last_write_addr);
       errors = errors + 1;

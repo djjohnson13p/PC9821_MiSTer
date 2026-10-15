@@ -13,13 +13,14 @@
 //    NOT evidence about the write path -- this bench writes both words itself and reads both back.
 //  * THE PARTIAL-WRITE RULE: tb_pc9821_sdram's DQM-less partial-write check, reused because the
 //    new path must not be reachable from it.
-//  * FREQ = 100 MHz, the clock the built controller runs on (z486_mister.sv's clock_sdram), so
-//    the timing table takes the CAS_I = 2 branch the design uses.
+//  * FREQ = 100 MHz (mediumoc), so the timing table takes the CL3 branch (sdram.v CAS_I, CL3 at
+//    100 MHz and up since the 2026-10-13 hardware cutover); the write path is latency-
+//    independent, and the shipping 80 MHz CL2 path is tb_pc9821_sdram_sync's.
 
 module tb_pc9821_sdram_wburst;
   localparam integer FREQ = 100_000_000;
   localparam integer CYCLE_NS = 10;                  // 1/100MHz
-  localparam integer CAS = 2;                        // CAS_I = 2 for FREQ <= 100MHz
+  localparam integer CAS = 3;                        // CL3 at 100 MHz and up (sdram.v CAS_I, the 2026-10-13 hardware cutover)
   // The last dword of the 2 KiB row at 0x2000 on this 64 MB geometry, so XROW+4 is the first
   // dword of the NEXT row: the pair and the read burst below split at that boundary.
   localparam [26:0]  XROW = 27'h00_27FC;

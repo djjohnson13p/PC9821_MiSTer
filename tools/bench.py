@@ -13,11 +13,14 @@ and the `-I` include paths assembled by shell concatenation, and a verdict taken
 `|| true`. Here the manifest is imported as Python data (tools/gen_bench_sources.py
 declares it), the file list is a list rather than a string that gets split, and a
 bench PASSes only when BOTH its runner exited 0 AND its own PASS marker is in the
-output -- so the historical "exited 0 while printing FAIL" bench cannot pass silently.
+output -- so the historical "exited 0 while printing FAIL" bench cannot pass silently --
+AND no line of its output opens with FAIL or MISMATCH (a check that reports a failure
+without counting it).
 
   tools/bench.py --list          the manifest: what each bench proves
   tools/bench.py <name>          one bench, built and run alone, output streamed
   tools/bench.py --all           every bench, BENCH_JOBS at a time (default NCPU)
+  tools/bench.py --selftest      the verdict rules on planted outputs, without Verilator
 
 Environment: BENCH_JOBS (parallel benches, default NCPU), VERILATOR_JOBS (-j per build,
 default 4), VFLAGS (default -O2), BUILD_TIMEOUT_INT (default 900), BENCH_TIMEOUT_INT
@@ -94,23 +97,55 @@ def marker_present(output: str, marker: str) -> bool:
     return re.search(rf"^{re.escape(marker)}: PASS[ \t\r]*$", output, re.M) is not None
 
 
+# A line that OPENS with a failure word is a check reporting a failure. A bench that prints
+# one and still prints its PASS marker and exits 0 has a check that reports but does not
+# count (its `errors++` is missing or on another path) -- a vacuous check the marker and the
+# exit code cannot see. Case-sensitive, at the start of the line (after indentation), so
+# narration such as "CHECK 2: the ITF fail path" or "0 byte(s) fail" is not caught; no
+# passing bench in the tree prints such a line (bench-audit, 2026-10-12).
+FAILURE_LINE = re.compile(r"^[ \t]*(?:FAIL|MISMATCH)", re.M)
+
+
+def failure_line(output: str) -> str | None:
+    """The first line that opens with FAIL/MISMATCH, or None."""
+    m = FAILURE_LINE.search(output)
+    if m is None:
+        return None
+    end = output.find("\n", m.start())
+    return output[m.start(): end if end >= 0 else None].strip()
+
+
 def run_one_bench(name: str, manifest: dict, *, verilator_jobs: int, vflags: str,
-                  build_timeout: int, run_timeout: int, verbose: bool) -> tuple[str, bool, float, str]:
+                  build_timeout: int, run_timeout: int, verbose: bool,
+                  substitute: dict[str, Path] | None = None,
+                  run_dir: Path | None = None,
+                  log_root: Path | None = None) -> tuple[str, bool, float, str]:
+    """Build and run one bench; (name, passed, seconds, why-not).
+
+    `substitute`, `run_dir` and `log_root` exist for tools/mutate_bench.py: a mutant
+    build replaces some of the bench's sources (manifest path -> the mutated copy,
+    the testbench itself included as `tests/pc9821/tb_pc9821_<name>.sv`) and builds
+    in its own directory, through THIS function, so a mutant is judged by exactly
+    the verdict rule the gate uses. The gate passes none of them."""
     entry = manifest.get(name)
     if entry is None:
         return name, False, 0.0, f"no such bench: {name} (see `tools/bench.py --list`)"
     marker, _claim, files = entry
     if not files:
         return name, False, 0.0, "the manifest declares no sources for this bench"
+    substitute = substitute or {}
 
+    tb_rel = f"tests/pc9821/tb_pc9821_{name}.sv"
     tb = TB_DIR / f"tb_pc9821_{name}.sv"
     if not tb.exists():
         return name, False, 0.0, f"missing testbench {tb}"
+    tb = substitute.get(tb_rel, tb)
 
-    run_dir = RUN_ROOT / f"bench-{name}"
+    run_dir = run_dir or RUN_ROOT / f"bench-{name}"
+    log_root = log_root or LOG_ROOT
     obj = run_dir / "obj"
     obj.mkdir(parents=True, exist_ok=True)
-    LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    log_root.mkdir(parents=True, exist_ok=True)
     # The real z486's microcode and PLA images are $readmemh'd BY RELATIVE NAME at
     # RUN time (ucode_rom.sv, the two PLA entry ROMs), so they must sit beside the
     # binary - exactly what run_boot.sh's symlink loop does for the integrated tiers.
@@ -121,16 +156,20 @@ def run_one_bench(name: str, manifest: dict, *, verilator_jobs: int, vflags: str
         link = run_dir / hex.name
         if not link.exists():
             link.symlink_to(hex.resolve())
-    build_log = LOG_ROOT / f"bench-{name}.build.log"
-    run_log = LOG_ROOT / f"bench-{name}.log"
+    build_log = log_root / f"bench-{name}.build.log"
+    run_log = log_root / f"bench-{name}.log"
+    # A substituted `include file (an .svh) is found through the include path, so the
+    # directories holding substitutes come FIRST and shadow the tree's copy.
+    sub_dirs = sorted({str(p.parent) for p in substitute.values()})
 
     argv = [
         "verilator", "--binary", "--timing", "-j", str(verilator_jobs), vflags,
         *VERILATOR_WARN_FLAGS,
+        *[f"-I{d}" for d in sub_dirs],
         f"-I{Z486}", f"-I{X87}", f"-I{TB_DIR}",
         "--top-module", f"tb_pc9821_{name}",
         "--Mdir", str(obj),
-        *[str(REPO_ROOT / f) for f in files],
+        *[str(substitute.get(f, REPO_ROOT / f)) for f in files],
         str(tb),
     ]
 
@@ -159,6 +198,10 @@ def run_one_bench(name: str, manifest: dict, *, verilator_jobs: int, vflags: str
         return name, False, elapsed, f"no '{marker}: PASS' marker (see {run_log})"
     if code != 0:
         return name, False, elapsed, f"printed its PASS marker but exited {code} (see {run_log})"
+    bad = failure_line(run_out)
+    if bad is not None:
+        return name, False, elapsed, (f"printed its PASS marker but also a failure line "
+                                      f"{bad[:120]!r} (see {run_log})")
     return name, True, elapsed, ""
 
 
@@ -217,7 +260,35 @@ def list_benches(manifest: dict) -> int:
     print(f"{'bench':<22}{'proves'}")
     for name in names(manifest):
         marker, claim, _files = manifest[name]
-        print(f"{name:<22}{claim}")
+        print(f"{name:<22} {claim}")
+    return 0
+
+
+def selftest() -> int:
+    """The verdict's text rules against planted outputs: each must be judged as stated."""
+    m = "TB_PC9821_X"
+    cases = [
+        ("the marker alone on its line", f"x\n{m}: PASS\n", True, None),
+        ("the marker with a trailing CR", f"{m}: PASS\r\n", True, None),
+        ("the marker inside a sentence", f"FAIL: no {m}: PASS here\n", False,
+         f"FAIL: no {m}: PASS here"),
+        ("another bench's marker", "TB_PC9821_Y: PASS\n", False, None),
+        ("a FAIL line before the marker", f"  FAIL step 3\n{m}: PASS\n", True, "FAIL step 3"),
+        ("a MISMATCH line", f"MISMATCH a: rtl=1\n{m}: PASS\n", True, "MISMATCH a: rtl=1"),
+        ("narration mentioning fail", f"CHECK 2: the ITF fail path\n0 fail\n{m}: PASS\n", True, None),
+    ]
+    bad = []
+    for label, out, want_marker, want_fail in cases:
+        if marker_present(out, m) != want_marker:
+            bad.append(f"{label}: marker_present is {not want_marker}")
+        if failure_line(out) != want_fail:
+            bad.append(f"{label}: failure_line is {failure_line(out)!r}, want {want_fail!r}")
+    if bad:
+        print("BENCH VERDICT SELFTEST: FAIL")
+        for b in bad:
+            print(f"  - {b}")
+        return 1
+    print(f"BENCH VERDICT SELFTEST: PASS ({len(cases)} planted outputs)")
     return 0
 
 
@@ -230,6 +301,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--all", action="store_true", help="every bench")
     group.add_argument("--list", action="store_true", help="print the manifest and exit")
+    group.add_argument("--selftest", action="store_true",
+                       help="check the verdict rules on planted outputs and exit")
     parser.add_argument("--jobs", type=int, default=None,
                         help="benches to run at once (default: $BENCH_JOBS or NCPU)")
     return parser.parse_args(argv)
@@ -239,6 +312,8 @@ def main(argv: list[str]) -> int:
     opts = parse_args(argv)
     manifest = load_manifest()
 
+    if opts.selftest:
+        return selftest()
     if opts.list:
         return list_benches(manifest)
     if opts.all:

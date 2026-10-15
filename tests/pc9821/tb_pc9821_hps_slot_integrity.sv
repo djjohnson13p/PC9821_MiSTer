@@ -90,7 +90,7 @@ module tb_pc9821_hps_slot_integrity;
   wire        cdda_wr;
   wire [31:0] cdda_data;
 
-  pc9821_atapi #(.AUDIO_EN(1'b1), .AS_MASTER(1'b1)) cd (
+  pc9821_atapi #(.AUDIO_EN(1'b1)) cd (
       .clk(clk), .rst_n(rst_n),
       .io_rd(io_rd), .io_wr(io_wr), .io_addr(io_addr), .io_din(io_din), .io_dout(cd_dout),
       .io_own(cd_own), .irq(cd_irq),

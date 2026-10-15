@@ -132,9 +132,11 @@ module pc9821_mouse #(
     // 1 = pressed. The PC-98 counters are x positive = right, y positive =
     // DOWN (NP2kai feeds SDL's down-positive yrel straight into mouseif.y,
     // sdl/mousemng.c:229-234), so Y is negated at the packet edge below.
-    /* verilator lint_off UNUSEDSIGNAL */   // [7:3] is the PS/2 sign/overflow
-    input  wire [24:0] ps2_mouse,             // flag nibble + constant 1: the
-    /* verilator lint_on UNUSEDSIGNAL */     // delta bytes below carry the signs
+    // [5:4] are the Y/X SIGN bits of the 9-bit deltas (below); [7:6] overflow and [3]
+    // the constant 1 are not used.
+    /* verilator lint_off UNUSEDSIGNAL */
+    input  wire [24:0] ps2_mouse,
+    /* verilator lint_on UNUSEDSIGNAL */
 
     // One clk_sys pulse per periodic interrupt event - pc9821_pic latches the
     // request on the rising edge (ir_set = ir_in & ~ir_prev), the same pulse
@@ -183,8 +185,13 @@ module pc9821_mouse #(
   // ---- the host packet edge (hps_io's toggle-coded event) ----
   reg        ps2_tog;
   wire       pkt = ps2_mouse[24] != ps2_tog;
-  wire signed [15:0] x_ext = {{8{ps2_mouse[15]}}, ps2_mouse[15:8]};
-  wire signed [15:0] y_ext = {{8{ps2_mouse[23]}}, ps2_mouse[23:16]};
+  // A PS/2 delta is 9-bit two's complement: the sign is byte 0 bit 4 (X) / bit 5 (Y) and
+  // the delta byte is the low 8 bits, so +-128..255 arrive intact. Main_MiSTer user_io.cpp
+  // user_io_mouse: "YOvfl, XOvfl, dy8, dx8, 1, mbtn, rbtn, lbtn", `ps2_mouse[0] |= (x < 0) ?
+  // 0x10 : 0x00;` with x clamped to +-255. Extending bit 7 of the delta byte turned a fast
+  // +200 into -56 (tb_pc9821_mouse_sign).
+  wire signed [15:0] x_ext = {{8{ps2_mouse[4]}}, ps2_mouse[15:8]};
+  wire signed [15:0] y_ext = {{8{ps2_mouse[5]}}, ps2_mouse[23:16]};
   wire signed [15:0] dx = x_ext;
   // PS/2 Y is positive = up; the PC-98 counter is positive = down (header).
   wire signed [15:0] dy = -y_ext;

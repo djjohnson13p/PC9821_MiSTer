@@ -1,5 +1,5 @@
 // ONE HPS block adapter shared by the hard disk and the TWO FLOPPY DRIVES (docs/trade-candidates.md
-// T9, extended by item 59's second drive).
+// T9, extended by the second drive).
 //
 // WHY THIS MODULE EXISTS. pc9821_block_io is the engine that turns hps_io's block handshake
 // into one request / one completion for a drive, with a read-ahead window behind it

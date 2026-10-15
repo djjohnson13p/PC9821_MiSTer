@@ -11,10 +11,11 @@ THE SCRIPTED SET (--items, default all)
   probe        INTEG.COM (tools/hwprobe/integ): verify the HDD / floppy / CD files against manifests
                made on the host from the same images, plus the write/read-back, no CD-DA
   probe-cda    the same WHILE CD-DA plays (INTEG P ... INTEG S; needs --cd and MSCDEX in the guest)
-  doom         DOOM's start       }  the four game items run a command list from the scenarios file
+  doom         DOOM's start       }  the game items run a command list from the scenarios file
   th05         Touhou 5's start   }  (--scenarios; tools/mister/regress_scenarios.example.json is the
   rusty        Rusty's start      }  shape), take a screenshot every N seconds and check
   policenauts  the Policenauts intro, to the logo
+  flamezap     Flame Zapper Kotsujin's attract/play (EGC-heavy sprite blits; EMS profile)
   PASS CHECKS  probe items: every INTEG_*.TXT ends 'INTEG END FAILS=0000', INTEG_OK.TXT exists, and
                for probe-cda the PLAY row says 'PLAY OK' (a probe that could not play audio proved nothing
                about CD-DA).  Game items: the screen is not frozen (frame-diff between consecutive
@@ -22,10 +23,12 @@ THE SCRIPTED SET (--items, default all)
 
 NOTHING OF THE USER'S IS EVER COMMITTED. The images are arguments; reference frames live in --refs
 (a directory of the user's choosing, outside any commit); the patched image copies live under
-.build/mister-regress/ (git-ignored) and on the MiSTer only for the run.
+the run's --out directory (default .build/mister-regress/, git-ignored) and on the MiSTer only for
+the run.
 
 THE MiSTer IS SHARED. Without --go this prints the plan and touches nothing. With --go it takes a lock
-(/tmp/zreg.lock on the MiSTer; an existing lock aborts the run and says who holds it), uses only names
+(/tmp/zreg.lock on the MiSTer; an existing lock aborts the run and says who holds it,
+or with --lock-wait S waits that long for it; only the lock's holder ever cleans up), uses only names
 that contain 'zreg', and a `finally` removes every file it created and verifies the removal.
 
     # plan only
@@ -67,8 +70,8 @@ REMOTE_RBF = f"/media/fat/_Computer/{CORE}-{TAG}.rbf"
 REMOTE_MGL = f"/media/fat/{TAG.upper()}.mgl"
 SHOTS = f"/media/fat/screenshots/{SETNAME}"
 
-ITEMS = ("keymap", "probe", "probe-cda", "doom", "th05", "rusty", "policenauts")
-GAME_ITEMS = ("keymap", "doom", "th05", "rusty", "policenauts")
+ITEMS = ("keymap", "probe", "probe-cda", "doom", "th05", "rusty", "policenauts", "flamezap")
+GAME_ITEMS = ("keymap", "doom", "th05", "rusty", "policenauts", "flamezap")
 
 STATIC_DIFF = 0.2          # mean abs diff (0-255) below which two screenshots are 'the same frame'
 THUMB = (80, 50)
@@ -278,7 +281,10 @@ class Mister:
         self.dry = dry
         self.env = dict(os.environ, SSHPASS=password) if password else dict(os.environ)
         self.auth = ["sshpass", "-e"] if password else []
-        self.opts = ["-o", "StrictHostKeyChecking=no", "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=10"]
+        # UserKnownHostsFile=/dev/null: a card that was re-flashed (same address, new host key) or two
+        # cards that once shared an address must not make ssh refuse.
+        self.opts = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+                     "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=10"]
         self.created = []          # remote paths, for the cleanup verification
         self.plan = []
 
@@ -315,6 +321,25 @@ class Mister:
             os.unlink(t.name)
 
 
+def host_slug(host: str) -> str:
+    """A filesystem-safe name for an ssh destination (used in per-run local paths)."""
+    h = host.split("@", 1)[-1]
+    return "".join(c if c.isalnum() or c in "-_." else "_" for c in h) or "host"
+
+
+def take_lock(m: Mister, wait_s: int, say) -> str:
+    """Take the card's lock, waiting up to wait_s seconds for another holder. Returns "got" or
+    "held: <owner>" (the caller refuses on the latter)."""
+    deadline = time.time() + wait_s
+    while True:
+        held = m.sh(f"mkdir {LOCK} 2>/dev/null && echo '{os.uname().nodename} pid {os.getpid()} {time.ctime()}' > {LOCK}/owner "
+                    f"&& echo got || (echo held: $(cat {LOCK}/owner 2>/dev/null))", check=False).strip()
+        if held.startswith("got") or time.time() >= deadline:
+            return held
+        say(f"locked by another run ({held}); waiting")
+        time.sleep(30)
+
+
 def log(out, msg):
     line = f"[{time.strftime('%H:%M:%S')}] {msg}"
     print(line, flush=True)
@@ -346,7 +371,7 @@ def run_item(m: Mister, item, a, sc, prep, out):
                    f"{TAG}-fdd1.img" if prep.get("fdd1") else None,
                    f"{TAG}-cd.img" if prep.get("cd") else None, a.pack)
     m.write(mgl, REMOTE_MGL)
-    before = set(m.sh(f"ls {SHOTS} 2>/dev/null").split())
+    before = set(m.sh(f"ls {SHOTS} 2>/dev/null || true").split())
     if a.uart:
         m.sh("stty -F /dev/ttyS1 115200 raw -echo; rm -f /tmp/zreg/uart.bin; "
              "nohup sh -c 'cat /dev/ttyS1 > /tmp/zreg/uart.bin' </dev/null >/dev/null 2>&1 &")
@@ -368,9 +393,15 @@ def run_item(m: Mister, item, a, sc, prep, out):
         cdcap = f"INTEG_{a.cd_drive[0].upper()}.TXT" if a.cd else None
         names = exp + ["INTEG_OK.TXT"] + (["INTEG_P.TXT"] if item == "probe-cda" else [])
         if item == "probe-cda" and cdcap in exp:
-            # With CD-DA playing the NEC driver answers a data read with 'Not ready' (measured 2026-10-10:
-            # OPENFAIL AX=0005 on every CD file), so the CD's own verify cannot be a pass criterion there;
-            # the HDD verify and write/read-back under CD-DA are. The CD capture is reported, not judged.
+            # With CD-DA playing, NECCD.SYS fails every data read with 'Not ready' (the guest shows
+            # "CDR101: Not ready", reading drive Q, translated; INTEG's INT 24h FAIL turns it into OPENFAIL AX=0005).
+            # That is the guest stack's documented answer, not the drive's: the MS-DOS CD-ROM Extensions
+            # 2.1 driver spec has the driver "fail all requests to the physical device that require head
+            # movement when the device is playing" with the busy and error bits and an error code, and
+            # the --dbg-cd trail of this item (2026-10-12) shows NECCD.SYS deciding each open from READ
+            # SUB-CHANNEL's audio status 0x11 and sending no READ(10) while the drive plays
+            # (docs/pc9821-port-status.md, CD-ROM). So the CD's own verify cannot be a pass criterion
+            # here; the HDD verify and write/read-back under CD-DA are. The CD capture is reported.
             exp = [e for e in exp if e != cdcap]
         caps = {}
         while True:
@@ -387,13 +418,14 @@ def run_item(m: Mister, item, a, sc, prep, out):
             if t:
                 (itemdir / n).write_text(t)
         if not m.dry:
-            for f in sorted(set(m.sh(f"ls {SHOTS} 2>/dev/null").split()) - before):
+            for f in sorted(set(m.sh(f"ls {SHOTS} 2>/dev/null || true").split()) - before):
                 m.get(f"{SHOTS}/{f}", itemdir / f)
                 m.created.append(f"{SHOTS}/{f}")
         ok, detail = judge_probe(caps, exp, item == "probe-cda") if not m.dry else (True, "dry run")
         if item == "probe-cda" and not m.dry and cdcap and caps.get(cdcap):
             r = parse_integ(caps[cdcap])
-            detail += f"; CD verify under CD-DA (informational): FAILS={r['fails']}, " + ((r['bad'][0] if r['bad'] else 'no rows'))
+            detail += (f"; CD verify under CD-DA (informational - NECCD.SYS refuses data reads while audio plays, "
+                       f"as the MSCDEX driver spec requires): FAILS={r['fails']}, " + ((r['bad'][0] if r['bad'] else 'no rows')))
         verdict = "DRY" if m.dry else ("PASS" if ok else "FAIL")
     else:
         s = sc[item]
@@ -414,7 +446,7 @@ def run_item(m: Mister, item, a, sc, prep, out):
             time.sleep(0 if m.dry else every)
             m.sh("echo screenshot > /dev/MiSTer_cmd")
         time.sleep(0 if m.dry else 3)
-        after = m.sh(f"ls {SHOTS} 2>/dev/null").split()
+        after = m.sh(f"ls {SHOTS} 2>/dev/null || true").split()
         new = sorted(set(after) - before)
         shots = []
         for f in new:
@@ -481,6 +513,8 @@ def main(argv=None):
                     help="password auth via sshpass (default $MISTER_PASS, else 1 - the stock MiSTer "
                          "root password; an empty value uses ssh keys)")
     ap.add_argument("--out", help="results directory (default .build/mister-regress/<time>)")
+    ap.add_argument("--lock-wait", type=int, default=0, metavar="SECONDS",
+                    help="wait up to this long for another run's lock on the card (default: refuse)")
     ap.add_argument("--go", action="store_true", help="actually touch the MiSTer (otherwise: print the plan)")
     ap.add_argument("--keep", action="store_true", help="do not clean up (debugging)")
     ap.add_argument("--selftest", action="store_true")
@@ -496,7 +530,10 @@ def main(argv=None):
         if i not in ITEMS:
             ap.error(f"unknown item {i}")
     sc = load_scenarios(a.scenarios) if a.scenarios else {}
-    out = Path(a.out) if a.out else ROOT / ".build/mister-regress" / time.strftime("%Y%m%d-%H%M%S")
+    # the default results directory names the host and the pid: two runs started in the same
+    # second (two cards, or two shells) must not share one
+    out = Path(a.out) if a.out else ROOT / ".build/mister-regress" / (
+        f"{time.strftime('%Y%m%d-%H%M%S')}-{host_slug(a.host)}-{os.getpid()}")
     out.mkdir(parents=True, exist_ok=True)
 
     # ---- host-side preparation (no MiSTer involved)
@@ -507,9 +544,8 @@ def main(argv=None):
     if a.cd:
         manifests[a.cd_drive.upper()] = manifest_for(
             Path(a.cd), a.cd_drive.upper(), "cd", {"largest": 6, "max_bytes": a.max_bytes, "layout": a.cd_layout})
-    workdir = ROOT / ".build/mister-regress/work"
-    workdir.mkdir(parents=True, exist_ok=True)
-    patched = workdir / "hdd.patched.img"
+    # per run, so runs against two MiSTers at once never share the patched copy
+    patched = out / "hdd.patched.img"
     if a.go:
         log(out, f"patching a COPY of {a.hdd_image} -> {patched}")
         patch_hdd(Path(a.hdd_image), patched, probe_files(manifests), a.partition, None, 0)
@@ -535,15 +571,16 @@ def main(argv=None):
     locked = False
     try:
         if a.go:
-            held = m.sh(f"mkdir {LOCK} 2>/dev/null && echo '{os.uname().nodename} pid {os.getpid()} {time.ctime()}' > {LOCK}/owner "
-                        f"&& echo got || (echo held: $(cat {LOCK}/owner 2>/dev/null))", check=False).strip()
+            held = take_lock(m, a.lock_wait, lambda msg: log(out, msg))
             if not held.startswith("got"):
                 raise SystemExit(f"the MiSTer is locked by another run ({held}); not touching it")
             locked = True
             busy = m.sh("ls /dev/MiSTer_cmd >/dev/null 2>&1 && echo ok", check=False).strip()
             if busy != "ok":
                 raise SystemExit("/dev/MiSTer_cmd missing: is Main_MiSTer running?")
-        m.sh(f"mkdir -p {REMOTE_TMP}")
+        # a fresh card has none of these (the screenshots directory appears with the first
+        # screenshot and is listed tolerantly everywhere)
+        m.sh(f"mkdir -p {REMOTE_TMP} {GAMES} /media/fat/_Computer")
         for f in ("ztype.py", "zclick.py"):
             m.put(ROOT / "tools/mister" / f, f"{REMOTE_TMP}/{f}")
         for f in ("fatimg.py", "integ_manifest.py"):
@@ -563,7 +600,9 @@ def main(argv=None):
                 results[it] = ("FAIL", f"runner error: {e}")
             log(out, f"{it}: {results[it][0]} - {results[it][1]}")
     finally:
-        if a.go and not a.keep:
+        # Only the holder of the lock cleans up: a run refused by another run's lock must not
+        # remove that run's files (the namespace is shared) or kill its UART reader.
+        if a.go and locked and not a.keep:
             leftovers = cleanup(m, out)
             if leftovers:
                 results["cleanup"] = ("FAIL", "left on the MiSTer: " + ", ".join(leftovers))
@@ -708,6 +747,11 @@ def selftest() -> int:
         rm = [v for k, v in m2.plan if k == "ssh" and v.startswith("rm -f")][0]
         check(REMOTE_RBF in rm and f"{GAMES}/{TAG}-hdd.img" in rm and REMOTE_MGL in rm, "cleanup: removes the RBF, the image copy and the MGL")
 
+    check(host_slug("root@my-card.lan") == "my-card.lan" and host_slug("a b") == "a_b",
+          "host_slug: the user@ prefix is dropped and unsafe characters replaced")
+    t0 = time.time()
+    got = take_lock(Mister("nowhere", "x", dry=True), 0, lambda msg: None)
+    check(not got.startswith("got") and time.time() - t0 < 5, "lock: wait 0 on a lock that is not granted returns at once")
     print("PASS" if rc == 0 else "FAIL")
     return rc
 

@@ -25,6 +25,23 @@ Per seed the verdict lands in <dir>/seedNNN/status.txt and the measured timing i
 working copies are deleted as soon as a seed's numbers are recorded, so the disk
 cost is bounded by --jobs trees, not by --count.
 
+RESUME IS KEYED ON WHAT WAS FITTED. A seed's summary.txt records `identity=`, the sha256 of
+{resolved configuration, the RTL source hash (tools/check_fit.py --rtl-hash-of), the fit knobs
+in the environment}. A re-run skips a seed only when its identity equals the current one; a
+seed that was fitted from different source or another profile makes the sweep REFUSE (exit 1,
+the stale seeds listed) instead of silently mixing two designs in one ranking. Pick one:
+--restart-stale renames each stale seedNNN to seedNNN.stale-<time> (its output_files are never
+deleted) and fits it afresh; --trust-existing accepts a summary written before identities
+existed. --retry-failed re-fits seeds recorded `verdict=failed` (the old directory is kept the
+same way). summary.txt is written LAST, after output_files and metrics.json are in place, so a
+killed sweep never leaves a verdict without its reports.
+
+SHARED HOSTS. --slot-dir DIR --slot-max N (env FIT_SLOT_DIR / FIT_SLOT_MAX) makes each seed take
+a tools/host_slots.py slot before it copies its tree, so the sweep (and every other launcher
+using that DIR) stays under N fits; --slot-all counts every running container of the container
+runtime too, and --max-load L waits (with a slot dir) while the 1-minute load average is above
+L. For a sweep on another machine see tools/remote_fit.py.
+
 The ranking is by clk_sys setup slack (the profile's limiting clock): the best
 seed is the one with the largest positive slack.
 """
@@ -33,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures as cf
+import hashlib
 import json
 import os
 import re
@@ -48,6 +66,7 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
 import build_profile  # noqa: E402  (the configuration overrides, shared with tools/build.py)
 sys.path.insert(0, str(PROJECT_DIR / "tools"))
+import host_slots  # noqa: E402  (the shared-host ceiling: one slot per running fit)
 import fit_metrics  # noqa: E402  (the per-fit numbers, shared with tools/fit_matrix.py)
 COPY_EXCLUDE = (".git", ".build", "output_files", "db", "incremental_db",
                 "build", "simulation", "__pycache__")
@@ -67,6 +86,82 @@ def sweep_dir(args) -> Path:
 
 def seed_dir(root: Path, seed: int) -> Path:
     return root / f"seed{seed:03d}"
+
+
+def source_hash() -> str:
+    """The RTL source hash the fits are of (the rule tools/check_fit.py attributes fits by)."""
+    out = subprocess.run([sys.executable, str(PROJECT_DIR / "tools" / "check_fit.py"),
+                          "--rtl-hash-of", str(PROJECT_DIR)],
+                         capture_output=True, text=True, check=False)
+    if out.returncode != 0:
+        raise SystemExit(f"cannot hash the design sources: {out.stdout}{out.stderr}")
+    return out.stdout.strip()
+
+
+FIT_KNOBS = ("QUARTUS_FIT_SETTINGS", "QUARTUS_NUM_PARALLEL_PROCESSORS", "QUARTUS_AGGRESSIVE",
+             "QUARTUS_DTM_RETRY", "QUARTUS_POST_STA_TCL", "QUARTUS_IMAGE")
+
+
+def fit_knobs(env=None) -> dict:
+    """The environment that changes what a fit produces (file contents, not paths)."""
+    env = os.environ if env is None else env
+    knobs = {}
+    for k in FIT_KNOBS:
+        v = env.get(k, "").strip()
+        if not v:
+            continue
+        if k in ("QUARTUS_FIT_SETTINGS", "QUARTUS_POST_STA_TCL") and Path(v).is_file():
+            v = "sha256:" + hashlib.sha256(Path(v).read_bytes()).hexdigest()
+        knobs[k] = v
+    return knobs
+
+
+def make_identity(expected: str, source: str, knobs: dict) -> str:
+    blob = json.dumps({"config": json.loads(expected), "source": source, "knobs": knobs},
+                      sort_keys=True)
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def summary_field(sd: Path, key: str) -> str | None:
+    """One `key=value` from a seed's summary.txt (None: no summary or no such key)."""
+    try:
+        for line in (sd / SUMMARY).read_text().splitlines():
+            if line.startswith(key + "="):
+                return line.split("=", 1)[1]
+    except OSError:
+        pass
+    return None
+
+
+def classify_seeds(root: Path, seeds: list[int], identity: str, *, trust_existing: bool,
+                   retry_failed: bool) -> tuple[list[int], list[int]]:
+    """(stale, redo): seeds whose recorded fit is of something else / to re-fit."""
+    stale, redo = [], []
+    for seed in seeds:
+        sd = seed_dir(root, seed)
+        if not (sd / SUMMARY).exists():
+            continue
+        got = summary_field(sd, "identity")
+        if got is None:
+            if not trust_existing:
+                stale.append(seed)
+        elif got != identity:
+            stale.append(seed)
+        elif retry_failed and summary_field(sd, "verdict") == "failed":
+            redo.append(seed)
+    return stale, redo
+
+
+def move_aside(root: Path, seed: int) -> Path:
+    sd = seed_dir(root, seed)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    dst = sd.with_name(f"{sd.name}.stale-{stamp}")
+    n = 0
+    while dst.exists():
+        n += 1
+        dst = sd.with_name(f"{sd.name}.stale-{stamp}-{n}")
+    sd.rename(dst)    # output_files travel with it: never deleted
+    return dst
 
 
 def copy_work_tree(dst: Path) -> None:
@@ -137,13 +232,30 @@ def record(tree: Path) -> dict:
     return out
 
 
-def do_seed(root: Path, seed: int, profile_argv: list[str], expected: str, retries: int) -> None:
+def do_seed(root: Path, seed: int, profile_argv: list[str], expected: str, retries: int,
+            identity: str = "", slots: dict | None = None) -> None:
     sd = seed_dir(root, seed)
     if (sd / SUMMARY).exists():
-        return  # already done (resume)
+        return  # already done (resume; main() has refused or moved aside anything stale)
     sd.mkdir(parents=True, exist_ok=True)
+    slot = token = None
+    if slots and slots.get("dir"):
+        slot = host_slots.acquire(Path(slots["dir"]), slots["max"], f"seed{seed:03d}",
+                                  pid=os.getpid(), mine="*" if slots.get("all") else "",
+                                  path=str(sd), poll=15, max_load=slots.get("max_load"))
+        token = host_slots.token_of(slot)
+    try:
+        _fit_seed(sd, seed, profile_argv, expected, retries, identity)
+    finally:
+        if slot:
+            host_slots.release(slot, token)
+
+
+def _fit_seed(sd: Path, seed: int, profile_argv: list[str], expected: str,
+              retries: int, identity: str) -> None:
     tree = sd / "tree"
     verdict = "failed"
+    attempt = 0
     for attempt in range(1, retries + 2):
         if tree.exists():
             shutil.rmtree(tree)
@@ -153,12 +265,10 @@ def do_seed(root: Path, seed: int, profile_argv: list[str], expected: str, retri
             verdict = "passed"
             break
         log(f"[seed {seed:03d}] fit attempt {attempt} FAILED (the Quartus flake is expected ~30% of the time)")
+        if (tree / "build.log").exists() and attempt <= retries:
+            # Each failed attempt's log survives (the last attempt's is kept below as build.log).
+            shutil.copy2(tree / "build.log", sd / f"build.attempt{attempt}.log")
     nums = record(tree)
-    with open(sd / SUMMARY, "w") as f:
-        f.write(f"seed={seed}\nverdict={verdict}\nattempts={attempt}\n")
-        f.write(f"config={expected}\n")
-        for k, v in nums.items():
-            f.write(f"{k}={v}\n")
     # Preserve the ENTIRE build output before the tree goes away: the RBF and the
     # basic timings are the minimum (the summary above), but a seed's full
     # output_files folder (the RBF, the sta/fit/map reports, the pin/model dumps)
@@ -179,6 +289,16 @@ def do_seed(root: Path, seed: int, profile_argv: list[str], expected: str, retri
         json.dump({"seed": seed, "verdict": verdict, "attempts": attempt,
                    "config": json.loads(expected), **fit_metrics.fit_metrics(sd)},
                   f, indent=1, sort_keys=True)
+    # LAST, atomically: summary.txt is the "this seed is done" marker resume trusts.
+    tmp = sd / (SUMMARY + ".tmp")
+    with open(tmp, "w") as f:
+        f.write(f"seed={seed}\nverdict={verdict}\nattempts={attempt}\n")
+        f.write(f"config={expected}\n")
+        if identity:
+            f.write(f"identity={identity}\n")
+        for k, v in nums.items():
+            f.write(f"{k}={v}\n")
+    os.replace(tmp, sd / SUMMARY)
     log(f"[seed {seed:03d}] {verdict} " +
         " ".join(f"{k}={v}" for k, v in nums.items()))
 
@@ -202,7 +322,12 @@ def load_summaries(root: Path) -> list[dict]:
 
 
 def report(root: Path, top: int = 10) -> None:
-    rows = [r for r in load_summaries(root) if r.get("verdict") == "passed"]
+    allrows = load_summaries(root)
+    idents = {r.get("identity", "(none)") for r in allrows}
+    if len(idents) > 1:
+        log(f"  NOTE: {len(idents)} different fit identities in {root} (different source, "
+            f"profile or knobs): this ranking mixes designs")
+    rows = [r for r in allrows if r.get("verdict") == "passed"]
     rows.sort(key=lambda r: -float(r.get("clk_sys_slack", -99)))
     log(f"\n== {len(rows)} passed seeds, ranked by clk_sys setup slack ==")
     log(f"  {'seed':<10}{'clk_sys':>9}{'clk_sdram':>11}{'ALM':>8}{'ALM%':>7}{'att':>5}")
@@ -213,6 +338,38 @@ def report(root: Path, top: int = 10) -> None:
         best = rows[0]
         log(f"\n  BEST: {best['seed']}  clk_sys +{best.get('clk_sys_slack', 0):.3f} ns"
             )
+
+
+def selftest() -> int:
+    """Hardware-free checks of the resume/identity logic (plants each error and must catch it)."""
+    import tempfile
+    cfg = json.dumps({"clk": 80})
+    ident = make_identity(cfg, "src1", {})
+    assert ident != make_identity(cfg, "src2", {}), "source change must change identity"
+    assert ident != make_identity(json.dumps({"clk": 75}), "src1", {}), "config change"
+    assert ident != make_identity(cfg, "src1", {"QUARTUS_AGGRESSIVE": "1"}), "knob change"
+    assert ident == make_identity(cfg, "src1", {}), "identity must be deterministic"
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        def mk(seed, **kv):
+            d = seed_dir(root, seed)
+            (d / "output_files").mkdir(parents=True)
+            (d / "output_files" / "keep.rbf").write_text("x")
+            (d / SUMMARY).write_text("".join(f"{k}={v}\n" for k, v in kv.items()))
+        mk(1, verdict="passed", identity=ident)
+        mk(2, verdict="passed", identity="other")
+        mk(3, verdict="passed")                      # pre-identity
+        mk(4, verdict="failed", identity=ident)
+        assert classify_seeds(root, [1, 2, 3, 4, 5], ident, trust_existing=False,
+                              retry_failed=False) == ([2, 3], []), "stale detection"
+        assert classify_seeds(root, [1, 2, 3, 4, 5], ident, trust_existing=True,
+                              retry_failed=True) == ([2], [4]), "trust/retry"
+        moved = move_aside(root, 2)
+        assert (moved / "output_files" / "keep.rbf").exists(), "output_files must survive"
+        assert not seed_dir(root, 2).exists()
+    assert fit_knobs({"QUARTUS_AGGRESSIVE": "1", "OTHER": "z"}) == {"QUARTUS_AGGRESSIVE": "1"}
+    print("seed_sweep selftest: PASS")
+    return 0
 
 
 def main() -> int:
@@ -228,6 +385,24 @@ def main() -> int:
     ap.add_argument("--seeds", help="an explicit list, e.g. 1,2,5-8")
     ap.add_argument("--report", action="store_true", help="just rank the finished seeds")
     ap.add_argument("--top", type=int, default=10, help="how many rows the report prints")
+    ap.add_argument("--restart-stale", action="store_true",
+                    help="seeds recorded for a different identity are renamed seedNNN.stale-<time> "
+                         "(kept) and fitted afresh, instead of refusing the sweep")
+    ap.add_argument("--retry-failed", action="store_true",
+                    help="re-fit seeds recorded verdict=failed (old dir kept as .stale-<time>)")
+    ap.add_argument("--trust-existing", action="store_true",
+                    help="accept summaries written before identities existed")
+    ap.add_argument("--slot-dir", default=os.environ.get("FIT_SLOT_DIR"),
+                    help="host_slots directory: each seed holds one slot while it fits "
+                         "(env FIT_SLOT_DIR)")
+    ap.add_argument("--slot-max", type=int, default=int(os.environ.get("FIT_SLOT_MAX", "0") or 0),
+                    help="the ceiling for --slot-dir (env FIT_SLOT_MAX)")
+    ap.add_argument("--slot-all", action="store_true",
+                    help="also count every running container of the runtime against the ceiling")
+    ap.add_argument("--max-load", type=float, default=None,
+                    help="with --slot-dir: wait to start a fit while the 1-minute load average "
+                         "exceeds this")
+    ap.add_argument("--selftest", action="store_true", help="run the hardware-free logic checks")
     ap.add_argument("--prepare", action="store_true",
                     help="resolve the configuration and generate its PLL into the shared cache "
                          "(and have Quartus check its qsf_set), then exit without fitting - so "
@@ -235,6 +410,10 @@ def main() -> int:
     build_profile.add_override_args(ap)
     args = ap.parse_args()
 
+    if args.selftest:
+        return selftest()
+    if args.slot_dir and args.slot_max < 1:
+        ap.error("--slot-dir needs --slot-max N (N >= 1)")
     root = sweep_dir(args)
     root.mkdir(parents=True, exist_ok=True)
 
@@ -268,7 +447,7 @@ def main() -> int:
         return 1
     expected = resolved.stdout.strip()
     # One PLL generation for the whole sweep: every seed's copy shares the parent's cache.
-    os.environ["PC9821_PLL_CACHE"] = str(PROJECT_DIR / ".build" / "pll-cache")
+    os.environ.setdefault("PC9821_PLL_CACHE", str(PROJECT_DIR / ".build" / "pll-cache"))
     import profile_gen
     config = build_profile.config_from_record(json.loads(expected))
     with tempfile.TemporaryDirectory(prefix="seed-sweep-pll-") as tmp:
@@ -286,11 +465,27 @@ def main() -> int:
         log(f"prepared: {expected}")
         return 0
 
+    identity = make_identity(expected, source_hash(), fit_knobs())
+    stale, redo = classify_seeds(root, seeds, identity, trust_existing=args.trust_existing,
+                                 retry_failed=args.retry_failed)
+    if stale and not args.restart_stale:
+        log(f"REFUSING: seeds {stale} in {root} were fitted from a different source, profile or "
+            f"fit knobs (or predate identities); resuming would mix two designs in one ranking.\n"
+            f"  --restart-stale moves them aside (kept) and re-fits, --trust-existing accepts "
+            f"pre-identity summaries, or choose a fresh --dir.")
+        return 1
+    for sd_seed in stale + redo:
+        log(f"moved aside: {move_aside(root, sd_seed)}")
+    (root / "sweep.json").write_text(json.dumps(
+        {"identity": identity, "config": json.loads(expected), "knobs": fit_knobs()},
+        indent=1, sort_keys=True))
+    slots = ({"dir": args.slot_dir, "max": args.slot_max, "all": args.slot_all,
+              "max_load": args.max_load} if args.slot_dir else None)
     log(f"sweeping {len(seeds)} seeds of {' '.join(profile_argv)} with {args.jobs} jobs, "
         f"{args.retries} retries -> {root}")
     log(f"configuration: {expected}")
     with cf.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futs = {pool.submit(do_seed, root, s, profile_argv, expected, args.retries): s
+        futs = {pool.submit(do_seed, root, s, profile_argv, expected, args.retries, identity, slots): s
                 for s in seeds}
         for f in cf.as_completed(futs):
             f.result()   # surface any unexpected exception

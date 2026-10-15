@@ -435,6 +435,47 @@ if speaker_assign:
     # that the RHS carries a PIT output alongside the mute and not a constant.
     check("beep_mute" in speaker_rhs and re.search(r"pit_out\d", speaker_rhs) is not None,
           "speaker_out is driven by BOTH the PIT's tone and the system port's mute")
+    # tb_pc9821_beeper proves the tone is CHANNEL 1 (BANK4@0x4B2B) and the amplitude ladder,
+    # but on its OWN copy of this expression and of z486_mister.sv's amplitude block, so a
+    # system rewired to pit_out2 left it green (bench-audit 2026-10-12). Hold both copies to
+    # the shipped text.
+    beeper_tb = (ROOT / "tests/pc9821/tb_pc9821_beeper.sv").read_text()
+    norm = lambda t: re.sub(r"\s+", "", t)
+    tb_speaker = re.search(r"wire\s+speaker\s*=\s*([^;]*);", beeper_tb)
+    check(tb_speaker is not None and norm(tb_speaker.group(1)) == norm(speaker_rhs),
+          "pc9821_system's speaker_out is the expression tb_pc9821_beeper proves (channel 1, muted)")
+    top_src = (ROOT / "z486_mister.sv").read_text()
+    amp_re = r"spk\s*<=\s*\w+\s*\?\s*\(\{15'd0,\s*beep_vol\}\s*<<\s*(.*?)\)\s*:\s*17'd0\s*;"
+    def shift_of(text):
+        m = re.search(amp_re, text)
+        if not m:
+            return None
+        # the bench spells the shift (5'd10 + 5'd0); the top level spells it 10
+        return sum(int(x) for x in re.findall(r"(?:\d+'d)?(\d+)", re.sub(r"[()]", "", m.group(1))))
+    top_shift, tb_shift = shift_of(top_src), shift_of(beeper_tb)
+    check(top_shift is not None and top_shift == tb_shift,
+          f"z486_mister.sv's speaker amplitude ({{15'd0, beep_vol}} << {top_shift}) is the block "
+          f"tb_pc9821_beeper mirrors (<< {tb_shift})")
+
+# The slave 8259's request lines are wired in pc9821_system's `.slave_irq({...})`
+# concatenation, and the benches that prove a device's IRQ lands on its vector
+# (tb_pc9821_opna_timers on IR4 = vector 0x14, the mouse on IR5, the FDC on IR3) each build
+# their OWN copy of that concatenation, so a reordered or dropped term in the system would
+# leave every one of them green (bench-audit 2026-10-12). Hold the real one here, bit by
+# bit, MSB first: IR7 calendar, IR6 none, IR5 bus mouse (NP2kai io/mouseif.c:135
+# `pic_setirq(0x0d)`), IR4 the sound card's INT5 = IRQ12 (OPNA timers and 86-PCM),
+# IR3 FDC (the BIOS's vector 0x13 ISR), IR2 the FDC's 2DD-window IRQ10, IR1 IDE (HDD and
+# CD share the one channel IRQ), IR0 none.
+slave = re.search(r"\.slave_irq\s*\(\s*\{([^}]*)\}\s*\)", system_src)
+check(slave is not None, "pc9821_system.sv wires the slave PIC as a .slave_irq({...}) concatenation")
+if slave:
+    terms = [re.sub(r"\s+", "", t) for t in slave.group(1).split(",")]
+    want = [{"cal_irq"}, {"1'b0"}, {"mouse_irq"}, {"opna_irq", "pcm86_irq"}, {"fdc_irq"},
+            {"fdc_irq10"}, {"ata_irq", "cd_irq"}, {"1'b0"}]
+    got = [set(t.split("|")) for t in terms]
+    check(got == want,
+          f"the slave PIC's IR7..IR0 are calendar, -, mouse, OPNA|PCM86, FDC, FDC-2DD, IDE|CD, - "
+          f"(found {terms})")
 
 print()
 for n in NOTE:

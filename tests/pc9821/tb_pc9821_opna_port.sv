@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // ==== WHAT THIS PROVES ====
-// The PC-9801-86 board's DATA SHADOW through the real I/O bus: after a write to the low select port 0x188 alone, a read of the data port 0x18A answers the byte that write carried, and the extended data port 0x18E answers that shadow for every extended register except 0x08 and 0x0F, which are the only two NP2kai reads from the chip. Both expectations come from the board model itself (NP2kai cbus/board86.c opna_o188 assigns s.addrl AND s.data; opna_i18a returns s.data above 0x0F and below 0xFF; opna_o18e reads the chip only for addrh 0x08 and 0x0F), not from this RTL. It does NOT assert the 3ch/6ch stereo switch, which needs a vendored file, and it does not assert the chip's own register contents. It also pins the review's S1 same-cycle case: a queued write's drain fire meeting a host status read's S_BYTE must never corrupt the read - the fire holds the chip port to the host and retries - across a swept-phase stream of 0x188 reads whose bytes must all show the flags 0x00, never the data-port case.
+// The PC-9801-86 board's DATA SHADOW through the real I/O bus: after a write to the low select port 0x188 alone, a read of the data port 0x18A answers the byte that write carried, and the extended data port 0x18E answers that shadow for every extended register except 0x08 and 0x0F, which are the only two NP2kai reads from the chip - and 0x0F IS answered from the chip (NP2kai s.reg[0x10F], 0x00 after reset), not the shadow; the 0x08 side (adpcm_readsample) is not asserted. Both expectations come from the board model itself (NP2kai cbus/board86.c opna_o188 assigns s.addrl AND s.data; opna_i18a returns s.data above 0x0F and below 0xFF; opna_o18e reads the chip only for addrh 0x08 and 0x0F), not from this RTL. It does NOT assert the 3ch/6ch stereo switch, which needs a vendored file, and it does not assert the chip's own register contents. It also pins the review's S1 same-cycle case: a queued write's drain fire meeting a host status read's S_BYTE must never corrupt the read - the fire holds the chip port to the host and retries - across a swept-phase stream of 0x188 reads whose bytes must all show the flags 0x00, never the data-port case.
 //
 // The PC-9801-86 board's DATA SHADOW through the real I/O bus: after a write to the low select port 0x188 alone, a read of the data port 0x18A answers the byte that write carried, and the extended data port 0x18E answers that shadow for every extended register except 0x08 and 0x0F, which are the only two NP2kai reads from the chip. Both expectations come from the board model itself (NP2kai cbus/board86.c opna_o188 assigns s.addrl AND s.data; opna_i18a returns s.data above 0x0F and below 0xFF; opna_o18e reads the chip only for addrh 0x08 and 0x0F), not from this RTL. It does NOT assert the 3ch/6ch stereo switch, which needs a vendored file, and it does not assert the chip's own register contents.
 //
@@ -43,6 +43,7 @@ module tb_pc9821_opna_port;
   wire ide_ram_gate;   // 0x1E8E's IDE work-RAM gate (the iobus drives it; unused here)
   reg  [5:0] joystick = 6'b111111;   // the game port's switch lines, released
   wire [7:0] win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire sys16m_en;   // 0x043B bit 2, the 15-16 MiB system-space window
   wire a20_enable, cpu_reset_req;
   wire [15:0] unmapped_writes, unmapped_reads, last_unmapped_port;
@@ -321,6 +322,21 @@ module tb_pc9821_opna_port;
     read_raw (16'h018E, got);
     if (got !== 8'h7E)
       fail("the extended data shadow must follow the extended select byte to any address outside 0x08/0x0F");
+
+    // ---- 6b. ...and 0x0F IS a chip read, not the shadow ----
+    // The other half of opna_i18e (cbus/board86.c:100-102: `if ((nAddress == 0x08)
+    // || (nAddress == 0x0f)) return opna_readExtendedRegister(...)`). For 0x0F that
+    // returns s.reg[0x10F] (sound/opna.c:629 `return opna->s.reg[nAddress + 0x100];`),
+    // which opna_reset's memset leaves 0 (sound/opna.c:133, and :137-140 seed only
+    // low-bank registers) and nothing in this bench writes. The 0x18C write just
+    // moved the shadow to 0x0F (opna_o18c: s.data = dat), so a board that answered
+    // 0x0F from the shadow reads 0x0F here instead of the reference's 0x00. Without
+    // this the bench asserted only the shadow side of the split and a 0x0F (or
+    // 0x08) routed to the shadow passed (bench-audit mutation, 2026-10-12).
+    write_byte(16'h018C, 8'h0F);
+    read_raw (16'h018E, got);
+    if (got !== 8'h00)
+      fail($sformatf("extended register 0x0F must be read from the chip (NP2kai opna_i18e -> s.reg[0x10F] = 00 after reset), got %02h", got));
 
     // ---- 7. 0x18C still answers the CHIP's extended status ----
     // opna_i18c returns opna_readExtendedStatus when extended. This bench only

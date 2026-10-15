@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // ==== WHAT THIS PROVES ====
-// Drives the real pc9821_pic with every 8259 register the machine can reach - ICW1-4, OCW1/OCW2/OCW3 - and checks each result against NP2kai io/pic.c, one named case per register semantics. OCW3 special mask mode (ESMM/SMM) and OCW2 priority rotation (R/SL/EOI) are implemented and asserted, so those cases pass. ICW1 keeping the in-service register is asserted against NP2kai's own contract (io/pic.c:326-337 leaves the isr clear disabled inside #if 0; FAIL-FIRST against the old clear, review-interrupts F1). The four cases where NP2kai's model itself diverges from the datasheet (its RIS latches without RR, its ICW3 count ignores SNGL, its ICW4 ignores AEOI, its reset presets the IMR) print a WAIVED line and are not asserted: the RTL follows the datasheet and qemu. AEOI is implemented in full against that datasheet/QEMU/ao486 answer: no ISR bit is set in AEOI mode and an OCW2 with R=1, SL=0, EOI=0 arms rotate-on-auto-EOI, so each acknowledge advances the priority pointer and the second of two pending levels is serviced (asserted). The in-service block is asserted to follow that rotation base too: with pry=3 an IRQ4 already in service blocks IRQ0 and permits IRQ3.
+// Drives the real pc9821_pic with every 8259 register the machine can reach - ICW1-4, OCW1/OCW2/OCW3 - and checks each result against NP2kai io/pic.c, one named case per register semantics. OCW3 special mask mode (ESMM/SMM) and OCW2 priority rotation (R/SL/EOI) are implemented and asserted, so those cases pass. ICW1 keeping the in-service register is asserted against NP2kai's own contract (io/pic.c:326-337 leaves the isr clear disabled inside #if 0; FAIL-FIRST against the old clear, review-interrupts F1). The four cases where NP2kai's model itself diverges from the datasheet (its RIS latches without RR, its ICW3 count ignores SNGL, its ICW4 ignores AEOI, its reset presets the IMR) print a WAIVED line instead of asserting NP2kai: three of them assert the RTL against QEMU hw/intc/i8259.c instead (RIS gated on RR, SNGL ending the sequence after ICW2, AEOI setting no ISR bit), and the reset IMR (RTL 0xFF; QEMU and MAME 0x00) is not asserted because the ITF programs the IMR before enabling interrupts. The vector takes ICW2 bits 7:3 only (pic.c `(icw[1] & 0xf8) | num`), asserted both tracked and at the acknowledge edge. AEOI is implemented in full against that datasheet/QEMU/ao486 answer: no ISR bit is set in AEOI mode and an OCW2 with R=1, SL=0, EOI=0 arms rotate-on-auto-EOI, so each acknowledge advances the priority pointer and the second of two pending levels is serviced (asserted). The in-service block is asserted to follow that rotation base too: with pry=3 an IRQ4 already in service blocks IRQ0 and permits IRQ3.
 
 `default_nettype none
 
@@ -57,6 +57,21 @@ module tb_pc9821_pic_ref;
       waivers = waivers + 1;
       $display("WAIVED   %0s: rtl=0x%02x np2kai=0x%02x (RTL follows the datasheet/QEMU)",
                name, rtl[7:0], np2[7:0]);
+    end
+  endtask
+
+  // A waiver that still ASSERTS the RTL: NP2kai is waived, but the answer the RTL claims
+  // to follow (QEMU hw/intc/i8259.c, the datasheet's behaviour) is checked, so a waived
+  // case cannot hide a regression of the very behaviour the waiver credits.
+  task automatic waive_qemu(input [8*40-1:0] name, input [15:0] rtl, input [15:0] np2,
+                            input [15:0] qemu);
+    begin
+      waive(name, rtl, np2);
+      if (rtl[7:0] !== qemu[7:0]) begin
+        $display("MISMATCH %0s: rtl=0x%02x qemu=0x%02x (the answer the waiver credits)",
+                 name, rtl[7:0], qemu[7:0]);
+        errors = errors + 1;
+      end
     end
   endtask
 
@@ -261,7 +276,10 @@ module tb_pc9821_pic_ref;
 
     // ---- 10. NP2kai reset presets the IMR (def_master imr=0x7d, pic.c:45) ----
     // The 8259's IMR is undefined at reset; NP2kai starts at the ITF's own value. The
-    // RTL's all-masked 0xFF is the safe datasheet behaviour (qemu pic_reset_common).
+    // RTL's all-masked 0xFF is a safety choice that NO reference makes: QEMU's
+    // pic_reset_common sets `s->imr = 0` (hw/intc/i8259_common.c:40) and MAME's
+    // device_reset `m_imr = 0` (pic8259.cpp:437). Not asserted: the ITF writes the IMR
+    // before it enables interrupts, so the reset value is not guest-observable.
     reset_pic();
     read_dat(rv);
     waive("reset_imr", rv, 8'h7D);
@@ -292,6 +310,34 @@ module tb_pc9821_pic_ref;
     write_cmd(8'h09);                   // RR=0, RIS=1
     read_cmd(rv);
     waive("ocw3_ris_without_rr", rv, 8'h02);
+    // The waiver above prints NP2kai's answer; the RTL's own (datasheet) answer is
+    // ASSERTED here, or a RIS applied without RR would pass as "waived". QEMU
+    // hw/intc/i8259.c:249-250 (`if (val & 0x02) s->read_reg_select = val & 1;`) and
+    // MAME pic8259.cpp:266-267 (`if (BIT(data, 1)) m_ocw3 = ...`) both gate RIS on RR,
+    // so the read register stays the IRR, which the acknowledge has cleared.
+    check("ocw3_ris_without_rr_keeps_irr", rv, 8'h00);
+    // The other side of the same gate, where all three references agree (NP2kai's
+    // pic.c:315-318 ORs the OLD RIS back in): with the ISR selected, an OCW3 with RR=0
+    // and RIS=0 leaves the ISR selected.
+    write_cmd(8'h0B);                   // RR=1, RIS=1: select the ISR
+    write_cmd(8'h08);                   // RR=0, RIS=0: no read-register change
+    read_cmd(rv);
+    check("ocw3_rr0_keeps_isr_selected", rv, 8'h02);
+
+    // ---- 12b. the vector takes ICW2's T7-T3 only (pic.c:206 `(icw[1] & 0xf8) | num`) ----
+    // Every other case programs the ITF's aligned 0x08, where the AND is invisible.
+    reset_pic();
+    write_cmd(8'h11); write_dat(8'h0D); write_dat(8'h80);
+    write_dat(8'h1D); write_dat(8'h00);
+    ir_in = 8'h02;                      // IRQ1
+    repeat (6) @(negedge clk);
+    check("vec_icw2_low_bits_ignored", int_vec, 8'h09);
+    // The acknowledge edge LATCHES its own copy of the vector (the one the bridge reads
+    // back), held only while INT is held low after the INTA; sample it there.
+    @(negedge clk); inta = 1;
+    @(negedge clk); inta = 0;
+    check("vec_icw2_low_bits_ignored_at_ack", int_vec, 8'h09);
+    repeat (6) @(negedge clk);
 
     // ---- 13. NP2kai stores ICW4 but never reads AEOI (pic.c:336/363) ----
     // Which reference governs AEOI: this RTL follows the DATASHEET (and qemu/ao486, which
@@ -306,7 +352,8 @@ module tb_pc9821_pic_ref;
     repeat (6) @(negedge clk);
     ack();
     write_cmd(8'h0B); read_cmd(rv);
-    waive("icw4_aeoi", rv, 8'h02);
+    // QEMU i8259.c:159 `if (s->auto_eoi)` acknowledges without setting the ISR bit.
+    waive_qemu("icw4_aeoi", rv, 8'h02, 8'h00);
 
     // ---- 13b. AEOI's rotate-on-auto-EOI, from ao486 rtl/soc/pic/pic.v ----
     // NP2kai does not implement AEOI, so the datasheet/QEMU/ao486 answer governs: OCW2 with
@@ -362,7 +409,9 @@ module tb_pc9821_pic_ref;
     reset_pic();
     write_cmd(8'h12); write_dat(8'h08); write_dat(8'h7F);
     read_dat(rv);
-    waive("icw1_sngl_sequence", rv, 8'h00);
+    // QEMU i8259.c:303 `s->init_state = s->single_mode ? (s->init4 ? 3 : 0) : 2;` ends
+    // the sequence after ICW2, so the third write is the IMR.
+    waive_qemu("icw1_sngl_sequence", rv, 8'h00, 8'h7F);
 
     // ==== VERDICT ====
     $display("NOTE pic_ref: %0d cases, %0d mismatched, %0d waived", cases, errors, waivers);

@@ -52,7 +52,7 @@ SKIP_DIRS = {"build", ".git", ".build", ".worktrees", "output_files", "__pycache
 SKIP_REL = ("src/z486/",)
 SKIP_SUFFIX = (".rpt", ".qpf", ".sof", ".rbf", ".bin", ".hex", ".mif", ".png",
                ".wav", ".jpg", ".gif", ".o", ".a", ".so", ".elf", ".img",
-               ".vcd", ".gch")
+               ".vcd", ".gch", ".com", ".COM")  # .com: built DOS probes; their .s source is walked
 
 problems: list[str] = []
 

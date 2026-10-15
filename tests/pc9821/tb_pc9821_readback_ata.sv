@@ -20,7 +20,9 @@
 //  unit has no drive at all. This model's selected bank is channel_reg[0] and
 //  its connected device is the mounted image, so the arm is
 //  `device_present ? 0x02 : 0x00`. The machine's idle capture (probes/PROBE.TXT
-//  `0432=00 0433=00`) pins the 0x00 at bank 0; the report's P5 confirm-method
+//  `0432=00 0433=00`, at its EMPTY bank 0 - its CF card is in the CD connector)
+//  pins the 0x00 at an empty bank; this core's empty bank is bank 1 (the fixed layout,
+//  the hard disk on bank 0, owner 2026-10-11); the report's P5 confirm-method
 //  (probe with an IRQ pending AND with/without a drive) is still owed on real
 //  hardware, but the reference settles the SEMANTICS this bench pins: the
 //  answer must not move with the IRQ line at all.
@@ -111,14 +113,14 @@ module tb_pc9821_readback_ata;
     rst_n = 1;
     repeat (4) @(posedge clk);
 
-    // (a) Bank 0x00 selects a unit with no interface: 0x00, the machine's idle
-    // capture (`0432=00 0433=00`, probes/PROBE.TXT).
-    write_byte(16'h0432, 8'h00);
-    expect_port(16'h0433, 8'h00, "a bank 0 reports no connected device (machine 00)");
-
-    // (b) Bank 0x01 selects the built-in interface with the image mounted:
-    // bit 1 set - and NOTHING ELSE: the port is not an IRQ flag.
+    // (a) Bank 0x01 selects a unit with no interface (no CD in this bench): 0x00, the
+    // machine's idle capture at its empty bank (`0432=00 0433=00`, probes/PROBE.TXT).
     write_byte(16'h0432, 8'h01);
+    expect_port(16'h0433, 8'h00, "a the empty bank reports no connected device (machine 00)");
+
+    // (b) Bank 0x00 selects the hard disk with the image mounted:
+    // bit 1 set - and NOTHING ELSE: the port is not an IRQ flag.
+    write_byte(16'h0432, 8'h00);
     expect_port(16'h0433, 8'h02, "b the selected bank has a connected device");
 
     // ...even with an IRQ pending. IDENTIFY raises it (and DRQ); the old arm

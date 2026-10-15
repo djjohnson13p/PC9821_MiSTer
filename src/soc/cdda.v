@@ -28,6 +28,28 @@ localparam SECTOR_SIZE  = 2352*8/32;
 localparam BUFFER_WIDTH = $clog2(2 * SECTOR_SIZE);
 localparam BUFFER_SIZE  = 2**BUFFER_WIDTH;
 
+// The accumulator's step (88200) and wrap threshold (CLK_AUDIO_RATE) share a common factor G
+// (600 at 24.576 MHz), and the counter only ever holds multiples of G (it starts at 0, adds 88200
+// and subtracts CLK_AUDIO_RATE), so it runs in units of G: step 147, threshold 40960, 16 bits
+// instead of 32. The toggle instants are identical clock for clock.
+function automatic integer gcd(input integer a, input integer b);
+	integer x, y, t;
+	begin
+		x = a; y = b;
+		while (y != 0) begin t = x % y; x = y; y = t; end
+		gcd = x;
+	end
+endfunction
+localparam integer DIV_G    = gcd(CLK_AUDIO_RATE, 88200);
+localparam integer DIV_STEP = 88200 / DIV_G;
+localparam integer DIV_WRAP = CLK_AUDIO_RATE / DIV_G;
+localparam integer CNT_W    = $clog2(DIV_WRAP + DIV_STEP);
+/* verilator lint_off WIDTHTRUNC */   // CNT_W = $clog2(DIV_WRAP+DIV_STEP) bits hold both values, so
+                                      // narrowing the 32-bit integers drops only zero bits
+localparam [CNT_W-1:0] DIV_STEP_V = DIV_STEP;
+localparam [CNT_W-1:0] DIV_WRAP_V = DIV_WRAP;
+/* verilator lint_on WIDTHTRUNC */
+
 // Power-up state (review r2-resets F3): the CLK_AUDIO domain has no reset and
 // the seeds below are the whole of its initialisation. Unseeded, the fractional
 // divider X-locks in 4-state sim (clk_44100_cnt <= X + 88200 = X and the wrap
@@ -37,12 +59,12 @@ localparam BUFFER_SIZE  = 2**BUFFER_WIDTH;
 // wraps; the ring starts empty (read_addr == write_addr) so the drain emits
 // silence until the first CDDA_WR.
 reg         clk_44100 = 0;
-reg  [31:0] clk_44100_cnt = 0;
+reg  [CNT_W-1:0] clk_44100_cnt = 0;
 // 88200 = 2 x 44100, the accumulator step that makes CLK_AUDIO_RATE (24576000, the wrap
 // threshold and the named side of this arithmetic) the sample rate: the counter adds a toggle
 // period's worth per CLK_AUDIO cycle, so clk_44100 toggles every CLK_AUDIO_RATE/88200 = 278.64
 // CLK_AUDIO cycles (88.2 kHz) and AUDIO_CE pulses on its rising half at 44100 Hz.
-wire [31:0] clk_44100_cnt_next = clk_44100_cnt + 88200;
+wire [CNT_W-1:0] clk_44100_cnt_next = clk_44100_cnt + DIV_STEP_V;
 wire [15:0] audio_l_clk_audio, audio_r_clk_audio;
 reg [15:0] audio_l = 0;
 reg [15:0] audio_r = 0;
@@ -62,9 +84,9 @@ always @(posedge CLK_AUDIO) begin
 	reg old_clk = 0;
 
 	clk_44100_cnt <= clk_44100_cnt_next;
-	if (clk_44100_cnt_next >= CLK_AUDIO_RATE) begin
+	if (clk_44100_cnt_next >= DIV_WRAP_V) begin
 		clk_44100 <= ~clk_44100;
-		clk_44100_cnt <= clk_44100_cnt_next - CLK_AUDIO_RATE;
+		clk_44100_cnt <= clk_44100_cnt_next - DIV_WRAP_V;
 	end
 
 	AUDIO_CE <= 0;

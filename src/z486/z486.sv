@@ -674,6 +674,7 @@ wire       jcc_fold_active;            // not-taken Jcc occupies reclaimed slot
 // These nets feed module ports before their generating logic appears below.
 // Declare them here so XSim cannot create disconnected implicit one-bit nets.
 wire [31:0] spec_target_lin;
+wire [31:0] spec_target_off;          // spec_target_lin's offset addend (CS_base + it)
 wire        pf_spec_req;
 reg         pf_spec_owner_r;
 wire        pf_spec_store;
@@ -1089,6 +1090,8 @@ prefetch prefetch_inst (
     // z486 speculative branch-target line
     .spec_req(pf_spec_req),
     .spec_linear(spec_target_lin),
+    .spec_lin_a(CS_base),
+    .spec_lin_b(spec_target_off),
     .spec_owner(pf_spec_owner_r),
     .spec_store_valid(pf_spec_store),
     .spec_store_line(pf_spec_store_line),
@@ -1132,7 +1135,8 @@ always_ff @(posedge clk) begin
     if (ret_issue)
         ret_pred_r <= rsb[rsb_top_r];
 end
-assign spec_target_lin = CS_base + (d2_ret_pred ? rsb[rsb_top_r] : spec_target_eip);
+assign spec_target_off = d2_ret_pred ? rsb[rsb_top_r] : spec_target_eip;
+assign spec_target_lin = CS_base + spec_target_off;
 // A relative branch in D2 requests its target line; an EIP write cancels the request.
 wire        eip_write_now = branch_ustep_redirect || ret_redirect ||
                             (uc_exec && ((uc_dest == DEST_EIP) || (uc_dest == DEST_eIP) ||
@@ -1916,6 +1920,31 @@ segmentation_unit seg_unit (
     .au_ind_delta(IND_DELTA)
 );
 
+// synthesis translate_off
+// segmentation_unit keys the LAR/LLIM/LBAS read-backs on uc_seg_target, not
+// on seg_cmd_target (init_final_seg in an issue cycle). That is exact only
+// while no word reading them (ind_op LAR 6, LLIM 7, LBAS 8; the ROM predecode
+// folds MOV r,TRn's LPCR into 8) executes in a D2 issue cycle.
+always_ff @(posedge clk) begin
+    if (reset_n && uc_exec && i_issue &&
+        (uc_ind_ctrl[3:0] == 4'd6 || uc_ind_ctrl[3:0] == 4'd7 ||
+         uc_ind_ctrl[3:0] == 4'd8))
+        $fatal(1, "LAR/LLIM/LBAS word executes in a D2 issue cycle: uc_addr=%h ind_op=%0d",
+               uc_addr, uc_ind_ctrl[3:0]);
+end
+// The descriptor-cache writes (SBRM, SAR, SLIM, SLIM_TABLE, SBAS, SDEH, SDES,
+// SDEL, DESC) are keyed by the microcode command and target, not by
+// seg_cmd/seg_cmd_target (INIT_SEG in an issue cycle, which drops them). That
+// is exact only while no word carrying one executes in a D2 issue cycle.
+always_ff @(posedge clk) begin
+    if (reset_n && uc_exec && i_issue &&
+        ((uc_seg_cmd >= SEG_CMD_SBRM && uc_seg_cmd <= SEG_CMD_SDEL) ||
+         uc_seg_cmd == SEG_CMD_DESC))
+        $fatal(1, "descriptor-cache write executes in a D2 issue cycle: uc_addr=%h seg_cmd=%0d",
+               uc_addr, uc_seg_cmd);
+end
+// synthesis translate_on
+
 // Execution-relocation view of the microcode segment command.
 always_comb begin
     uc_seg_cmd = SEG_CMD_NONE;
@@ -1977,15 +2006,17 @@ always_comb begin
     end
 end
 
+// seg_cmd_data is read only by the descriptor-cache writes, which decode the
+// microcode command under uc_exec and never execute in an issue cycle (asserted
+// above), so it carries the microcode payload with no issue mux.
 always_comb begin
+    seg_cmd_data = uc_seg_data;
     if (i_issue) begin
         seg_cmd = SEG_CMD_INIT_SEG;
         seg_cmd_target = init_final_seg;
-        seg_cmd_data = dest_value;
     end else begin
         seg_cmd = uc_seg_cmd;
         seg_cmd_target = uc_seg_target;
-        seg_cmd_data = uc_seg_data;
     end
 end
 

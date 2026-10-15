@@ -654,12 +654,29 @@ module pc9821_cg (
     end
   endfunction
 
-  reg [CFG_SEED_LEN-1:0] cfg_seed_match;
-  reg [4:0]              cfg_j;
-  always @(*) begin
-    for (cfg_j = 5'd0; cfg_j < CFG_SEED_LEN; cfg_j = cfg_j + 5'd1)
-      cfg_seed_match[cfg_j] = cfg_seed_en && (cg_rd_addr == cfg_seed_addr(cfg_j));
-  end
+  // The seeded cell a CG-RAM address names: {hit, cell index}. The cells are distinct, so the
+  // decode is one-hot by construction. Fourteen of the twenty are the record at CG_RECORD_ADDR
+  // (cells 6..19 = record byte 0..13), one contiguous run decoded by a range and an offset, not by
+  // fourteen full-width compares (tools/equiv/cg_seed_decode.sv proves it equal to the compare
+  // against cfg_seed_addr(j) for every address).
+  function automatic [5:0] cfg_seed_dec(input [12:0] a);
+    begin
+      if ((a[12:4] == CG_RECORD_ADDR[12:4]) && (a[3:0] <= 4'd13))
+        cfg_seed_dec = {1'b1, 1'b0, a[3:0]} + 6'd6;
+      else begin
+        case (a)
+          13'h0497: cfg_seed_dec = {1'b1, 5'd0};
+          13'h1CA7: cfg_seed_dec = {1'b1, 5'd1};
+          13'h1C67: cfg_seed_dec = {1'b1, 5'd2};
+          13'h1C6D: cfg_seed_dec = {1'b1, 5'd3};
+          13'h1C6E: cfg_seed_dec = {1'b1, 5'd4};
+          13'h1C6F: cfg_seed_dec = {1'b1, 5'd5};
+          default:  cfg_seed_dec = 6'd0;
+        endcase
+      end
+    end
+  endfunction
+  wire [5:0] cfg_seed_rd = cfg_seed_dec(cg_rd_addr);
   // THE READ ECHO (the KANJI CG-RAM test's write-then-read). A "written this pass" mark per
   // covered cell: while it is set the CPU's read answers the RAM - which holds the guest's
   // own last write, because guest writes commit (see above) - so the KANJI test's
@@ -670,7 +687,7 @@ module pc9821_cg (
   // machine-reset window, where every mark is held clear, so a set mark always names a
   // guest byte.)
   reg [CFG_SEED_LEN-1:0] cfg_wt_written;            // "written this pass", per cell
-  reg [4:0] cfg_wt_j;
+  wire [5:0] cfg_seed_wr = cfg_seed_dec(cg_wr_addr);
   /* verilator lint_off PROCASSINIT */   // the initialisers are the registers' power-up values
   initial begin
     cfg_wt_written = {CFG_SEED_LEN{1'b0}};
@@ -680,22 +697,11 @@ module pc9821_cg (
     if (!rst_n_sys || cfg_seed_reload) begin
       cfg_wt_written <= {CFG_SEED_LEN{1'b0}};
     end else if (cg_we && cfg_seed_en) begin
-      for (cfg_wt_j = 5'd0; cfg_wt_j < CFG_SEED_LEN; cfg_wt_j = cfg_wt_j + 5'd1)
-        if (cg_wr_addr == cfg_seed_addr(cfg_wt_j))
-          cfg_wt_written[cfg_wt_j] <= 1'b1;
+      if (cfg_seed_wr[5]) cfg_wt_written[cfg_seed_wr[4:0]] <= 1'b1;
     end
   end
   // Only one can match: the twenty addresses are distinct.
-  wire [4:0] cfg_seed_sel = cfg_seed_match[19] ? 5'd19 : cfg_seed_match[18] ? 5'd18 :
-                            cfg_seed_match[17] ? 5'd17 : cfg_seed_match[16] ? 5'd16 :
-                            cfg_seed_match[15] ? 5'd15 : cfg_seed_match[14] ? 5'd14 :
-                            cfg_seed_match[13] ? 5'd13 : cfg_seed_match[12] ? 5'd12 :
-                            cfg_seed_match[11] ? 5'd11 : cfg_seed_match[10] ? 5'd10 :
-                            cfg_seed_match[9]  ? 5'd9  : cfg_seed_match[8]  ? 5'd8  :
-                            cfg_seed_match[7]  ? 5'd7  : cfg_seed_match[6]  ? 5'd6  :
-                            cfg_seed_match[5]  ? 5'd5  : cfg_seed_match[4]  ? 5'd4  :
-                            cfg_seed_match[3]  ? 5'd3  : cfg_seed_match[2]  ? 5'd2  :
-                            cfg_seed_match[1]  ? 5'd1  : 5'd0;
+  wire [4:0] cfg_seed_sel = cfg_seed_rd[4:0];   // a don't-care without a hit, which gates every use below
   /* verilator lint_off PROCASSINIT */   // the initialisers are the registers' power-up values
   reg        cfg_seed_hit_q = 1'b0;
   reg  [7:0] cfg_seed_read_q = 8'd0;
@@ -709,7 +715,7 @@ module pc9821_cg (
   always @(posedge clk_sys) begin
     // The compare is registered so that the fallback and the array answer on the SAME cycle:
     // pc9821_dpram's q_a is a registered read, and cg_ram_q must stay one.
-    cfg_seed_hit_q  <= |cfg_seed_match;
+    cfg_seed_hit_q  <= cfg_seed_en && cfg_seed_rd[5];
     cfg_seed_read_q <= cfg_seed_byte(cfg_seed_sel);
     cfg_wt_hit_q    <= cfg_wt_written[cfg_seed_sel];
   end

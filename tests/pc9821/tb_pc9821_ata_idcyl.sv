@@ -4,7 +4,7 @@
 
 // ==== WHAT THIS PROVES ====
 // TB_PC9821_ATA_IDCYL:
-// The IDENTIFY geometry words across every capacity class that separates implementations: each capacity is set, IDENTIFY is issued, the whole 256-word block is consumed through the task file and word 1 (the factory-default 16-head/63-sector cylinder count floor(capacity/1008)) and word 54 (the current 8-head/17-sector count floor(capacity/136)) are compared against the bench's own integer division, each clamped at 0xFFFF - the clamp boundary 136*65536 and its neighbours, a capacity whose quotient is exactly 0xFFFF, and capacities up to 2^32 whose quotient the 16-bit field cannot hold. The module computes both with a two-pass 32-clock shift-and-subtract divider; the bench passes against either arithmetic, so it pins the answer rather than the divider.
+// The IDENTIFY geometry words across every capacity class that separates implementations: each capacity is set, IDENTIFY is issued, the whole 256-word block is consumed through the task file and word 1 (the factory-default 16-head/63-sector cylinder count floor(capacity/1008)) and word 54 (the current 8-head/17-sector count floor(capacity/136)) are compared against the bench's own integer division, each clamped at 0xFFFF - the clamp boundary 136*65536 and its neighbours, a capacity whose quotient is exactly 0xFFFF, and capacities up to 2^32 whose quotient the 16-bit field cannot hold. The module computes both with a free-running two-pass 32-clock shift-and-subtract divider that publishes a changed capacity within 96 clocks and the bench waits 160 after each change; the bench passes against either arithmetic, so it pins the answer rather than the divider.
 
 
 module tb_pc9821_ata_idcyl;
@@ -155,13 +155,14 @@ module tb_pc9821_ata_idcyl;
     repeat (4) @(posedge clk);
     @(negedge clk);
     rst_n = 1;
-    write_byte(16'h0432, 8'h01);   // select the bank the interface is on
+    write_byte(16'h0432, 8'h00);   // select the bank the interface is on
 
     for (i = 0; i < NCAP; i = i + 1) begin
       capacity = caps[i];
-      // The module recomputes over two 32-clock divider passes; the wait is long
-      // enough for either form, so the same bench pins both.
-      repeat (80) @(posedge clk);
+      // The divider free-runs in 32-clock passes, alternating the two divisors, and a pass that
+      // started before the capacity changed publishes the old value: the worst case for a word
+      // is that pass, one pass of the other divisor, then its own = 96 clocks. 160 covers it.
+      repeat (160) @(posedge clk);
       exp_default = want_default_cylinders(caps[i]);
       exp_current = want_current_cylinders(caps[i]);
 

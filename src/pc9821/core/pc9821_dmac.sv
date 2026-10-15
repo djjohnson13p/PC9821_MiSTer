@@ -109,9 +109,32 @@ module pc9821_dmac (
   // fdc-dma D5). The reload the engine performs is 8237-datasheet behaviour adopted over
   // that NP2kai gap, and tb_pc9821_dma_vram names it as such.
   reg [30:0] ch_addr [0:3];      // live, and what a transfer walks
-  reg [30:0] ch_addr_org[0:3];   // as programmed, for autoinitialize
   reg [15:0] ch_count[0:3];      // live, and what a transfer counts down
-  reg [15:0] ch_count_org[0:3];  // as programmed, for autoinitialize
+
+  // The AS-PROGRAMMED copies, for autoinitialize: per channel {count[15:0], address[23:0]} (address
+  // bits 30:24 of the live register are never programmed, so the copy carries 24). Only the CPU's
+  // writes and the S_FIN reload touch it, never a read-back, so it lives in block RAM instead of 160
+  // flops and the 4:1 reload muxes: five byte-wide memories (Quartus 17 infers no byte-enabled RAM
+  // from lane writes of one wide array, and a read-modify-write of a wide word would need a read of
+  // a channel the engine is not on), written a byte lane at a time as the guest programs the
+  // halves and read back by the channel the engine is on. `cur` holds still from S_IDLE through
+  // S_FIN, so the registered read has long arrived by the S_FIN that uses it. A guest write to
+  // the ACTIVE channel's copy in the single cycle BEFORE its own autoinitializing S_FIN is seen one
+  // cycle late (an I/O write racing the final byte's bookkeeping by one clock; the chip has no
+  // defined winner there either). No reset: the programmed copy is not cleared by a reset (an
+  // 8237's base registers are not), and the `initial` below is the power-on zero.
+  (* ramstyle = "M10K, no_rw_check" *) reg [7:0] org_a0 [0:3];   // address 7:0
+  (* ramstyle = "M10K, no_rw_check" *) reg [7:0] org_a1 [0:3];   // address 15:8
+  (* ramstyle = "M10K, no_rw_check" *) reg [7:0] org_a2 [0:3];   // address 23:16
+  (* ramstyle = "M10K, no_rw_check" *) reg [7:0] org_c0 [0:3];   // count 7:0
+  (* ramstyle = "M10K, no_rw_check" *) reg [7:0] org_c1 [0:3];   // count 15:8
+  initial begin
+    for (int k = 0; k < 4; k++) begin
+      org_a0[k] = 8'h00; org_a1[k] = 8'h00; org_a2[k] = 8'h00; org_c0[k] = 8'h00; org_c1[k] = 8'h00;
+    end
+  end
+  reg [7:0] org_qa0, org_qa1, org_qa2, org_qc0, org_qc1;
+  wire [39:0] org_q = {org_qc1, org_qc0, org_qa2, org_qa1, org_qa0};
   reg [7:0]  ch_mode [0:3];
   reg [1:0]  ch_bound[0:3];
 
@@ -224,10 +247,10 @@ module pc9821_dmac (
   // transfer and 0xFFFF is 65536; testing BEFORE the decrement is what makes it N+1 (and
   // matches mem/dmax86.c's test-before-decrement). At TC: autoinitialize reloads, or the
   // 8237's counter wraps to 0xFFFF and the channel masks itself.
-  wire [30:0] addr_base = (fin_tc && autoinit) ? ch_addr_org[cur]
+  wire [30:0] addr_base = (fin_tc && autoinit) ? {7'd0, org_q[23:0]}
                         : (ch_mode[cur][5] ? (ch_addr[cur] - 31'd1)
                                            : (ch_addr[cur] + 31'd1));
-  wire [15:0] cnt_base  = fin_tc ? (autoinit ? ch_count_org[cur] : 16'hFFFF)
+  wire [15:0] cnt_base  = fin_tc ? (autoinit ? org_q[39:24] : 16'hFFFF)
                                  : (ch_count[cur] - 16'd1);
   wire addr_hit = (cpu_addr_half && (cpu_chan == cur)) ||
                   (cpu_bank && (cpu_bank_ch == cur)) || cpu_master;
@@ -247,6 +270,35 @@ module pc9821_dmac (
 
   integer i;
 
+  // The programmed copy's write port: the same halves the live registers take, one byte lane at a
+  // time (a block RAM with byte enables), and read back by the engine's channel.
+  reg  [1:0] org_wa;
+  reg  [4:0] org_wl;     // lane enables: [0..2] address bytes, [3..4] count bytes
+  always @* begin
+    org_wa = idx[2:1];
+    org_wl = 5'b00000;
+    if (sel && write && !reset) begin
+      if (idx <= 5'd7) begin
+        if (idx[0]) org_wl = lh ? 5'b10000 : 5'b01000;     // count half
+        else        org_wl = lh ? 5'b00010 : 5'b00001;     // address half
+      end else if (idx >= 5'd16 && idx <= 5'd19) begin
+        org_wa = idx[1:0] + 2'd1;                           // NP2kai's ((port >> 1) + 1) & 3
+        org_wl = 5'b00100;                                  // address bits 23:16
+      end
+    end
+  end
+  always @(posedge clk) begin
+    if (org_wl[0]) org_a0[org_wa] <= din;
+    if (org_wl[1]) org_a1[org_wa] <= din;
+    if (org_wl[2]) org_a2[org_wa] <= din;
+    if (org_wl[3]) org_c0[org_wa] <= din;
+    if (org_wl[4]) org_c1[org_wa] <= din;
+  end
+  always @(posedge clk) begin
+    org_qa0 <= org_a0[cur]; org_qa1 <= org_a1[cur]; org_qa2 <= org_a2[cur];
+    org_qc0 <= org_c0[cur]; org_qc1 <= org_c1[cur];
+  end
+
   always @(posedge clk) begin
     if (reset) begin
       lh        <= 1'b0;
@@ -264,9 +316,7 @@ module pc9821_dmac (
       dout      <= 8'hFF;
       for (i = 0; i < 4; i = i + 1) begin
         ch_addr[i]      <= 31'd0;
-        ch_addr_org[i]  <= 31'd0;
         ch_count[i]     <= 16'd0;
-        ch_count_org[i] <= 16'd0;
         ch_mode[i]      <= 8'h00;
         ch_bound[i]     <= 2'd0;
       end
@@ -290,11 +340,9 @@ module pc9821_dmac (
             if (!lh) begin
               if (!(state == S_FIN && idx[2:1] == cur))
                 ch_addr    [idx[2:1]][7:0]   <= din;
-              ch_addr_org[idx[2:1]][7:0]   <= din;
             end else begin
               if (!(state == S_FIN && idx[2:1] == cur))
                 ch_addr    [idx[2:1]][15:8]  <= din;
-              ch_addr_org[idx[2:1]][15:8]  <= din;
             end
             lh <= ~lh;
           end
@@ -305,11 +353,9 @@ module pc9821_dmac (
             if (!lh) begin
               if (!(state == S_FIN && idx[2:1] == cur))
                 ch_count    [idx[2:1]][7:0]  <= din;
-              ch_count_org[idx[2:1]][7:0]  <= din;
             end else begin
               if (!(state == S_FIN && idx[2:1] == cur))
                 ch_count    [idx[2:1]][15:8] <= din;
-              ch_count_org[idx[2:1]][15:8] <= din;
             end
             lh <= ~lh;
           end
@@ -352,7 +398,6 @@ module pc9821_dmac (
               ch_addr    [idx[1:0] + 2'd1][23:16] <= din;
               ch_addr    [idx[1:0] + 2'd1][30:24] <= 7'd0000000;
             end
-            ch_addr_org[idx[1:0] + 2'd1][23:16] <= din;
           end
           // 0x29 bound. Latched, and it does not alter a byte transfer.
           R_BOUND: ch_bound[din[1:0]] <= din[3:2];

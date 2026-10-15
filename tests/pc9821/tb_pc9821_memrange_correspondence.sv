@@ -122,6 +122,7 @@ module tb_pc9821_memrange_correspondence;
   reg  [1:0]  ems_state = 2'd0;
   reg  [31:0] ems_page_base = 32'h0;
   reg  [7:0]  win0_sel = 8'h08;
+  wire       win0_sel_moved = (win0_sel != 8'h08);   // pc9821_iobus's registered compare
   reg  [31:0] guest_ram_bytes = GUEST_RAM;
   reg         peg_window = 1'b0;
   reg  [31:0] peg_base = 32'h0;
@@ -153,6 +154,11 @@ module tb_pc9821_memrange_correspondence;
 
   reg  [1:0] d8_bank = 2'b00;
 
+  wire addr_ge_ram;   // the map's shared compare output, unused here
+  // No translation in front of the map here: the untranslated address IS cpu_addr.
+  wire [31:0] cpu_addr_raw = cpu_addr;
+  wire        xl_low20 = 1'b0;
+  wire        xl_peg = 1'b0;
   pc9821_memory_map dut_map (.*);
 
   // ==== CHECKS ====

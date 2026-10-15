@@ -28,7 +28,13 @@ module pc9821_iobus #(
     // rewrites for the 'midilink' profile). COMPILE-TIME ONLY, like IO_LATENCY_PROFILE: with 0
     // the two 0xE0D0/0xE0D2 match lines below are constants, so the device half's OR tree is
     // the one this bus had before the card existed and the base bitstream is unchanged.
-    parameter MPU_EN = 1'b0
+    parameter MPU_EN = 1'b0,
+    // WHETHER IDE UNIT 2 (bank 1's master) HOLDS A DRIVE: pc9821_system's CDROM_EN, since the
+    // ATAPI CD-ROM is always that unit (the fixed layout, owner 2026-10-11). COMPILE-TIME: a
+    // drive on a connector does not come and go with the disc in it. 0 sets port 0xF0 bit 6
+    // (active low, see ide_unit0_present), so the ITF leaves the empty connector out of its IDE
+    // drive bitmap. The default 1 is the measured strap's own bit 6 (clear).
+    parameter IDE_UNIT2_PRESENT = 1'b1
 ) (
     input wire clk,
     input wire reset,
@@ -49,8 +55,10 @@ module pc9821_iobus #(
     // 2, active low - and builds from them the IDE drive bitmap (BANK4@0x19DF-0x19F2), the D8000
     // IDE-ROM gate (BANK4@0x0207), the 0x435/0xB00 chipset set-up (BANK4@0x1BCB, @0x1E43) and the
     // 0x457 work byte (BANK4@0x1B6C-0x1B8F; NP2kai bios.c:322's 0x457 formula keys the same two
-    // units). The measured Xe10 byte 0xA9 has bit 5 SET (no drive on bank 0) and bit 6 clear (its
-    // disk on bank 1); a second disk on bank 0 clears bit 5, as a drive on that connector would.
+    // units). The measured Xe10 byte 0xA9 has bit 5 SET (no drive on bank 0) and bit 6 clear (the
+    // owner's CF card in the CD connector, bank 1). The core's layout is fixed - the hard disk on
+    // bank 0, the CD-ROM on bank 1, the stock Xe10's and NP2kai's (HDD unit 0, CD unit 2) - so bit
+    // 5 follows the hard disk's image and bit 6 follows IDE_UNIT2_PRESENT (the CD build).
     input wire       ide_unit0_present,
 
     // THE GDC-CLOCK STRAP, the OSD's GDC Clock field: 0 = 2.5 MHz (the measured machine),
@@ -243,6 +251,11 @@ module pc9821_iobus #(
     // the guest wrote with bit 0 dropped. 0x08 is the identity, 0x0E points at
     // 0xE0000-0xFFFFF, 0x0C at 0xC0000-0xDFFFF (BANK4@0x01D3/0x0201/0x0265).
     output reg [7:0] win0_sel,
+    // `win0_sel != 8'h08` (the window moved off the identity), REGISTERED on the same edges as
+    // win0_sel from the same next value, so it equals the compare in every cycle without the
+    // compare's LUT levels on the memory map's address cone (docs/timing.md C7-head). Reset:
+    // win0_sel resets to the identity 0x08, so this resets to 0.
+    output reg       win0_sel_moved,
     // 0x043B bit 2: the 15-16 MiB SYSTEM-SPACE hole. BIT 2 SET asks for RAM there (the
     // hole NOT used); bit 2 CLEAR enables it - no RAM at 0xF00000-0xF9FFFF, and
     // 0xFA0000-0xFFFFFF aliasing the low 0xA0000-0xFFFFF. Reset leaves the hole OFF, so
@@ -423,7 +436,7 @@ module pc9821_iobus #(
   //   823 R   862 W   IDE PIO data 0x640/0x641 and the task-file/interface registers (reads 820-827)
   //   823 R   861 W   the 8253 0x71/0x73/0x75/0x77 and the 0x3FD9 alias (write 861.5; still
   //                   outlasts one 2.4576 MHz tick, so the ITF self-test floor is kept)
-  //   826 R  1621 W   0x005F: its READ is the default class (826.5); its WRITE is item 41's
+  //   826 R  1621 W   0x005F: its READ is the default class (826.5); its WRITE is IO.TXT's
   //                   1621 ns anchor, the port the firmware's own delay loops measure - the
   //                   value the min profile now charges in BOTH directions (a wr-dependent
   //                   value at 0x5F trips a Quartus fitter bug).
@@ -451,7 +464,7 @@ module pc9821_iobus #(
   localparam [15:0] IO_NS_GDC2    = 16'((SYS_CLOCK_HZ * 64'd676  + 64'd999_999_999) / 64'd1_000_000_000);  // graphics GDC 0xA0/0xA2
   localparam [15:0] IO_NS_PIT_W   = 16'((SYS_CLOCK_HZ * 64'd861  + 64'd999_999_999) / 64'd1_000_000_000);  // 8253 write
   localparam [15:0] IO_NS_5F_R    = 16'((SYS_CLOCK_HZ * 64'd826  + 64'd999_999_999) / 64'd1_000_000_000);  // 0x5F read
-  localparam [15:0] IO_NS_5F_W    = 16'((SYS_CLOCK_HZ * 64'd1621 + 64'd999_999_999) / 64'd1_000_000_000);  // 0x5F write (item 41)
+  localparam [15:0] IO_NS_5F_W    = 16'((SYS_CLOCK_HZ * 64'd1621 + 64'd999_999_999) / 64'd1_000_000_000);  // 0x5F write (docs/probes/IO.TXT)
   localparam [15:0] IO_NS_EGCF_HI = 16'((SYS_CLOCK_HZ * 64'd9290 + 64'd999_999_999) / 64'd1_000_000_000);  // EGC file even read (profile 2)
   localparam [15:0] IO_NS_9A0     = 16'((SYS_CLOCK_HZ * 64'd391  + 64'd999_999_999) / 64'd1_000_000_000);  // 0x09A0 read/write
   localparam [15:0] IO_NS_FAA     = 16'((SYS_CLOCK_HZ * 64'd296  + 64'd999_999_999) / 64'd1_000_000_000);  // 0x0FAA read/write
@@ -461,7 +474,7 @@ module pc9821_iobus #(
       if (IO_LATENCY_PROFILE == 2'd0) begin
         // ---- the min profile: the smallest waits the firmware needs, not the floor -------
         // Every class but the firmware's own hardware needs is IO_MIN_HOLD. The 0x5F arm takes
-        // the machine's measured 1621 ns (item 41/item 82, docs/probes/IO.TXT), because the
+        // the machine's measured 1621 ns (item 82, docs/probes/IO.TXT), because the
         // BIOS POST's timer-interrupt test (BANK4@0x487) polls with `out 0x5f` and the poll
         // window must outlast a 2.4576 MHz terminal count or it prints TIMER INTERRUPT ERROR
         // (the 600 ns anchor was ~7 us, the terminal count ~10.6 us).
@@ -623,6 +636,12 @@ module pc9821_iobus #(
   // both loose ends (review readbacks.md P1).
   reg [7:0] gdc_ff2;
   reg       gdc_ff2_written;
+  // 0x09A8: the 24/31 kHz select beside it, a LATCH (docs/probes/RDBACK.TXT
+  // `port=09A8 before=00 wrote=01 after=01 back=00`). Bit 0 only, NP2kai's width
+  // (gdc_o9a8/gdc_i9a8 keep GDCDISP_31 and return `(gdc.display >> GDCDISP_31) & 1`);
+  // the machine's high bits are unmeasured (todo item 3). Nothing consumes it: the
+  // 31 kHz raster is not modelled (README).
+  reg       gdc_9a8_31k;
 
   // The bus mouse's uPD8255 PPI at 0x7FD9-0x7FDF and its 0xBFDB timer port
   // live in pc9821_mouse (instantiated with the FDC below): the three port
@@ -1464,6 +1483,17 @@ module pc9821_iobus #(
   // The wrapped phase, read only on a tick, so the truncated subtract's low ARTIC_W bits are
   // the exact difference (the borrow bit is not taken - the comparator above already decided).
   wire [ARTIC_W-1:0] artic_wrap = artic_sum[ARTIC_W-1:0] - ARTIC_MOD[ARTIC_W-1:0];
+  // ONE SNAPSHOT PER ACCESS. The lane walk reads a word/dword's bytes in successive S_BYTE
+  // cycles, so a tick between them that carried out of a byte tore the value: `in ax,5Eh` at
+  // cnt = 0x00FFFF read 0x01FF, 65,536 ticks (213 ms) ahead, and a firmware delay() spinning
+  // on `now - start` exited early. Both references take one counter value per access (NP2kai
+  // io/artic.c artic_r16: `cnt = artic_getcnt(); if (port & 2) cnt >>= 8;`; MAME pc9801.cpp
+  // timestamp_r). A tick that lands while an access to the 0x5C-0x5F dword is in flight is
+  // DEFERRED (SCED R7) to the cycle the access ends, so the counter's rate is unchanged: an
+  // I/O access is far shorter than the 3.26 us tick period, so one pending tick suffices
+  // (asserted below). tb_pc9821_artic_atomic.
+  wire artic_freeze = (state != S_IDLE) && (base_addr[15:2] == 14'h0017);
+  reg  artic_pend;
 
   /* verilator lint_off UNUSEDSIGNAL */   // the machine's register is 8 bits; only bit 7
   reg [7:0] sdip_ctrl;   // (access enable) and bit 6 (bank select) are defined, and they are the ones read (sdip_writable, sdip_bank_index)
@@ -1910,8 +1940,9 @@ module pc9821_iobus #(
   // field lives on O[31:28]. owns both tables.
   // The 0x9A0 query table (NP2kai gdc_i9a0 verbatim, io/gdc.c:969-1030): the
   // indexed bit of the GDC's extension state, OR'd with gdc.clock bit 1 into
-  // EVERY response (`ret |= (gdc.clock & 2)`). Index 0 answers 0xFF and index
-  // 0x0B is the constant-1 presence bit; an unlisted index answers 0.
+  // EVERY response (`ret |= (gdc.clock & 2)`). Index 0 answers 0xFF, and so does
+  // index 0x0B on the machine (RDBACK.TXT; NP2kai's constant 1 is refuted); an
+  // unlisted index answers 0.
   function automatic [7:0] gdc_ff2_query(input [7:0] idx, input [10:0] s);
     reg [7:0] ret;
     begin
@@ -1927,7 +1958,10 @@ module pc9821_iobus #(
         8'h08: ret = {7'b0, s[5]};   // mode2[3] (register write enable)
         8'h09: ret = {7'b0, s[7]};   // gdc.clock[0]
         8'h0A: ret = {7'b0, s[9]};   // GDCANALOG_256 (the PEGC probe's bit 0)
-        8'h0B: ret = 8'h01;
+        // NP2kai answers a constant 1 here (`case 0x0b: ret = 1;`); the Xe10 reads 0xFF
+        // (docs/probes/RDBACK.TXT `port=09A0 before=01 wrote=0B after=FF back=00`), and the
+        // capture outranks it. 0xFF already carries the clock-bit OR below.
+        8'h0B: ret = 8'hFF;
         8'h0D: ret = {7'b0, s[10]};  // GDCANALOG_256E
         default: ret = 8'h00;
       endcase
@@ -2104,11 +2138,12 @@ module pc9821_iobus #(
       hit[HX_0134]: lane_rdata = 8'h0F;
       hit[HX_0434]: lane_rdata = 8'hBE;
       hit[HX_053E]: lane_rdata = 8'hFC;
-      // A20 mask status: bit 0 set means masked. The ITF reads it back while
-      // restoring the previous state, so the arm must return a driven byte.
-      // Measured 0x5E with A20 released, so the read is the strap byte with bit 0
-      // inverting with the mask state: 0x5E released, 0x5F masked.
-      hit[HX_00F6]: lane_rdata = {7'b0101111, ~a20_enable};
+      // 0xF6 reads the machine's constant 0x5E, released OR masked: a20map masks with
+      // `out 0xF6,0x03` and reads "after masking: F6=5E F2=FF" while its masked reads wrap
+      // bit 20 (docs/probes/A20MAP-XE10.TXT:2,9,19). The mask state shows at 0xF2 only.
+      // NP2kai cpuio_if6 / MAME report bit 0 = masked; the capture outranks them. The ITF
+      // needs a driven byte here (open bus broke its restore), which this still is.
+      hit[HX_00F6]: lane_rdata = 8'h5E;
       // Measured: 0xA9 (bit 0 always 1, bit 5 = the other channel's interface
       // absent, bit 6 clear = this channel's present), 0xF1 = 0xFF open bus,
       // 0xF2 = 0xFE. QEMU models 0xF1 as 0x2E and 0xF6 as 0x5E; the machine
@@ -2118,7 +2153,8 @@ module pc9821_iobus #(
       // machine_id_strap of the RESET-QUALIFIED bios_set_eff (not the live OSD field) -
       // 0xA9 for the Xe10 (entry 0, the config-less default), 0x89 for the Xe, the
       // measured Xe10 byte for the reserved sets.
-      hit[HX_00F0]: lane_rdata = machine_id_strap(bios_set_eff) & ~{2'b00, ide_unit0_present, 5'b00000};
+      hit[HX_00F0]: lane_rdata = (machine_id_strap(bios_set_eff) & ~{2'b00, ide_unit0_present, 5'b00000})
+                                 | {1'b0, !IDE_UNIT2_PRESENT, 6'b000000};
       hit[HX_00F1]: lane_rdata = 8'hFF;
       // 0xF2 tracks the A20 state: NP2kai's cpuio_if2 returns
       // 0xFF - bit20(CPU_ADRSMASK) (io/cpuio.c:71-78), i.e. 0xFE with the gate
@@ -2208,11 +2244,9 @@ module pc9821_iobus #(
       hit[HX_063C]: lane_rdata = pci_d8_select;
       // ---- ports the machine answers with a driven byte, measured 2026-09-12 ----
       //
-      // 0x09A8: the register beside the 0x9A0 extended-video flip-flop. The
-      // machine reads 0x00 (`09A8=00 09A9=FF`, `09A8 00`).
-      // One machine state was captured, so this is the measured constant with
-      // that caveat -- not a generalised model of the port.
-      hit[HX_09A8]: lane_rdata = 8'h00;
+      // 0x09A8: the 24/31 kHz select latch (its declaration has the capture). The
+      // power-up read is the machine's `09A8=00 09A9=FF`.
+      hit[HX_09A8]: lane_rdata = {7'b0, gdc_9a8_31k};
       // 0x98D7: the mouse IRQ register (Linux pc98 std_resources.c reserves it
       // as "mouse irq"). The machine reads 0x0D, twice, with no writes
       // (/MODE, `98D7=0D 0D`). NO firmware site reads it -- the ITF
@@ -2356,6 +2390,7 @@ module pc9821_iobus #(
       system_port_c <= 8'hB8;   // measured 0x35 = 0xB8 (was 0xF9)
       gdc_ff2 <= 8'h00;
       gdc_ff2_written <= 1'b0;   // the un-written read is the machine's 0x01
+      gdc_9a8_31k <= 1'b0;       // the machine's power-up `09A8=00`
       prt_last_data <= 8'h00;    // the machine's `0040 00`
       prt_i44_data  <= 8'h81;    // the machine's `0044 81`
       prt_select_count <= 4'd0;
@@ -2388,6 +2423,7 @@ module pc9821_iobus #(
       // 0xFF until a 0xA460 bit-0 write opens it (NP2kai).
       sound_extend <= 1'b0;
       win0_sel   <= 8'h08;       // the identity the firmware restores
+      win0_sel_moved <= 1'b0;    // (8'h08 != 8'h08)
       win1_sel   <= 8'h0A;       // QEMU win_map[1] resets to 0x0a; measured 0x0B
       itf_stage  <= 8'h00;
       // Power-up values are NP2kai's egc_reset() (mem/memegc.c:69-80):
@@ -2405,6 +2441,7 @@ module pc9821_iobus #(
       egc_shift_we <= 1'b0;
       artic_phase <= {ARTIC_W{1'b0}};
       artic_cnt   <= 32'd0;
+      artic_pend  <= 1'b0;
       // The DIP store's addressed walk is NOT reset here any more: it must be able to run during
       // this reset window (THE MACHINE-RESET SEED beside the store owns it, with its own power-up
       // values). Resetting it here would clear every step the seed walk takes.
@@ -2422,10 +2459,16 @@ module pc9821_iobus #(
       // unchanged: 00, 00, 0E, 00.
     end else begin
       // ARTIC free-running counter (see the declaration).
-      if (artic_tick) begin
-        artic_phase <= artic_wrap;
-        artic_cnt   <= artic_cnt + 32'd1;
-      end else artic_phase <= artic_sum[ARTIC_W-1:0];
+      if (artic_tick) artic_phase <= artic_wrap;
+      else            artic_phase <= artic_sum[ARTIC_W-1:0];
+      // The tick and the deferred tick merge into one next-state (R4): frozen, a tick only
+      // sets the pending bit; free, the counter takes this cycle's tick plus any pending one.
+      if (artic_freeze) begin
+        if (artic_tick) artic_pend <= 1'b1;
+      end else begin
+        artic_cnt  <= artic_cnt + {31'd0, artic_tick} + {31'd0, artic_pend};
+        artic_pend <= 1'b0;
+      end
       cpu_ready <= 1'b0;
       cpu_resp_valid <= 1'b0;
       // The addressed walk's HOLD: while the 24-byte walk is running the CPU is kept in its reset
@@ -2590,10 +2633,13 @@ module pc9821_iobus #(
                 a20_enable <= 1'b0;
               end
               hit[HX_00F2]: a20_enable <= 1'b1;
-              // A20 mask: bit 1 requests, bit 0 is the state. The old
-              // exact-value decode ignored the read-modify-write idiom
-              // (in al,0xF6 / or al,2 / out 0xF6,al).
-              hit[HX_00F6]: if (lane_wdata[1]) a20_enable <= ~lane_wdata[0];
+              // A20 mask: ONLY 0x02 (release) and 0x03 (mask) act. NP2kai cpuio_of6
+              // `switch(dat) { case 0x02: ... case 0x03: ... }` and MAME pc9801.cpp
+              // a20_ctrl_w (`if(data == 0x02) ... else if(data == 0x03) ... else
+              // logerror(...unmapped data write...)`) agree, and no capture contradicts
+              // them; the bit-1 decode that stood here also acted on 0x5E, the byte the
+              // port reads back. tb_pc9821_iobus.
+              hit[HX_00F6]: if (lane_wdata[7:1] == 7'h01) a20_enable <= ~lane_wdata[0];
               hit[HX_0EE0]: begin
                 post_code <= lane_wdata;
                 post_write <= 1'b1;
@@ -2619,6 +2665,8 @@ module pc9821_iobus #(
                 gdc_ff2 <= lane_wdata;
                 gdc_ff2_written <= 1'b1;
               end
+              // 0x9A8: the latch (see its declaration).
+              hit[HX_09A8]: gdc_9a8_31k <= lane_wdata[0];
               // 0x5F is the firmware's I/O wait on the write side.
               hit[HX_005F]: ;
               // Write-only in every observed firmware site: accepted and
@@ -2724,7 +2772,10 @@ module pc9821_iobus #(
               hit[HX_0436]: config_436 <= lane_wdata;
               hit[HX_0439]: config_439 <= lane_wdata;
               hit[HX_063F]: config_63f <= lane_wdata;
-              hit[HX_0461]: win0_sel   <= next_win0;
+              hit[HX_0461]: begin
+                win0_sel       <= next_win0;
+                win0_sel_moved <= (next_win0 != 8'h08);
+              end
               hit[HX_0463]: win1_sel   <= lane_wdata;
               hit[HX_0149]: latch_149  <= lane_wdata;
               // 0xA460: bit 0 is the -86 extension enable (see the port list
@@ -2838,12 +2889,23 @@ module pc9821_iobus #(
   // cost nothing in synthesis and run in every bench that builds this module.
   // ---------------------------------------------------------------------------
   reg hold_q;       // S_HOLD last cycle: the state is one cycle wide, never two
+  reg win0_reset_seen;   // a reset has loaded win0_sel and its flag (Verilator powers it up 0)
+  always @(posedge clk) if (reset) win0_reset_seen <= 1'b1;
   reg req_live;     // S_IDLE took a request and cpu_valid has not gone low since
   always @(posedge clk) begin
     if (reset) begin
       hold_q   <= 1'b0;
       req_live <= 1'b0;
     end else begin
+      // win0_sel_moved is the registered `win0_sel != 8'h08` the memory map reads in place of the
+      // compare (proven by tools/check_win0_moved_inv.py; pinned here in every bench). From the
+      // first reset on: before it both power up 0, which is not a state the core runs in.
+      if (win0_reset_seen && (win0_sel_moved != (win0_sel != 8'h08)))
+        $error("pc9821_iobus: win0_sel_moved=%b disagrees with win0_sel=%02x", win0_sel_moved, win0_sel);
+      // ARTIC's deferral holds ONE tick (R7/R8): a second tick inside one frozen access
+      // would be lost.
+      if (artic_freeze && artic_tick && artic_pend)
+        $error("pc9821_iobus: a second ARTIC tick inside one 0x5C-0x5F access - the deferral holds one");
       // (1) ONE CYCLE. A second S_HOLD cycle means a level wait came back.
       if ((state == S_HOLD) && hold_q)
         $error("pc9821_iobus: S_HOLD lasted more than one cycle - the bubble must not observe cpu_valid (R6)");

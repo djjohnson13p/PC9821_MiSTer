@@ -27,7 +27,7 @@ The clk_sys column for a port is the number pc9821_iobus.sv io_access_cycles()
 should return for that port's class. The RTL column prints the arm the class table
 carries today, so the diff is one line per port.
 
-ITEM 41's xBASE CURRENCY: the ratio "quote only xBASE" refers to is the clk_sys
+THE 0x5F ANCHOR'S xBASE CURRENCY: the ratio "quote only xBASE" refers to is the clk_sys
 column (the class's excess over its own paired control as a ratio to the WAIT5F
 anchor).  REFEREE (review P1-3): absolute ns prefer the ARTIC column whenever
 its delta is >= 1 tick (PIT only for sub-tick windows); the 8:1 check is a
@@ -56,7 +56,7 @@ WAIT_CLK = 30
 # Device-clock rates (machine-confirmed, r13/215 section 1.4): raw PIT counts
 # move at 2 457 600/s (1 = 406.901 ns) and the ARTIC counter ticks at
 # 307 200/s (1 = 3255.208 ns), 8 raw counts per tick.  These give ABSOLUTE ns
-# with no run-local scale - the thing the /TIME ladder never had (item 41).
+# with no run-local scale - the thing the /TIME ladder never had.
 # Review P2f: PIT_HZ follows the strap the measured divisor discriminates -
 # a divisor near 0x4E00 means the BIOS work-area 0501 bit-7 strap selects the
 # 1.9968 MHz oscillator and decode() switches the rate (a 19% move).
@@ -706,7 +706,7 @@ def print_table(rows: list[dict], scale: int) -> None:
     )
     if min(d30, d81) > 0.20:
         print(
-            "    INDETERMINATE - item 41 stays open: within ~20% of neither axis. Do NOT"
+            "    INDETERMINATE - the 0x5F anchor stays open: within ~20% of neither axis. Do NOT"
             "\n    print a nearest-axis verdict from it.  LEGACY x2 RULE: halved-era captures"
             "\n    (/TIME and the T2/T2R prints, r13/215) must be doubled"
             "\n    before this comparison - T2R's raw 819 ns reads 1638 ns corrected, at the"
@@ -719,7 +719,7 @@ def print_table(rows: list[dict], scale: int) -> None:
         )
         print(
             f"    Verdict: closer to {verdict} (within 20%)."
-            "\n    This decides the item 41 anchor question (r13/245 section 6). Note the"
+            "\n    This decides the 0x5F anchor question (r13/245 section 6). Note the"
             "\n    documented 600 ns may be the inserted WAIT only, not the total access cost:"
             "\n    if the measurement lands ~1.6-1.7 us both readings survive and the total is"
             "\n    what io_access_cycles prices.  (Legacy halved-era prints: x2 first.)"
@@ -771,7 +771,7 @@ def print_table(rows: list[dict], scale: int) -> None:
         " xRTL = abs_ns / RTL_ns.\n"
         "  abs_ns is ABSOLUTE (device clocks, both columns refereed at 8 raw PIT counts per\n"
         "  ARTIC tick): per-access ns over the row's own control, comparable across runs.\n"
-        "  ITEM 41's xBASE CURRENCY: the ratio to quote from this table is the clk_sys column\n"
+        "  THE 0x5F ANCHOR'S xBASE CURRENCY: the ratio to quote from this table is the clk_sys column\n"
         "  (the class's excess over its own paired control as a ratio to the WAIT5F anchor; the\n"
         "  run's own scale cancels) - \"quote only xBASE\" means this column, not the ns ones.\n"
         "  xRTL 10x on a floor row is EXPECTED, not a decoder bug: r13/276 dropped every\n"
@@ -832,7 +832,7 @@ def print_class_summary(rows: list[dict]) -> None:
     print(
         f"  med30 is the measured median on the documented 0x005F = 30 axis (one 0x5F\n"
         f"  access = {anchor_ns:.0f} ns ABSOLUTE on this capture - the 600 ns figure is the\n"
-        f"  documented WAIT alone, so the two are not the same quantity; see item 41).\n"
+        f"  documented WAIT alone, so the two are not the same quantity; see docs/probes/IO.TXT).\n"
         "  RTL/RTL_ns is what io_access_cycles() prices that arm today at the profile\n"
         "  clock.  xRTL > 1 is the machine costing more than the core bills it - that gap\n"
         "  IS item 82's stall-budget decision (OWNER), and r13/276 chose the floor\n"

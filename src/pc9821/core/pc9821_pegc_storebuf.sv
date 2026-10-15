@@ -82,7 +82,7 @@ module pc9821_pegc_storebuf #(
     // not a cycle count that moves with the build profile.
     parameter integer HOLD_CYCLES = 50,
     // The gather session's entry count: how many same-row entries one drain
-    // request carries (1..8). Must never exceed the controller's GATHER_K.
+    // request carries (1..4: the head window). Must never exceed the controller's GATHER_K.
     parameter integer GATHER_K = 4
 ) (
     input  wire        clk,
@@ -134,12 +134,13 @@ module pc9821_pegc_storebuf #(
 );
 
   localparam integer DEPTH = 8;      // dwords of store buffer (4-8 per T21)
+  localparam integer AGE_W = $clog2(HOLD_CYCLES + 1);   // the age saturates at HOLD_CYCLES
   localparam integer GENT_W = 27 + 32 + 4;   // {addr, din, be} per extra gather entry
 
-  reg  [29:0] ent_addr [0:DEPTH-1];  // dword address
+  reg  [24:0] ent_addr [0:DEPTH-1];  // dword address [26:0 of the byte address]: peg addresses lie below 128 MiB
   reg  [31:0] ent_data [0:DEPTH-1];
   reg   [3:0] ent_be   [0:DEPTH-1];
-  reg   [7:0] ent_age  [0:DEPTH-1];  // clk_sys cycles since THIS entry was allocated
+  reg [AGE_W-1:0] ent_age [0:DEPTH-1];  // clk_sys cycles since THIS entry was allocated
   reg   [2:0] wp, rp;
   reg   [3:0] count;
   reg         pres_locked;           // a request is presented, payload frozen
@@ -148,7 +149,50 @@ module pc9821_pegc_storebuf #(
   reg   [3:0] pres_n;                // ... and it carries this many entries
   reg         hold_force_r;          // a blocked request forces the drain out
 
-  wire [2:0]  rp2    = rp + 3'd1;
+
+  // ---- the head window: entries rp .. rp+NB-1, read through a banked structure ----
+  // Every consumer of the queue's head (the row key, the pair test, the presented payload and
+  // the gather extras) reads entries rp+j, j < GATHER_K, so the read is a WINDOW of NB
+  // consecutive circular entries. Entry e lives in bank e % NB; a window of NB consecutive
+  // entries holds exactly one entry from each bank, so each bank is read ONCE (a position
+  // select, 2:1 at NB=4) and window slot j is the rotation of the bank reads by rp % NB.
+  // That replaces one 8:1 read mux per (slot, bit) with a shared 2:1 per bank plus a 4:1 rotate
+  // per slot, the same entries in the same order.
+  localparam integer NB   = 4;
+  localparam integer NBL  = 2;
+  generate
+    if (GATHER_K > NB) begin : gen_k_check
+      initial $error("pc9821_pegc_storebuf: GATHER_K=%0d exceeds the %0d-entry head window (the controller's GATHER_K is 4)", GATHER_K, NB);
+    end
+  endgenerate
+  wire [NBL-1:0] rpb = rp[NBL-1:0];
+  reg  [24:0] bk_addr [0:NB-1];
+  reg  [31:0] bk_data [0:NB-1];
+  reg   [3:0] bk_be   [0:NB-1];
+  always @* begin : bank_read
+    integer b;
+    reg bpos;
+    for (b = 0; b < NB; b = b + 1) begin
+      // the bank's entry inside the window: position rp[2] flips for banks below rp % NB
+      bpos = rp[2] ^ (b[NBL-1:0] < rpb);
+      bk_addr[b] = bpos ? ent_addr[(b + NB)] : ent_addr[b];
+      bk_data[b] = bpos ? ent_data[(b + NB)] : ent_data[b];
+      bk_be[b]   = bpos ? ent_be[(b + NB)]   : ent_be[b];
+    end
+  end
+  reg  [24:0] win_addr [0:NB-1];
+  reg  [31:0] win_data [0:NB-1];
+  reg   [3:0] win_be   [0:NB-1];
+  always @* begin : win_rot
+    integer j;
+    reg [NBL-1:0] bsel;
+    for (j = 0; j < NB; j = j + 1) begin
+      bsel = rpb + NBL'(j);
+      win_addr[j] = bk_addr[bsel];
+      win_data[j] = bk_data[bsel];
+      win_be[j]   = bk_be[bsel];
+    end
+  end
 
   // A postable request is a one-dword PEGC store. (The CPU's stores are
   // burstcount 1; a wider write on this route is not postable and passes.)
@@ -161,7 +205,7 @@ module pc9821_pegc_storebuf #(
   // term at the 512-column geometries where addr[26:11] already carries it (and
   // is a REFINEMENT at 64 MB, where addr[26] aliases: splitting there is safe).
   /* verilator lint_off UNUSEDSIGNAL */   // da's column/upper bits are not part of the row
-  function [15:0] rowkey(input [29:0] da);
+  function [15:0] rowkey(input [24:0] da);
     begin
       rowkey = sdram_size[1] ? da[24:9] : {1'b0, da[22:8]};
     end
@@ -174,19 +218,19 @@ module pc9821_pegc_storebuf #(
     integer gi;
     reg [15:0] rk;
     grp_run = 4'd0;
-    rk      = rowkey(ent_addr[rp]);
+    rk      = rowkey(win_addr[0]);
     for (gi = 0; gi < GATHER_K; gi = gi + 1)
-      if ((gi < count) && (grp_run == 4'(gi)) && (rowkey(ent_addr[rp + 3'(gi)]) == rk))
+      if ((gi < count) && (grp_run == 4'(gi)) && (rowkey(win_addr[gi]) == rk))
         grp_run = 4'(gi + 1);
   end
 
   // The pair drain: two adjacent FULL entries, exactly the shape port 0's
   // two-word write carries (its be applies to both dwords).
-  wire pair_ok = (count >= 4'd2) && (ent_be[rp] == 4'hF) && (ent_be[rp2] == 4'hF) &&
-                 ({ent_addr[rp2], 2'b00} == ({ent_addr[rp], 2'b00} + 32'd4));
+  wire pair_ok = (count >= 4'd2) && (win_be[0] == 4'hF) && (win_be[1] == 4'hF) &&
+                 (win_addr[1] == (win_addr[0] + 25'd1));
 
   // ---- the batch window (rule 7): when the group is complete ----
-  wire age_out = (ent_age[rp] >= 8'(HOLD_CYCLES));
+  wire age_out = (ent_age[rp] >= AGE_W'(HOLD_CYCLES));
   wire grp_complete = pair_ok || (grp_run == 4'(GATHER_K)) || (count > grp_run) ||
                       age_out || hold_force_r;
   wire drain_ready = (count != 4'd0) && grp_complete;
@@ -218,22 +262,21 @@ module pc9821_pegc_storebuf #(
 
   // Rule 2's merge target: the held entry whose dword the store touches. There is
   // at most one (rule 2 merges, never duplicates), and a match inside the commit
-  // window is refused - that store allocates instead (see the rule).
-  reg  [2:0] match_idx;
-  reg        match_ok;
+  // window is refused - that store allocates instead (see the rule). The match is kept
+  // ONE-HOT: each entry writes its own bytes (below), so no binary index and no read-back
+  // mux of the matched entry is needed.
+  reg  [DEPTH-1:0] match_hit;
+  reg              match_ok;
   always @* begin : post_match
     integer mi;
     reg [2:0] off;
-    match_ok  = 1'b0;
-    match_idx = 3'd0;
+    match_hit = {DEPTH{1'b0}};
     for (mi = 0; mi < DEPTH; mi = mi + 1) begin
       off = 3'(mi) - rp;                       // position in the circular queue
-      if ((ent_addr[mi] == in_addr[31:2]) && ({1'b0, off} >= pres_cnt) &&
-          ({1'b0, off} < count)) begin
-        match_ok  = 1'b1;
-        match_idx = 3'(mi);
-      end
+      match_hit[mi] = (ent_addr[mi] == in_addr[26:2]) && ({1'b0, off} >= pres_cnt) &&
+                      ({1'b0, off} < count);
     end
+    match_ok = |match_hit;
   end
 
   wire can_combine = match_ok;
@@ -265,10 +308,10 @@ module pc9821_pegc_storebuf #(
   assign in_ready = postable ? can_alloc
                              : (mem_ready && use_pass && !pass_withdrawn);
 
-  assign mem_addr      = use_pass ? in_addr : {ent_addr[rp], 2'b00};
-  assign mem_din       = use_pass ? in_din  : ent_data[rp];
-  assign mem_din_hi    = (use_pass || !pair_now) ? 32'd0 : ent_data[rp2];
-  assign mem_be        = use_pass ? in_be   : ent_be[rp];
+  assign mem_addr      = use_pass ? in_addr : {5'd0, win_addr[0], 2'b00};
+  assign mem_din       = use_pass ? in_din  : win_data[0];
+  assign mem_din_hi    = win_data[1];
+  assign mem_be        = use_pass ? in_be   : win_be[0];
   assign mem_gath      = !use_pass && !pair_now;
   assign mem_burstcount = use_pass ? in_burstcount
                           : pair_now ? 8'd2
@@ -283,12 +326,10 @@ module pc9821_pegc_storebuf #(
   always @* begin : gath_pack
     integer ej;
     gextra = 441'd0;
-    for (ej = 1; ej < 8; ej = ej + 1)
-      if (ej < n_now)
-        gextra[(ej-1)*GENT_W +: GENT_W] = {{ent_addr[rp + 3'(ej)][24:0], 2'b00},
-                                           ent_data[rp + 3'(ej)], ent_be[rp + 3'(ej)]};
+    for (ej = 1; ej < NB; ej = ej + 1)
+      gextra[(ej-1)*GENT_W +: GENT_W] = {{win_addr[ej], 2'b00}, win_data[ej], win_be[ej]};
   end
-  assign mem_gath_extra = use_pass ? 441'd0 : gextra;
+  assign mem_gath_extra = gextra;
 
   // A blocked request forces the drain out (registered, so no request field
   // combinationally reaches in_ready through the window): the CPU stalled on a
@@ -296,17 +337,13 @@ module pc9821_pegc_storebuf #(
   wire block_now = (in_valid && postable && !can_alloc) ||
                    (in_valid && in_peg_route && !postable && (count != 4'd0));
 
-  // The merge mask: one byte enable lane per byte of the dword.
-  wire [31:0] be_mask   = {{8{in_be[3]}}, {8{in_be[2]}}, {8{in_be[1]}}, {8{in_be[0]}}};
-  wire [31:0] merge_dat = (in_din & be_mask) | (ent_data[match_idx] & ~be_mask);
-
   integer i;
   always @(posedge clk) begin
     if (reset) begin
       wp <= 3'd0; rp <= 3'd0; count <= 4'd0;
       pres_locked <= 1'b0; pres_pass <= 1'b0; pres_pair <= 1'b0; pres_n <= 4'd0;
       hold_force_r <= 1'b0;
-      for (i = 0; i < DEPTH; i = i + 1) ent_age[i] <= 8'd0;
+      for (i = 0; i < DEPTH; i = i + 1) ent_age[i] <= {AGE_W{1'b0}};
     end else begin
       hold_force_r <= block_now;
 
@@ -326,15 +363,23 @@ module pc9821_pegc_storebuf #(
 
       if (drain_accept) rp <= rp + n_now[2:0];
 
-      if (post_accept) begin
-        if (can_combine) begin
-          ent_data[match_idx] <= merge_dat;
-          ent_be[match_idx]   <= ent_be[match_idx] | in_be;
-        end else begin
-          ent_addr[wp] <= in_addr[31:2];
-          ent_data[wp] <= in_din;
-          ent_be[wp]   <= in_be;
-          wp           <= wp + 3'd1;
+      // The post: a combine writes the store's enabled bytes into the matched entry (later lanes
+      // win; an unenabled lane keeps its byte), an allocation writes the whole dword and its
+      // enables into the slot at wp. Per entry and per lane, so the data path has no read-back.
+      if (post_accept && !can_combine) begin
+        ent_addr[wp] <= in_addr[26:2];
+        wp           <= wp + 3'd1;
+      end
+      for (i = 0; i < DEPTH; i = i + 1) begin
+        if (post_accept && !can_combine && (3'(i) == wp)) begin
+          ent_data[i] <= in_din;
+          ent_be[i]   <= in_be;
+        end else if (post_accept && match_hit[i]) begin
+          if (in_be[0]) ent_data[i][7:0]   <= in_din[7:0];
+          if (in_be[1]) ent_data[i][15:8]  <= in_din[15:8];
+          if (in_be[2]) ent_data[i][23:16] <= in_din[23:16];
+          if (in_be[3]) ent_data[i][31:24] <= in_din[31:24];
+          ent_be[i] <= ent_be[i] | in_be;
         end
       end
 
@@ -344,9 +389,9 @@ module pc9821_pegc_storebuf #(
       // hitting one dword cannot hold it for as long as the stream lasts.
       for (i = 0; i < DEPTH; i = i + 1) begin
         if (post_accept && !can_combine && (3'(i) == wp))
-          ent_age[i] <= 8'd0;
-        else if (ent_age[i] != 8'hFF)
-          ent_age[i] <= ent_age[i] + 8'd1;
+          ent_age[i] <= {AGE_W{1'b0}};
+        else if (ent_age[i] != AGE_W'(HOLD_CYCLES))
+          ent_age[i] <= ent_age[i] + 1'b1;
       end
 
       count <= count + (post_accept && !can_combine ? 4'd1 : 4'd0)
@@ -357,6 +402,10 @@ module pc9821_pegc_storebuf #(
   // The response-queue withdrawal comment lives with pass_withdrawn above.
 
 `ifdef VERILATOR
+  // The entries keep byte address [26:0]: a postable store must lie below 128 MiB (the SDRAM's ceiling).
+  always @(posedge clk)
+    if (!reset && in_valid && postable && (in_addr[31:27] != 5'd0))
+      $fatal(1, "pc9821_pegc_storebuf: a postable store at %08h is beyond the 128 MiB the entries hold", in_addr);
   // A burstcount-2 write is the PAIR DRAIN's shape (its second word is this
   // buffer's mem_din_hi); a passthrough write asking for one would take the
   // controller's two-word path with 32'd0 as its second dword.
@@ -364,17 +413,22 @@ module pc9821_pegc_storebuf #(
     if (!reset && mem_accept && mem_write && pres_pass && (mem_burstcount == 8'd2))
       $fatal(1, "pc9821_pegc_storebuf: a passthrough write presented burstcount 2 -- only the pair drain may ask for the two-word write");
     if (!reset && drain_accept && pair_now &&
-        ({ent_addr[rp2], 2'b00} != ({ent_addr[rp], 2'b00} + 32'd4)))
+        (win_addr[1] != (win_addr[0] + 25'd1)))
       $fatal(1, "pc9821_pegc_storebuf: a pair drain left non-adjacent dwords");
     if (!reset && drain_accept && mem_gath && (n_now > 4'(GATHER_K)))
       $fatal(1, "pc9821_pegc_storebuf: a gather drain carried %0d entries over GATHER_K=%0d", n_now, GATHER_K);
     // Rule 6's second line: a merge into a committed entry would move the frozen
     // payload (or lose the store at the pop). The commit window refuses it in RTL;
     // this asserts the refusal held.
-    if (!reset && post_accept && can_combine &&
-        (({1'b0, match_idx} - {1'b0, rp}) < pres_cnt))
-      $fatal(1, "pc9821_pegc_storebuf: a store merged into presented entry %0d (window %0d) -- the drain payload is not frozen",
-             match_idx, pres_cnt);
+    if (!reset && post_accept && can_combine) begin : chk_merge
+      integer ci;
+      for (ci = 0; ci < DEPTH; ci = ci + 1)
+        if (match_hit[ci] && (({1'b0, 3'(ci)} - {1'b0, rp}) < pres_cnt))
+          $fatal(1, "pc9821_pegc_storebuf: a store merged into presented entry %0d (window %0d) -- the drain payload is not frozen",
+                 ci, pres_cnt);
+      if ($countones(match_hit) > 1)
+        $fatal(1, "pc9821_pegc_storebuf: a store matched two held entries -- rule 2 allows one dword per entry");
+    end
   end
 `endif
 

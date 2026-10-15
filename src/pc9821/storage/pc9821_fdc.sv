@@ -181,7 +181,7 @@ module pc9821_fdc #(
     // compiled out (PERF_LOG_EN=0) these outputs are unconnected and prune away.
     output wire [7:0] dbg_state,      // {IRQ, DRQ, st[2:0], x_st[2:0]}
     output wire [7:0] dbg_cmd,        // the last command byte: {cmd_mt, 2'b00, cmd[4:0]}
-    output wire [31:0] dbg_result,    // {res[0], res[1], res[2], exec_st0}: the last result
+    output wire [31:0] dbg_result,    // {res0, res1, 0, exec_st0}: the last result
     output wire [31:0] dbg_chrn       // {x_c, x_h, x_r, x_n}: the sector in flight
 );
   localparam [2:0] A_MSR  = 3'd0, A_DATA = 3'd1, A_DOR = 3'd2, A_REG144 = 3'd3,
@@ -255,14 +255,25 @@ module pc9821_fdc #(
   reg [3:0]  pend;
   reg [7:0]  pend_st0 [0:3];
 
-  // The result phase, up to seven bytes. res[0]/res[1] are also what the probe
-  // subset's one- and two-byte answers use.
-  reg [7:0]  res [0:6];
+  // The result phase, up to seven bytes: {ST0, ST1, ST2, C, H, R, N}. ST0 and ST1 are stored (res0 /
+  // res1 are also what the probe subset's one- and two-byte answers use, the status byte and the PCN);
+  // ST2 is always 0, and C/H/R/N are the SECTOR REGISTERS x_c/x_h/x_r/x_n themselves, which each
+  // result site leaves holding the bytes it reports (the command is over, so nothing else reads them
+  // before the next command loads them) - instead of five more stored bytes behind a copy at every site.
+  reg [7:0]  res0, res1;
   reg [2:0]  res_len, res_idx;
   reg        res_pop;        // this result consumes a pending status when drained
   reg        res_rel;        // and/or releases its drive's busy bit
   reg        res_irq;        // this result's interrupt is raised with it (data path)
   reg [1:0]  res_drv;
+
+  // The result byte the data port presents (ST2 is always 0; C/H/R/N are the sector registers).
+  wire [7:0] res_byte = (res_idx == 3'd0) ? res0 :
+                        (res_idx == 3'd1) ? res1 :
+                        (res_idx == 3'd2) ? 8'h00 :
+                        (res_idx == 3'd3) ? x_c :
+                        (res_idx == 3'd4) ? x_h :
+                        (res_idx == 3'd5) ? x_r : x_n;
 
   wire [1:0] pend_drv = pend[0] ? 2'd0 : pend[1] ? 2'd1 : pend[2] ? 2'd2 : 2'd3;
 
@@ -402,6 +413,11 @@ module pc9821_fdc #(
   reg  [4:0] ins_dly [0:1];
   wire [1:0] chg_ev   = media_chg[1:0] ^ chg_q;
   wire       ai_gate  = !chgreg[2] || ctrlreg[3];
+  // The gated ready is DEFERRED to the motor bit's rise, not lost: NP2kai fdc_o94 does
+  // `if (fdc.chgreg & 4) { if ((fdc.ctrlreg ^ dat) & 0x08) { if (dat & 0x08) { for (i...)
+  // if (fdd_diskready(i)) { fdc.int_stat[i] = FDCRLT_AI | i; ...` (io/fdc.c) - every drive
+  // that is ready then reports AI|drv. tb_pc9821_fdc_ready_change R3b.
+  wire       dor_ai   = cs && wr && (addr == A_DOR) && chgreg[2] && !ctrlreg[3] && din[3];
   wire [1:0] ai_ready;
   genvar gu;
   generate
@@ -435,7 +451,13 @@ module pc9821_fdc #(
   // is the ST0 half of error7, so ND is not part of it.
   wire [7:0] data_st0 = (cmd == 5'h0A) ? (8'h40 | {5'd0, cur_hd, cur_u})
                                        : (8'h48 | {5'd0, cur_hd, cur_u});
-  wire [7:0] deferred_st0 = ((cmd == 5'h07) || (cmd == 5'h0F)) ? rec_st0 : data_st0;
+  // SEEK (0x0F) has ONE not-ready class, whatever the equip and forced-ready state:
+  // NP2kai FDC_Seek tests only `if (!fdd_diskready(fdc.us))` and then does
+  // `fdc.int_stat[fdc.us] |= FDCRLT_IC0 | FDCRLT_NR;` = us|SE|IC0|NR = 0x68|u. The
+  // equip and forced-ready arms above are FDC_Recalibrate's alone. tb_pc9821_fdc_conform.
+  wire [7:0] seek_st0 = 8'h68 | {6'd0, cur_u};
+  wire [7:0] deferred_st0 = (cmd == 5'h07) ? rec_st0 :
+                            (cmd == 5'h0F) ? seek_st0 : data_st0;
 
   // 128 << N, clamped at N >= 8 exactly as NP2kai does (`if (fdc.N < 8) ... else 128<<8`,
   // fdd_d88.c:427-432).
@@ -514,13 +536,8 @@ module pc9821_fdc #(
       pend <= 4'd0;
       busy <= 4'd0;
       nd <= 1'b0;
-      res[0] <= 8'h80;
-      res[1] <= 8'h00;
-      res[2] <= 8'h00;
-      res[3] <= 8'h00;
-      res[4] <= 8'h00;
-      res[5] <= 8'h00;
-      res[6] <= 8'h00;
+      res0 <= 8'h80;
+      res1 <= 8'h00;
       res_len <= 3'd0;
       res_idx <= 3'd0;
       res_pop <= 1'b0;
@@ -600,14 +617,14 @@ module pc9821_fdc #(
           // command write's poll unable to reach (MSR & 0xC0) == 0x80.
           if (|pend) begin
             res_drv <= pend_drv;
-            res[0] <= pend_st0[pend_drv];
-            res[1] <= treg[pend_drv];  // PCN = the present cylinder (NP2kai fdc.treg[us])
+            res0 <= pend_st0[pend_drv];
+            res1 <= treg[pend_drv];  // PCN = the present cylinder (NP2kai fdc.treg[us])
             res_len <= 3'd2;
             res_pop <= 1'b1;
             res_rel <= 1'b1;
             res_irq <= 1'b0;
           end else begin
-            res[0] <= 8'h80;
+            res0 <= 8'h80;
             res_len <= 3'd1;
             res_pop <= 1'b0;
             res_rel <= 1'b0;
@@ -620,7 +637,7 @@ module pc9821_fdc #(
           st <= ST_PARAM;
         end else begin
           // Invalid/unsupported command: the standard 0x80 status, one byte.
-          res[0] <= 8'h80;
+          res0 <= 8'h80;
           res_len <= 3'd1;
           res_pop <= 1'b0;
           res_rel <= 1'b0;
@@ -645,7 +662,7 @@ module pc9821_fdc #(
             // `fdd_diskready(us) || (fdc.ctrlreg & 0x40)` (:367) and its WP is the image's own
             // protect flag (:370-372) - on this machine the D88 header's bit OR the mount's
             // read-only flag, i.e. `writeprotect`, NOT "media is present".
-            res[0] <= drive_equipped(din[1:0]) ? (8'h08 | {5'd0, din[2:0]} |
+            res0 <= drive_equipped(din[1:0]) ? (8'h08 | {5'd0, din[2:0]} |
                                                   (treg[din[1:0]] == 8'h00 ? 8'h10 : 8'h00) |
                                                   (drv_ready[din[1:0]] ? 8'h20 : 8'h00) |
                                                   (writeprotect[din[1:0]] ? 8'h40 : 8'h00))
@@ -658,8 +675,9 @@ module pc9821_fdc #(
             busy[din[1:0]] <= 1'b1;  // (fdc.c:300-302)
             res_idx <= 3'd0;
             st <= ST_RESULT;
-          end else if (((cmd == 5'h0F) || (cmd == 5'h07)) &&
-                       drive_equipped(cur_u) && (drv_media[cur_u] || ctrlreg[6])) begin
+          end else if (drive_equipped(cur_u) &&
+                       ((cmd == 5'h0F) ? drv_media[cur_u]
+                                       : ((cmd == 5'h07) && (drv_media[cur_u] || ctrlreg[6])))) begin
             // SEEK (0x0F) / RECALIBRATE (0x07) ON A READY DRIVE - NOT accepted-but-ignored.
             // NP2kai's FDC_Seek (io/fdc.c:773-779) and FDC_Recalibrate (:527-563) move the
             // TRACK REGISTER on a ready drive (SEEK: treg := NCN = cmds[1]; RECALIBRATE:
@@ -669,9 +687,10 @@ module pc9821_fdc #(
             // the head with SEEK/RECALIBRATE reads the wrong track. The unit is parameter 0 (get_hdus),
             // and SEEK's parameter 1 is the NCN.
             //
-            // READY here is media mounted OR the guest's forced-ready strap: NP2kai reaches
-            // this same success path for an equipped drive with no media when `ctrlreg & 0x40`
-            // is set, setting treg := ncn with NO NR (:613-621). An UNEQUIPPED unit stays in
+            // READY here is media mounted OR, for RECALIBRATE ONLY, the guest's forced-ready
+            // strap: NP2kai's FDC_Recalibrate reaches this success path for an equipped drive
+            // with no media when `ctrlreg & 0x40` is set, setting treg := ncn with NO NR
+            // (:613-621). FDC_Seek has no such arm: a SEEK needs media (fdd_diskready). An UNEQUIPPED unit stays in
             // the IC0 class even then (it sets 0x70|us, SE|IC0|EC, :604-611), which is why
             // the equip test is part of this condition and not only of the class below.
             crcn <= 8'h00;
@@ -750,13 +769,8 @@ module pc9821_fdc #(
               x_st <= X_IDLE;
               res_drv <= cur_p0[1:0];
               busy[cur_p0[1:0]] <= 1'b1;
-              res[0] <= 8'h40 | {5'd0, cur_p0[2], cur_p0[1:0]};   // IC0 | hd<<2 | us
-              res[1] <= 8'h02;                                      // ST1 NW
-              res[2] <= 8'h00;
-              res[3] <= cmds[1];
-              res[4] <= cmds[2];
-              res[5] <= cmds[3];
-              res[6] <= cmds[4];
+              res0 <= 8'h40 | {5'd0, cur_p0[2], cur_p0[1:0]};   // IC0 | hd<<2 | us
+              res1 <= 8'h02;                                      // ST1 NW
               res_len <= 3'd7;
               res_pop <= 1'b0;
               res_rel <= 1'b1;
@@ -820,13 +834,8 @@ module pc9821_fdc #(
             x_wr <= 1'b0;
             x_fmt <= 1'b0;
             res_drv <= x_us;
-            res[0] <= 8'h40 | {5'd0, x_hd, x_us};
-            res[1] <= 8'h02;                       // ST1 NW
-            res[2] <= 8'h00;
-            res[3] <= x_c;
-            res[4] <= x_h;
-            res[5] <= x_r;
-            res[6] <= x_n;
+            res0 <= 8'h40 | {5'd0, x_hd, x_us};
+            res1 <= 8'h02;                       // ST1 NW
             res_len <= 3'd7;
             res_pop <= 1'b0;
             res_rel <= 1'b1;
@@ -846,13 +855,8 @@ module pc9821_fdc #(
             // ST1 = ND; the interrupt comes with the result (fdcsend_error7 :98-119).
             x_st <= X_IDLE;
             res_drv <= x_us;
-            res[0] <= 8'h40 | {5'd0, x_hd, x_us};
-            res[1] <= 8'h04;                       // ST1 ND
-            res[2] <= 8'h00;
-            res[3] <= x_c;
-            res[4] <= x_h;
-            res[5] <= x_r;
-            res[6] <= x_n;
+            res0 <= 8'h40 | {5'd0, x_hd, x_us};
+            res1 <= 8'h04;                       // ST1 ND
             res_len <= 3'd7;
             res_pop <= 1'b0;
             res_rel <= 1'b1;
@@ -868,13 +872,12 @@ module pc9821_fdc #(
               x_st <= X_IDLE;
               crcn <= ((crcn + 8'd1) >= media_hs) ? 8'h00 : (crcn + 8'd1);
               res_drv <= x_us;
-              res[0] <= {5'd0, x_hd, x_us};
-              res[1] <= 8'h00;
-              res[2] <= 8'h00;
-              res[3] <= treg[x_us];
-              res[4] <= {7'd0, x_hd};
-              res[5] <= media_hr;
-              res[6] <= media_hn;
+              res0 <= {5'd0, x_hd, x_us};
+              res1 <= 8'h00;
+              x_c <= treg[x_us];      // C = the track register, H = the head, R/N = the header's
+              x_h <= {7'd0, x_hd};
+              x_r <= media_hr;
+              x_n <= media_hn;
               res_len <= 3'd7;
               res_pop <= 1'b0;
               res_rel <= 1'b1;
@@ -896,13 +899,8 @@ module pc9821_fdc #(
         X_XFER: if (media_err && !x_disc) begin
           x_st <= X_IDLE;
           res_drv <= x_us;
-          res[0] <= 8'h40 | {5'd0, x_hd, x_us};   // IC0 | hd<<2 | us
-          res[1] <= 8'h04;                        // ST1 ND
-          res[2] <= 8'h00;
-          res[3] <= x_c;
-          res[4] <= x_h;
-          res[5] <= x_r;
-          res[6] <= x_n;
+          res0 <= 8'h40 | {5'd0, x_hd, x_us};   // IC0 | hd<<2 | us
+          res1 <= 8'h04;                        // ST1 ND
           res_len <= 3'd7;
           res_pop <= 1'b0;
           res_rel <= 1'b1;
@@ -927,13 +925,9 @@ module pc9821_fdc #(
             // NP2kai forces R = 1 into the result's R byte (:925-932).
             x_st <= X_IDLE;
             res_drv <= x_us;
-            res[0] <= {5'd0, x_hd, x_us};
-            res[1] <= 8'h00;
-            res[2] <= 8'h00;
-            res[3] <= x_c;
-            res[4] <= x_h;
-            res[5] <= 8'h01;
-            res[6] <= x_n;
+            res0 <= {5'd0, x_hd, x_us};
+            res1 <= 8'h00;
+            x_r <= 8'h01;
             res_len <= 3'd7;
             res_pop <= 1'b0;
             res_rel <= 1'b1;
@@ -967,13 +961,8 @@ module pc9821_fdc #(
           x_wr <= 1'b0;
           x_fmt <= 1'b0;
           res_drv <= x_us;
-          res[0] <= 8'h40 | {5'd0, x_hd, x_us};   // IC0 | hd<<2 | us
-          res[1] <= 8'h04;                        // ST1 ND
-          res[2] <= 8'h00;
-          res[3] <= x_c;
-          res[4] <= x_h;
-          res[5] <= x_r;
-          res[6] <= x_n;
+          res0 <= 8'h40 | {5'd0, x_hd, x_us};   // IC0 | hd<<2 | us
+          res1 <= 8'h04;                        // ST1 ND
           res_len <= 3'd7;
           res_pop <= 1'b0;
           res_rel <= 1'b1;
@@ -998,13 +987,9 @@ module pc9821_fdc #(
               x_wr <= 1'b0;
               x_fmt <= 1'b0;
               res_drv <= x_us;
-              res[0] <= {5'd0, (x_mt ? ~x_hd : x_hd), x_us};
-              res[1] <= 8'h00;
-              res[2] <= 8'h00;
-              res[3] <= x_c + 8'd1;
-              res[4] <= x_mt ? (x_h ^ 8'h01) : x_h;
-              res[5] <= 8'h01;
-              res[6] <= x_n;
+              res0 <= {5'd0, (x_mt ? ~x_hd : x_hd), x_us};
+              res1 <= 8'h00;
+              x_c <= x_c + 8'd1;      // (x_h, x_r and x_hd took the step's values above)
               res_len <= 3'd7;
               res_pop <= 1'b0;
               res_rel <= 1'b1;
@@ -1045,12 +1030,12 @@ module pc9821_fdc #(
           ins_dly[k]  <= DISK_DELAY;
         end else begin
           if (frame_tick && (ins_dly[k] != 5'd0)) ins_dly[k] <= ins_dly[k] - 5'd1;
-          if (ai_ready[k]) begin
-            armed[k] <= 1'b0;
-            if (ai_gate) begin
-              pend[k]     <= 1'b1;
-              pend_st0[k] <= 8'hC0 | k[7:0];      // FDCRLT_AI | drv (diskdrv.c:240)
-            end
+          if (ai_ready[k]) armed[k] <= 1'b0;
+          // Both AI|drv sources, one write (R4): the delay's ready with the gate open
+          // (diskdrv.c:240) and the motor bit's rise for an already-ready drive (fdc_o94).
+          if ((ai_ready[k] && ai_gate) || (dor_ai && drv_media[k] && !armed[k])) begin
+            pend[k]     <= 1'b1;
+            pend_st0[k] <= 8'hC0 | k[7:0];        // FDCRLT_AI | drv
           end
         end
       end
@@ -1118,8 +1103,23 @@ module pc9821_fdc #(
       // a byte (a block fetch or write-back in flight): NP2kai's buffer always can, this
       // medium's cannot, and a PIO writer polls RQM before every byte, so a byte written then
       // would otherwise be dropped. A DMA write waits on DRQ, which follows the same term.
-      A_MSR:  dout = ((x_st != X_IDLE)  ? (x_wr ? (wx_ok ? 8'h90 : 8'h10) : 8'hD0) :
-                      (st == ST_EXEC)  ? 8'h90 :     // RQM | CB
+      // A NON-DMA READ shows RQM only while a byte is there (xfer_now): a PIO reader takes a
+      // byte on every RQM|DIO|NDM, and while a sector is being located or fetched the
+      // 0x92 port answers the idle 0x80 or a stale byte - bytes inserted into the stream.
+      // NP2kai's data is synchronous and it drops RQM between sectors (fdc_dataread:
+      // `fdc.status &= ~(FDCSTAT_RQM | FDCSTAT_NDM);`). tb_pc9821_fdc_read T13. A DMA read
+      // waits on DRQ (the same xfer_now), so its MSR is left as it was.
+      A_MSR:  dout = ((x_st != X_IDLE)  ? (x_wr ? (wx_ok ? 8'h90 : 8'h10)
+                                               : ((nd && !xfer_now) ? 8'h50 : 8'hD0)) :
+                      // CB alone, NO RQM: this model holds the command decoder in ST_EXEC
+                      // (the SEEK/RECALIBRATE delay, the no-media deferral) and takes no byte
+                      // there, so RQM must not invite one - a byte written on RQM=1/DIO=0 is
+                      // the FDC's by the uPD765 handshake, and it was silently dropped.
+                      // NP2kai ends SEEK's command phase at once instead (FDC_Seek:
+                      // `fdc.status |= FDCSTAT_RQM; fdc.status &= ~FDCSTAT_CB;`); a waiting
+                      // driver loses at most the delay here, never the byte.
+                      // tb_pc9821_fdc_conform seek_then_sis.
+                      (st == ST_EXEC)  ? 8'h10 :     // CB
                       (st == ST_PARAM) ? 8'h90 :     // RQM | CB
                       (st == ST_RESULT) ? 8'hD0 :    // RQM | DIO
                                           8'h80)     // RQM
@@ -1128,7 +1128,7 @@ module pc9821_fdc #(
       // The data port: the result bytes in the result phase, the sector byte while a
       // transfer runs, the machine's own idle 0x80 otherwise (/ 0092 = 80, all five
       // snapshots).
-      A_DATA: dout = (st == ST_RESULT) ? res[res_idx] :
+      A_DATA: dout = (st == ST_RESULT) ? res_byte :
                      (x_st == X_XFER)  ? media_dout : 8'h80;
       // NP2kai's fdc_i94 computes this byte on a READ (io/fdc.c:1064-1078); the WRITE
       // fdc_o94 is NOT ignored - it resets the controller (the A_DOR write arm above).
@@ -1179,7 +1179,7 @@ module pc9821_fdc #(
   // data path (X_IDLE..X_XFER). The values are the record's FST/FCM/FRS/FCH fields.
   assign dbg_state  = {irq, dma_drq, st, x_st};
   assign dbg_cmd    = {cmd_mt, 2'b00, cmd};
-  assign dbg_result = {res[0], res[1], res[2], exec_st0};
+  assign dbg_result = {res0, res1, 8'h00, exec_st0};
   assign dbg_chrn   = {x_c, x_h, x_r, x_n};
 
 endmodule

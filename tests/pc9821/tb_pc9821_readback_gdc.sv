@@ -107,6 +107,10 @@
 //     return cg_code[15:8] / cg_code[7:0] / {2'b00, ~cg_lr, cg_line}, which also makes a
 //     guest's own write round-trip. [source: docs/probes/PORTS.TXT]
 //
+// FAIL-FIRST (rtlrev-video): the sync_abort_* checks fail on the tree whose SYNC
+// capture survived a following command (the CSRW bytes became SYNC bytes, CSRR
+// answered the stale cursor, the slave's AL/VBP moved).
+//
 // FAIL-FIRST (this revision): the six lpen_* checks pin the 0xC0 answer to the
 // NP2kai slot value 00 and the a0_status_bit0_* checks to the queue-nonempty
 // flag; the pre-fix RTL answers the CSRFORM bytes instead (0F C0 7B master,
@@ -493,6 +497,66 @@ module tb_pc9821_readback_gdc;
     write_io(8'h6A, 8'h06);
     write_io(8'hA8, 8'h05);
     read_io(8'hAA, value); check("sixteen_colour_mirror_unchanged", {8'h00, value}, 16'h0033);
+
+    // ==== A COMMAND ABORTS AN UNFINISHED SYNC BLOCK (both GDCs) ==============
+    // NP2kai gdc_work's command branch reloads `item->ptr = gdc_cmd[data].pos;
+    // item->rcv = gdc_cmd[data].outdatas;` for EVERY command byte (io/gdc.c), so a
+    // SYNC (0x0E/0x0F) cut short by the next command stops taking parameters and the
+    // new command's bytes land in ITS block. The pre-fix RTL kept the SYNC capture
+    // armed across the command: the CSRW bytes below were eaten as SYNC bytes 2-4 (the
+    // master's raster geometry, the slave's graphics window) and CSRR answered the old
+    // cursor. [source: NP2kai io/gdc.c gdc_work]
+    write_io(8'h62, 8'h0F);       // master SYNC ON ...
+    write_io(8'h60, 8'h10);       // ... two of its eight bytes (defsyncm24's own)
+    write_io(8'h60, 8'h4E);
+    write_io(8'h62, 8'h49);       // CSRW interrupts it
+    write_io(8'h60, 8'h56);
+    write_io(8'h60, 8'h78);
+    write_io(8'h60, 8'h01);
+    write_io(8'h62, 8'hE0);       // CSRR
+    read_io(8'h62, value); check("sync_abort_master_csrw_lo", {8'h00, value}, 16'h0056);
+    read_io(8'h62, value); check("sync_abort_master_csrw_hi", {8'h00, value}, 16'h0078);
+    read_io(8'h62, value); check("sync_abort_master_csrw_b2", {8'h00, value}, 16'h0001);
+    check("sync_abort_master_sync2_kept", {8'h00, dut.u_crtc.sync_live[2]}, 16'h0007);
+    check("sync_abort_master_sync3_kept", {8'h00, dut.u_crtc.sync_live[3]}, 16'h0025);
+    check("sync_abort_master_sync4_kept", {8'h00, dut.u_crtc.sync_live[4]}, 16'h0007);
+    write_io(8'hA2, 8'h0F);       // slave SYNC ON ...
+    write_io(8'hA0, 8'h06);       // ... two of its eight bytes
+    write_io(8'hA0, 8'h26);
+    write_io(8'hA2, 8'h49);       // CSRW interrupts it
+    write_io(8'hA0, 8'h9A);
+    write_io(8'hA0, 8'hBC);
+    write_io(8'hA0, 8'h02);
+    // Five more bytes after the CSRW: on the pre-fix tree these complete the stale
+    // SYNC capture and land in the graphics window (AL/VBP).
+    write_io(8'hA2, 8'h4A);       // MASK
+    write_io(8'hA0, 8'h11);
+    write_io(8'hA0, 8'h22);
+    write_io(8'hA2, 8'hE0);       // CSRR
+    read_io(8'hA2, value); check("sync_abort_slave_csrw_lo", {8'h00, value}, 16'h009a);
+    read_io(8'hA2, value); check("sync_abort_slave_csrw_hi", {8'h00, value}, 16'h00bc);
+    read_io(8'hA2, value); check("sync_abort_slave_csrw_b2", {8'h00, value}, 16'h0002);
+    check("sync_abort_slave_al_kept",  {6'd0, dut.u_gdc2.gdc2_sal},  16'h0190);
+    check("sync_abort_slave_vbp_kept", {10'd0, dut.u_gdc2.gdc2_svbp}, 16'd25);
+    check("sync_abort_slave_mask_lo", {8'h00, dut.u_gdc2.gdc2_mask[0]}, 16'h0011);
+    check("sync_abort_slave_mask_hi", {8'h00, dut.u_gdc2.gdc2_mask[1]}, 16'h0022);
+
+    // ==== FF2 dat 0x40/0x41 and 0x80/0x81 are NOT write-protected ===========
+    // NP2kai gdc_o6a's dat switch sets/clears GDCDISP_PLAZMA for 0x40/0x41 and
+    // 0x80/0x81 with no mode2 bit-3 test (only 0x20/0x21 test `gdc.mode2 & 0x08`),
+    // and MAME pc9821_video_ff_w protects only dat 4/5 (`((data & 0xfe) == 4) &&
+    // !m_ex_video_ff[3]`). The bit reads back through the 0x9A0 query index 5
+    // (gdc_ff2_state[6]). FAIL-FIRST: the pre-fix RTL dropped both writes while
+    // the write enable was clear.
+    write_io(8'h6A, 8'h06);       // write enable OFF
+    write_io(8'h6A, 8'h41);
+    check("ff2_plazma_set_unprotected", {15'h0, dut.u_crtc.gdc_ff2_state[6]}, 16'h0001);
+    write_io(8'h6A, 8'h80);
+    check("ff2_plazma_clear_unprotected", {15'h0, dut.u_crtc.gdc_ff2_state[6]}, 16'h0000);
+    write_io(8'h6A, 8'h81);
+    check("ff2_plazma_set_via_81", {15'h0, dut.u_crtc.gdc_ff2_state[6]}, 16'h0001);
+    write_io(8'h6A, 8'h40);
+    check("ff2_plazma_clear_via_40", {15'h0, dut.u_crtc.gdc_ff2_state[6]}, 16'h0000);
 
     // ==== VERDICT ====
     $display("NOTE readback_gdc: %0d cases, %0d mismatched, sim %0t", cases, errors, $time);

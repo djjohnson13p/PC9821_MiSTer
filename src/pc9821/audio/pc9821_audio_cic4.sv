@@ -146,7 +146,7 @@ module pc9821_audio_cic4 (
 
     // ---- the shared MAC engine (TAPS=16, STRIDE=1, window 16 in a 32-deep buffer) ----
     pc9821_audio_fir_engine #(
-        .TAPS(16), .STRIDE(1), .RAM_AW(5), .CMIRROR(15), .COEF_AW(4), .SHIFT(17)
+        .TAPS(16), .STRIDE(1), .RAM_AW(5), .CMIRROR(15), .COEF_AW(4), .SHIFT(17), .HOLD_OUT(0), .SAT(0)
     ) u_fir_a (
         .clk(clk),
         .wr_en(wr_pend), .wr_addr(waddr_q), .wr_l(in_l_q), .wr_r(in_r),

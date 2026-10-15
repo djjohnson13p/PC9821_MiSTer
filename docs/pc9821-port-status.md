@@ -149,7 +149,7 @@ The **graphics GDC** implements SCROLL (four partitions), the display START/STOP
 compositor's graphics enable), CSRFORM's line repeat (a 640x200 program is line-doubled into
 the 400-line raster), and the **WRITE family** (WDAT/VECTW/CSRW/WRITE, the uPD7220's vector
 path, `tb_pc9821_gdc2_write`). FIGD line/rectangle/arc drawing, the CURD read-back's five-byte
-shape and the FIFO/drawing-busy timing are accepted but **not executed** (TODO item 63).
+shape and the FIFO/drawing-busy timing are accepted but **not executed** (README known issues).
 
 ### Character generator
 
@@ -167,12 +167,21 @@ M10K, and the **GRCG** (`0x7C`/`0x7E`, tile direct-write and RMW) and the **EGC*
 (`0x04A0-0x04AF`, gated by the guest's own enable bits) are clients of it. The scanout folds
 the four planes through the digital/analogue palette and composites the text plane over them.
 
+The EGC's per-plane work runs **plane-serially**: one 16-bit datapath steps the four planes of a
+unit in turn (always four steps, whatever `0x4A0` enables), accumulates the write's four planes
+and presents them as the same column requests the parallel engine issued, so every GVRAM word is
+written whole in one clk_sys and the compare/pattern results appear only when all four planes are
+in. It is bit-identical to the parallel engine (`tb_pc9821_egc_serial_equiv`) and stays under the
+Xe10's own EGC cost at 80 and 50 MHz (`tb_pc9821_egc_xe10_pace` against `docs/probes/EGCP.TXT`:
+writes cost the CPU nothing, a same-page read+write row 262.5 ns at 80 MHz against the
+machine's 677 ns); trade-candidates T41 carries the area and cycle numbers.
+
 **PEGC 256-colour**: the display half is implemented (the `0xE0000` register file, the window
 arms and the `0xE0102` aperture gate, the packed scanout, the 256-entry palette), and the
 packed store path drains through a posted, byte-combining store buffer and same-row SDRAM
 gather sessions with a byte mask on the module's DQM-on-address pins
 ([`sdram-dqm-wiring.md`](sdram-dqm-wiring.md)). The PEGC **plane-mode engine** is not
-implemented (TODO item 62).
+implemented (README known issues).
 
 ### Pixel clock
 
@@ -233,16 +242,62 @@ settings are approximations of the named clock, not cycle-exact models of those 
   DEVICE PARAMETERS, CHS and LBA28, multi-sector PIO reads and writes, READ/WRITE MULTIPLE,
   FLUSH CACHE as a no-op, IRQ9, a read-only image rejected before any host transfer. The
   fixed-disk BIOS interface is INT 1Bh, and it belongs to the guest's BIOS.
+- **IDE layout (fixed, owner 2026-10-11)**: the hard disk (hps_io slot 0) is ALWAYS bank 0's
+  master (IDE unit 0) and the CD-ROM, when built, ALWAYS bank 1's master (unit 2); without the CD
+  bank 1 is an empty connector. Nothing moves with `CDROM_EN` or with a disc mount or eject. This
+  is the stock CD-equipped Xe10's layout and NP2kai's default (HDD at unit 0, CD at unit 2). The
+  owner's Xe10 answers at bank 1 and floats bank 0 (`docs/probes/IDE.TXT`, `ATA.TXT`) only because
+  its CF card sits in the CD connector; the core uses that machine's measured live-bank answers
+  and empty-bank float (`0x0E` task file, `0x0F` at `0x74C`/`0x74E`) at its own banks. Port
+  `0xF0` bits 5/6 are the two connectors' drive-present lines (active low; the ITF's IDE drive
+  bitmap at BANK4@0x19DF-0x19F2 and its `0x457` byte): bit 5 clears while the disk's image is
+  mounted and bit 6 is clear only in the CD build, so the Xe10 strap reads `0x89` with a disk and
+  the CD (the stock machine), `0xA9` with the CD alone, `0xC9` with the disk alone and `0xE9`
+  with neither (`tb_pc9821_ide_layout`, both builds through the real `pc9821_system`).
 - **CD-ROM** (`pc9821_atapi.sv`, on in every preset): an ATAPI drive as bank 1's master with
   the hard disk on bank 0, ISO and PCD images (`tools/cue2pcd.py` converts BIN/CUE), and CD-DA
   playback. Expected values follow NP2kai's `cbus/ideio.c`/`atapicmd.c`. Verified with NEC's
-  `NECCD.SYS` + MSCDEX; file reads fail while CD-DA plays (the NEC driver's behaviour, which
-  NP2kai shares).
+  `NECCD.SYS` + MSCDEX. While CD-DA plays, every file read on the CD fails with the driver's
+  "CDR101: Not ready" (DOS error 5 to a program whose INT 24h answers Fail). That is the guest
+  stack's answer, not the drive's: the MS-DOS CD-ROM Extensions 2.1 device-driver spec has the
+  driver fail every request that needs head movement while the drive plays, returning the busy
+  and error bits and an error code, and a `--dbg-cd` trail of `mister_regress.py`'s `probe-cda`
+  (2026-10-12) shows NECCD.SYS answering each open from READ SUB-CHANNEL (audio status 0x11) and
+  TEST UNIT READY alone, with no READ(10) sent while the drive plays. A real drive reports the same
+  0x11 during play, so the Xe10 is expected to give the same answer. A program that wants data
+  stops the audio first. The drive
+  itself follows NP2kai `cbus/atapicmd.c`: a READ(10) during play is served and the play goes on,
+  TEST UNIT READY is GOOD, READ SUB-CHANNEL reports 0x11; MMC drives and MAME
+  `machine/t10mmc.cpp` (`abort_audio()`) stop the play on a READ instead, which no NEC-driver path
+  can observe.
 - **Floppy** (`pc9821_fdc.sv`, `pc9821_fdd_media.sv`): two drives, D88 and raw images, READ
   DATA/READ ID/WRITE DATA over DMA channel 2, raw FORMAT, live mount/eject with NP2kai's
-  media-change interrupts. **D88 FORMAT and 2HS/rpm gating remain** (TODO item 59).
+  media-change interrupts. **D88 FORMAT and 2HS/rpm gating remain** (README known issues).
 - **DMA**: the 8237-compatible DMA controller (`pc9821_dmac`) serves the FDC; the PCM
   board does not use DMA.
+
+**Storage area pass (2026-10-11, lane `area-storage`).** The storage paths were slimmed for LABs
+with every guest-read value held identical, each change proven against the previous RTL by a
+bench that passes on both and fails a mutant. Module-alone A&S (`tools/res_exp_map.py`):
+`pc9821_ata` 924 -> 854 ALMs (the end-of-image test is one borrow of `capacity - lba`; LBAs are
+28 bits, the task file cannot name more; the geometry divider runs continuously instead of
+detecting changes, so a new capacity or IDP geometry reaches IDENTIFY words 1/54/57/58 within 96
+clocks), `pc9821_fdd_media` 786 -> 695 (image extents are 21 bits plus a BIG flag: no servable
+image reaches 2^21 bytes), `pc9821_dmac` 487 -> 445 (the autoinitialize copies sit in five
+4x8 block RAMs; a CPU write to the active channel's copy in the one clock before its own
+autoinitializing terminal count is seen a clock late), `pc9821_atapi` 1466 -> 1345 (MODE SENSE
+pages addressed by concatenation, the sense key and ASC as codes, READ SUB-CHANNEL's scan keeping
+the difference), `pc9821_fdc` 493 -> 452 (the result phase is `{ST0, ST1, 0, x_c, x_h, x_r, x_n}` read from
+the sector registers). The only storage LATENCY added is the geometry divider's 96-clock window
+after an IDP or a mount (the guest reads those words 50+ port accesses after the command that
+asks for them); `tb_pc9821_ata_idcyl` waits 160 clocks per change. Things measured and NOT worth
+it (module-alone, so do not retry): serialising PLAY AUDIO MSF through one converter (+34 ALMs:
+the parallel form's constant multipliers are cheaper than a variable-operand datapath), one shared
+subtractor for the MSF converter's two loops (+43), compacting the D88 header walk into
+accumulators (+8 ALMs for -31 flops), and replacing flops with fewer flops alone (an ALM holds
+two registers beside its LUT, so only removed LOGIC moves the count). `tb_pc9821_atapi_equiv`
+(with `tests/pc9821/pc9821_atapi_ref.sv`, the drive as it was) is the harness for further CD
+refactors.
 
 Both media share one block adapter (`pc9821_block_share`) on the single `hps_io` block
 channel. Mount state is latched outside the reset branch (the host keeps an image mounted
@@ -324,12 +379,12 @@ A mid-range 486 PC-9821 (Xe10 / Xe), not a PCI-era model:
 
 ## Not implemented
 
-- the GDC2's FIGD line/rectangle/arc drawing and its FIFO/drawing-busy timing (item 63);
-- the PEGC plane-mode engine (item 62);
-- the WSS/MSS 16-bit audio board (item 61);
-- the serial port (item 64);
+- the GDC2's FIGD line/rectangle/arc drawing and its FIFO/drawing-busy timing;
+- the PEGC plane-mode engine;
+- the WSS/MSS 16-bit audio board;
+- the serial port;
 - x87 / FPU;
-- FDC D88 FORMAT and 2HS/rpm gating (item 59);
+- FDC D88 FORMAT and 2HS/rpm gating;
 - the `0xDA000` IDE work-RAM paging (served as plain RAM) and the `FA0000-FFFFFF` mirror
   (served as RAM);
 - reserved/open-bus decode is approximate outside the ranges the firmware exercises.

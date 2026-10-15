@@ -2,7 +2,7 @@
 
 // ==== WHAT THIS PROVES ====
 // TB_PC9821_SDRAM_STRICT:
-// The platform's SDRAM controller, at the platform's OWN settings (FREQ 80 MHz - clk_sys, which the controller runs on - HAS_DQM=0 with ADQM=1 so the byte mask rides A11/A12, FAST_GRADE=0, a 128 MB module, GATHER_K=4 and PRE_ACT on), is driven against the MiSTer community's STRICT XSDS module model - the two-chip AS4C32M16SB-6TIN board, with CHE indact to VCC and DQML/DQMH strapped to A11/A12 - and the MODULE ITSELF is the judge: every command it sees is decoded against the CONTROLLER_GUIDE's protocol and AC-timing rules, every AUTO REFRESH is recorded per chip, and a single violation anywhere in the run fails this bench through the model's own error count rather than through anything this bench believes. The traffic is a real one: the power-up hold the model requires, a dword write/read-back walk across BOTH chips and across rows and banks, byte-masked writes (the mask-on-address path the XSDS board forces), a burst read spanning a row boundary, and a port-0 gather session. The module is clocked the MiSTer way - by the forwarded SDRAM_CLK, lagging the controller clock by the pin-clock lead the configuration's STA I/O model implies, with read data returning through the FPGA's I/O path - so the controller's DQ capture register samples the module where the fit's STA places that capture, about 1 ns before the module's CAS-latency edge.
+// The platform's SDRAM controller, at the platform's OWN settings (FREQ 80 MHz - clk_sys, which the controller runs on - HAS_DQM=0 with ADQM=1 so the byte mask rides A11/A12, FAST_GRADE=0, a 128 MB module, GATHER_K=4 and PRE_ACT on), is driven against the MiSTer community's STRICT XSDS module model - the two-chip AS4C32M16SB-6TIN board, with CHE indact to VCC and DQML/DQMH strapped to A11/A12 - and the MODULE ITSELF is the judge: every command it sees is decoded against the CONTROLLER_GUIDE's protocol and AC-timing rules, every AUTO REFRESH is recorded per chip, and a single violation anywhere in the run fails this bench through the model's own error count rather than through anything this bench believes. The traffic is a real one: the power-up hold the model requires, a dword write/read-back walk across BOTH chips and across rows and banks, byte-masked writes (the mask-on-address path the XSDS board forces), a burst read spanning a row boundary, and a port-0 gather session. The module is clocked the MiSTer way - by the forwarded SDRAM_CLK, lagging the controller clock by the pin-clock lead the configuration's STA I/O model implies, with read data returning through the FPGA's I/O path - so the controller's DQ capture register samples the module where the fit's STA places that capture, about 1 ns before the module's CAS-latency edge. Each chip's AUTO REFRESH commands, read off the module's own pins (RAS#/CAS#/WE# = 0/0/1, the chip by Cs1_n), arrive at least twice in the run and never more than 64 ms / 8192 = 7812.5 ns apart (nor that long before the run ends), since the model only warns on tREFI.
 //
 // WHY. Three benches already check THIS controller, and all three check it against our own
 // understanding of it (tb_pc9821_sdram_act, _preact, _gather_map). The community model is an
@@ -146,6 +146,34 @@ module tb_pc9821_sdram_strict;
       .valid3(valid3), .ready3(ready3), .wr3(wr3), .addr3(addr3), .din3(din3), .dout3(dout3),
       .be3(be3), .resp_valid3(resp_valid3), .burst_cnt3(burst_cnt3), .burst_done3(burst_done3)
   );
+
+  // ==== EACH CHIP'S REFRESH, read off the module's own pins ====
+  // The model only WARNS on a long AUTO REFRESH interval (record_refresh's tREFI check is an
+  // issue_warn, not counted in module_error_count) and its 8192-in-64-ms window check needs a
+  // 64 ms run, so neither can fail this bench: a controller that refreshed one chip only, or at
+  // half the rate, passed (bench-audit 2026-10-12, mutants "chip 1 never refreshed" and
+  // "refresh interval doubled"). The requirement itself is the model header's "Each chip
+  // independently requires 8192 AUTO REFRESH commands per 64 ms" (xsds_128mbyte_sdram_model.sv
+  // :35, the AS4C32M16SB datasheet's 64 ms / 8192 rows); this controller distributes them one
+  // per interval, so per chip no two consecutive AUTO REFRESHes - and no refresh and the end of
+  // the run - may be further apart than 64 ms / 8192 = 7812.5 ns, which is sufficient for every
+  // 64 ms window. AUTO REFRESH is {RAS#, CAS#, WE#} = 0,0,1 on the module clock; Cs1_n picks the
+  // chip (Cs1_n=0 chip 0, =1 chip 1, header :28-29).
+  localparam real T_REF_INTERVAL_NS = 64_000_000.0 / 8192.0;
+  realtime ref_last [0:1];
+  realtime ref_maxgap [0:1];
+  integer  ref_count [0:1];
+  initial begin
+    ref_count[0] = 0; ref_count[1] = 0;
+    ref_maxgap[0] = 0.0; ref_maxgap[1] = 0.0;
+  end
+  always @(posedge sdram_clk)
+    if (!SDRAM_nRAS && !SDRAM_nCAS && SDRAM_nWE) begin
+      if (ref_count[SDRAM_nCS] != 0 && ($realtime - ref_last[SDRAM_nCS]) > ref_maxgap[SDRAM_nCS])
+        ref_maxgap[SDRAM_nCS] = $realtime - ref_last[SDRAM_nCS];
+      ref_last[SDRAM_nCS] = $realtime;
+      ref_count[SDRAM_nCS] = ref_count[SDRAM_nCS] + 1;
+    end
 
   // ==== THE JUDGE: the community's strict XSDS model ====
   // Its ports are the connector's: there is no DQM port because the board straps DQML/DQMH to
@@ -361,6 +389,20 @@ module tb_pc9821_sdram_strict;
     if (busy) begin
       $display("FAIL contention: the controller is still busy after the load drained");
       errors = errors + 1;
+    end
+
+    // ---- each chip's refresh cadence (the monitor above) ----
+    for (i = 0; i < 2; i = i + 1) begin
+      checks = checks + 1;
+      if (ref_count[i] < 2) begin
+        $display("FAIL refresh: chip %0d saw %0d AUTO REFRESH command(s) in the run", i, ref_count[i]);
+        errors = errors + 1;
+      end else if (ref_maxgap[i] > T_REF_INTERVAL_NS || ($realtime - ref_last[i]) > T_REF_INTERVAL_NS) begin
+        $display("FAIL refresh: chip %0d's AUTO REFRESH gap %0.1f ns (to the end %0.1f ns) exceeds 64 ms / 8192 = %0.1f ns",
+                 i, ref_maxgap[i], $realtime - ref_last[i], T_REF_INTERVAL_NS);
+        errors = errors + 1;
+      end else
+        $display("NOTE sdram_strict: chip %0d: %0d AUTO REFRESH, widest gap %0.1f ns", i, ref_count[i], ref_maxgap[i]);
     end
 
     // ---- THE VERDICT IS THE MODEL'S ----

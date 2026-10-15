@@ -213,7 +213,7 @@ module tb_pc9821_ata_readahead;
 
     // Wait for the capacity-derived cylinder count, then select the interface's bank.
     while (dut.current_cylinders !== 16'd735) @(negedge clk);
-    write_byte(16'h0432, 8'h01);
+    write_byte(16'h0432, 8'h00);
 
     // A SECTORS-sector LBA28 READ SECTORS, exactly the task-file order the ROM
     // uses: count, LBA, drive/head, then the command.

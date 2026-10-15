@@ -38,16 +38,22 @@ module pc9821_memory_map (
     input wire [31:0] ems_page_base,
       // 0x0461: the base of the movable 128 KiB window at 0x80000-0x9FFFF, as a PAGE NUMBER.
     input wire [7:0] win0_sel,
+    // pc9821_iobus's registered `win0_sel != 8'h08` (equal to the compare every cycle).
+    input wire       win0_sel_moved,
 
       // Runtime memory sizing: the 1 MiB firmware reserve sits directly above the guest RAM.
+    /* verilator lint_off UNUSEDSIGNAL */   // pack_base is a whole number of MiB: its low 20 bits are zero and not read
     input wire [31:0] pack_base,
+    /* verilator lint_on UNUSEDSIGNAL */
     input wire [31:0] guest_ram_bytes,
 
       // The PEGC extended-VRAM window: 0xF00000-0xF7FFFF when 0x043B's 15-16 MiB hole is on, and
       // the SDRAM base it lives at. Decoded in pc9821_memory_subsystem because that is
       // where sys16m_en lives; served here so the access takes the ordinary backend route.
     input wire        peg_window,
+    /* verilator lint_off UNUSEDSIGNAL */   // peg_base's low 19 bits are zero (0x80000-aligned) and not read
     input wire [31:0] peg_base,
+    /* verilator lint_on UNUSEDSIGNAL */
 
     // THE PEGC 256-COLOUR WINDOW ARMS. `pegc_256` is
     // the 0x6A dat 0x21 select (pc9821_crtc's mode2_256col), and while it is set the
@@ -83,6 +89,18 @@ module pc9821_memory_map (
 
     // z486/native requester
     input  wire [31:0] cpu_addr,
+    // THE SAME ACCESS BEFORE THE SUBSYSTEM'S TRANSLATION, and which translation made cpu_addr
+    // from it (pc9821_memory_subsystem's eff_addr; its three arms are mutually exclusive):
+    //   xl_low20: cpu_addr = {12'd0, cpu_addr_raw[19:0]} (the 15 MiB mirror, the BIOS at 4 GiB)
+    //   xl_peg:   cpu_addr = {8'd0,  cpu_addr_raw[23:0]} (the PEGC high alias)
+    //   neither:  cpu_addr = cpu_addr_raw
+    // The control decodes below (window 0, the region flags, the RAM-bound compare) run on the
+    // raw address per arm and select late, so the translation selects are the LAST mux in those
+    // cones rather than their first (docs/timing.md P0); cpu_addr still carries the data path.
+    // A requester with no translation ties cpu_addr_raw to cpu_addr and both selects low.
+    input  wire [31:0] cpu_addr_raw,
+    input  wire        xl_low20,
+    input  wire        xl_peg,
     input  wire [31:0] cpu_din,
     output wire [31:0] cpu_dout,
     output wire [127:0] cpu_line_dout,
@@ -97,6 +115,10 @@ module pc9821_memory_map (
 
                 // Asserted for the absent ROM area so the subsystem routes it away; this block does not serve it.
     output wire        absent_area,
+    // d_addr >= guest_ram_bytes: the subsystem's open-bus select reuses this compare instead of
+    // building a second 32-bit one on the same post-window-0 address
+    // (tools/equiv/route_addr_vs_d_addr.sv proves its route_addr is this d_addr).
+    output wire        addr_ge_ram,
     // Asserted for the EMS window's measured unmapped state (0x2x other than 0x20/0x22) so
     // the subsystem routes it to the registered open-bus responder, exactly as absent_area
     // is. Decoded here, on the same post-window-0 address every other region uses, so the
@@ -129,15 +151,62 @@ module pc9821_memory_map (
   // bench's boundaries and its win0 0x00/0x0E/0x10 cases are unchanged. This is the same slice
   // identity the plane windows below already use, and it is on the design's worst 50 MHz cone:
   // the two magnitude compares left a LessThan chain between the CPU address and win0_moved.
-  wire        win0_in_window = !(|cpu_addr[31:20]) && (cpu_addr[19:17] == 3'b100);
-  wire        win0_moved = win0_in_window && (win0_sel != 8'h08);
+  // Tested on the RAW address: no translation arm can move an address into or out of the
+  // window (pc9821_memory_subsystem's win0_moved comment; tools/equiv/route_addr_vs_d_addr.sv).
+  wire        win0_in_window = !(|cpu_addr_raw[31:20]) && (cpu_addr_raw[19:17] == 3'b100);
+  // win0_sel_moved is pc9821_iobus's REGISTERED `win0_sel != 8'h08`, equal to the compare in
+  // every cycle (tools/check_win0_moved_inv.py), so the window test is the address slice and one
+  // flop, not the slice and an 8-bit compare (the C7 head, docs/timing.md).
+  wire        win0_moved = win0_in_window && win0_sel_moved;
   // The bias add is a bit splice, not a carry chain: inside the window cpu_addr - 0x80000 is
   // exactly cpu_addr[16:0], and win0_sel << 16 lands the page in [23:16], so the 32-bit
   // `cpu_addr + {8'd0,win0_sel,16'd0} - 0x80000` is a 9-bit add over a wired-through low half.
   // win0_sel[0] is always 0 (pc9821_iobus masks 0xFE); the cpu_addr[16] carry term keeps the
   // odd-value arithmetic identical anyway. The carry chain it replaces was 2.3 ns of
-  wire [8:0] win0_hi = {1'b0, win0_sel} + {8'd0, cpu_addr[16]};
+  wire [8:0] win0_hi = {1'b0, win0_sel} + {8'd0, cpu_addr_raw[16]};   // [16] is never translated
   wire [31:0] d_addr = win0_moved ? {7'd0, win0_hi, cpu_addr[15:0]} : cpu_addr;
+  // THE REGION DECODE IS MUXED LATE. Every window flag below is a pure function of
+  // d_addr[31:13], and d_addr is one of exactly two addresses: the raw cpu_addr, or (window 0
+  // moved) {7'd0, win0_hi, cpu_addr[15:0]}. So each flag is decoded on BOTH in parallel and
+  // win0_moved picks the finished flag, instead of picking the address and decoding after it:
+  // win0_moved is the deepest select in the cone (the ext_addr_r -> eff_addr -> win0_moved prefix,
+  // docs/timing.md P0), and this leaves one mux level after it where the address-first form
+  // left the nibble compares as well (the fitted C7 chain ran win0_moved -> gvram_low[19] ->
+  // peg_a8 -> gvram_window). The moved arm's decode reads only win0_sel (a register) and
+  // cpu_addr[16:13]. Bit-equal for every input: tools/check_memmap_addr_equiv.py proves every
+  // output of the map against the address-first form.
+  localparam integer DV_W = 17;
+  function automatic [DV_W-1:0] region_dec(input [31:13] a);
+    reg first;
+    begin
+      first = !(|a[31:20]);
+      region_dec = {
+        first,                                                          // 16 first MiB
+        first && (a[19:16] == 4'hD) && (a[15:14] == 2'b10),             // 15 D8000-DBFFF
+        first && (a[19:16] == 4'hD) && (a[15:13] == 3'b100),            // 14 D8000-D9FFF
+        first && (&a[19:17]) && (a[15] != a[16]),                       // 13 E8000-F7FFF
+        first && (&a[19:16]) && a[15],                                  // 12 F8000-FFFFF
+        &a[31:15],                                                      // 11 FFFF8000-
+        first && (a[19:16] == 4'hC) && a[15] && a[14],                  // 10 CC000-CFFFF
+        first && (a[19:16] == 4'hD) && a[15] && !a[14] && a[13],        //  9 DA000-DBFFF
+        first && (a[19:16] == 4'hD) && a[15] && a[14],                  //  8 DC000-DFFFF
+        first && (a[19:17] == 3'b110) && (!a[16] || !a[15]),            //  7 C0000-D7FFF
+        (a[19:16] == 4'hA) && a[15],                                    //  6 A8000-AFFFF
+        (a[19:16] == 4'hB) && !a[15],                                   //  5 B0000-B7FFF
+        (a[19:16] == 4'hB) && a[15],                                    //  4 B8000-BFFFF
+        (a[19:16] == 4'hE) && !a[15],                                   //  3 E0000-E7FFF
+        (a[19:16] == 4'hB),                                             //  2 B0000-BFFFF
+        a[16:15] - 2'd1                                                 // 1:0 plane index
+      };
+    end
+  endfunction
+  // ... and the unmoved address is itself one of three, by the subsystem's translation arm,
+  // so it is decoded per arm too and the translation selects pick the finished flag (P0-d).
+  wire [DV_W-1:0] dv_raw = region_dec(cpu_addr_raw[31:13]);
+  wire [DV_W-1:0] dv_l20 = region_dec({12'd0, cpu_addr_raw[19:13]});
+  wire [DV_W-1:0] dv_peg = region_dec({8'd0, cpu_addr_raw[23:13]});
+  wire [DV_W-1:0] dv_mv  = region_dec({7'd0, win0_hi, cpu_addr_raw[15:13]});
+  wire [DV_W-1:0] dv     = win0_moved ? dv_mv : xl_low20 ? dv_l20 : xl_peg ? dv_peg : dv_raw;
 
         // Only the 8 KiB option ROM is a window; 0xDA000-0xDBFFF stays identity RAM because the authentic
         // IDE BIOS keeps its private 8 KiB work RAM there, gated by 0x1E8E -- and that gate is decoded
@@ -164,15 +233,12 @@ module pc9821_memory_map (
   // the IDE ROM there instead hung MS-DOS 6.2 EMM386's boot. ASSUMPTION: the alternate banks
   // share the IDE ROM's 0x053D gate (ide_rom_enable); the capture was taken with it open.
   wire d8_alt = ide_rom_enable && d8_bank[0];
-  wire d8_alt_window = d8_alt && !(|d_addr[31:20]) &&
-                       (d_addr[19:16] == 4'hD) && (d_addr[15:14] == 2'b10);
-  wire ide_rom_window = ide_rom_enable && !d8_bank[0] && !(|d_addr[31:20]) &&
-                        (d_addr[19:16] == 4'hD) && (d_addr[15:13] == 3'b100);
-  wire bios_lower = !(|d_addr[31:20]) &&
-                    (&d_addr[19:17]) && (d_addr[15] != d_addr[16]);
-  wire fw_low = !(|d_addr[31:20]) && (&d_addr[19:16]) && d_addr[15];
+  wire d8_alt_window = d8_alt && dv[15];
+  wire ide_rom_window = ide_rom_enable && !d8_bank[0] && dv[14];
+  wire bios_lower = dv[13];
+  wire fw_low = dv[12];
   // 0xFFFF8000-0xFFFFFFFF is "every bit from 15 upward": the top-of-4G ROM alias.
-  wire fw_high = &d_addr[31:15];
+  wire fw_high = dv[11];
   wire fw_window = fw_low || fw_high;
         // Out-of-range completion lives here as well as in the subsystem's pc9821_open_bus responder:
         // tb_pc9821_memory_map expects 0xFFFF_FFFF here, and the two cannot both accept.
@@ -183,8 +249,16 @@ module pc9821_memory_map (
         // the direct encoding serves open bus (or PEGC EVRAM). The fw_high guard moves with
         // it because fw_high is decoded on d_addr too; for every access the two agree except
         // through the window-0 bias, which can never land on fw_high.
-  wire out_of_range = (d_addr >= guest_ram_bytes) &&
-                      !(d_addr >= 32'hFFFF_8000) && !peg_window;
+  // Per arm, like the region flags: d_addr is one of four addresses, each compared on its own
+  // and the window-0/translation selects pick the finished compare (the fitted R1 chain ran
+  // eff_addr -> d_addr -> this compare -> open_select -> z_ready). `d_addr >= 0xFFFF8000` is
+  // &d_addr[31:15], i.e. fw_high.
+  wire ge_raw = (cpu_addr_raw >= guest_ram_bytes);
+  wire ge_l20 = ({12'd0, cpu_addr_raw[19:0]} >= guest_ram_bytes);
+  wire ge_peg = ({8'd0, cpu_addr_raw[23:0]} >= guest_ram_bytes);
+  wire ge_mv  = ({7'd0, win0_hi, cpu_addr_raw[15:0]} >= guest_ram_bytes);
+  assign addr_ge_ram = win0_moved ? ge_mv : xl_low20 ? ge_l20 : xl_peg ? ge_peg : ge_raw;
+  wire out_of_range = addr_ge_ram && !fw_high && !peg_window;
   wire local_open_bus = out_of_range && cpu_valid;   // the EMS window's unmapped state is answered by the registered
                                                       // open-bus responder, not here (see pc9821_memory_subsystem)
 
@@ -209,8 +283,7 @@ module pc9821_memory_map (
             // the pack's SOUND.ROM region (tools/pack_layout.py SOUND_OFFSET); a pack built
             // without the image is 0xFF there, i.e. the "no card fitted" answer. This is item
             // 96, implemented once the owner's dump made the window modelable (2026-09-28).
-  wire sound_rom_window = !(|d_addr[31:20]) && (d_addr[19:16] == 4'hC) &&
-                          d_addr[15] && d_addr[14];
+  wire sound_rom_window = dv[10];
             // ================= THE 0x1E8E-GATED IDE WORK RAM: 0xDA000-0xDBFFF ======================
             // The IDE option ROM keeps its private 8 KiB work RAM at D800:2000+ (BANK3@0x0B40
             // sets ES=0xD800 and its state tables land at 0xDA066-0xDA2xx), and the machine can
@@ -232,8 +305,7 @@ module pc9821_memory_map (
             // Block D with bit 15 set is the D8000-DFFFF window; bit 14 splits its RAM half
             // (DA000-DBFFF, bit 13 set) from the option-ROM window (D8000-D9FFF) and from
             // the FF-always tail (DC000-DFFFF).
-  wire ide_workram = !d8_alt && !(|d_addr[31:20]) && d_addr[19] && d_addr[18] && !d_addr[17] &&
-                     d_addr[16] && d_addr[15] && !d_addr[14] && d_addr[13];
+  wire ide_workram = !d8_alt && dv[9];
             // ================ end the 0x1E8E-gated IDE work RAM ================================
 
             // ================= THE FF-ALWAYS TAIL: 0xDC000-0xDFFFF ==========================
@@ -246,29 +318,27 @@ module pc9821_memory_map (
             // the outlier). The tail's gate-ON state is capture-pending: one marker write at
             // 0xDC000 under 0x1E8E=0x81 settles it (probe2 /IDEGATE, item 34); the QEMU shape
             // is what is modelled until that capture lands.
-  wire ide_worktail = !(|d_addr[31:20]) && d_addr[19] && d_addr[18] && !d_addr[17] &&
-                      d_addr[16] && d_addr[15] && d_addr[14];
+  wire ide_worktail = dv[8];
             // ================ end the FF-always tail ====================================
-  assign absent_area = (!(|d_addr[31:20]) && d_addr[19] && d_addr[18] && !d_addr[17] &&
-                        (!d_addr[16] || !d_addr[15]) && !sound_rom_window) ||
+  assign absent_area = (dv[7] && !sound_rom_window) ||
                        (ide_workram && !ide_ram_gate) || ide_worktail;
   // ================ end absent ROM area ===================================
 
                   // Graphics VRAM: 0xA8000-0xBFFFF holds planes B/R/G as three contiguous 32 KiB windows; the
                   // intensity window at 0xE0000 is separate (0xD0000 is the option ROM's). This file only DECODES
                   // them - pc9821_gvram owns the planes and takes {page, plane_offset}.
-  wire [19:0] gvram_low    = d_addr[19:0];
+  wire [15:0] gvram_low    = d_addr[15:0];   // the block nibble [19:16] is decoded in region_dec
   // The PEGC window arms' membership tests are the same nibble slices the plane
   // decodes use: A8000-AFFFF is nibble A with bit 15 set, B0000-B7FFF nibble B with
   // bit 15 clear, B8000-BFFFF nibble B with bit 15 set, E0000-E7FFF nibble E with
   // bit 15 clear - each inside the first MiB (`peg_first`). The packed bank splice is
   // NP2kai's VGARD8: physical offset = {bank, window offset[14:0]} (mem/memvga.c
   // `(mio1[p*2] & 15) << 15`, and MAME pegc_mmio_map's `bank * 0x4000` words).
-  wire        peg_first = !(|d_addr[31:20]);
-  wire        peg_a8    = (gvram_low[19:16] == 4'hA) && gvram_low[15];
-  wire        peg_b0    = (gvram_low[19:16] == 4'hB) && !gvram_low[15];
-  wire        peg_b8    = (gvram_low[19:16] == 4'hB) && gvram_low[15];
-  wire        peg_e0    = (gvram_low[19:16] == 4'hE) && !gvram_low[15];
+  wire        peg_first = dv[16];
+  wire        peg_a8    = dv[6];
+  wire        peg_b0    = dv[5];
+  wire        peg_b8    = dv[4];
+  wire        peg_e0    = dv[3];
   assign      pegc_packed  = peg_first && pegc_256 && !pegc_plane && (peg_a8 || peg_b0);
   assign      pegc_reg_win = peg_first && pegc_256 && peg_e0;
   assign      pegc_nc      = peg_first && pegc_256 &&
@@ -287,16 +357,13 @@ module pc9821_memory_map (
   // In 256-colour mode the packed arms above shadow the EMS overlay entirely
   // (NP2kai's memvga handlers take every slot when VOPBIT_VGA is set - cpumem.c),
   // so `ems_in_window` is gated on !pegc_256 and cannot claim 0xB0000-0xBFFFF.
-  wire        ems_in_window = (gvram_low[19:16] == 4'hB) &&
-                              !(|d_addr[31:20]) && !pegc_256;
+  wire        ems_in_window = dv[2] && dv[16] && !pegc_256;
   wire        ems_page    = ems_in_window && (ems_state == 2'd1);
   wire        ems_unmapped = ems_in_window && (ems_state == 2'd2);
   wire        ems_shadow  = ems_in_window && (ems_state != 2'd0);
   assign ems_open_bus = ems_unmapped;
-  wire        gvram_contig = ((gvram_low[19:16] == 4'hB) ||
-                              ((gvram_low[19:16] == 4'hA) && gvram_low[15])) &&
-                             !ems_shadow;
-  wire        gvram_inten  = (gvram_low[19:16] == 4'hE) && !gvram_low[15];
+  wire        gvram_contig = (dv[2] || dv[6]) && !ems_shadow;
+  wire        gvram_inten  = dv[3];
               // The plane windows exist only in the first MiB, and the guard is on d_addr - the address the
               // decoders see: with window 0 moved, a guest address can translate to a page whose low 20 bits
               // look like a plane window (0x461 = 0x7F lands on RAM at 0x7E0000). In 256-colour mode the
@@ -304,30 +371,29 @@ module pc9821_memory_map (
               // gvram_window is gated on !pegc_256; the GRCG/EGC see no window access there, which is
               // exactly the references' dispatch (qemu pc98-vga.c's MODE2_256COLOR arm comes before
               // grcg_mem_readb/egc_mem_readb).
-  assign      gvram_window = (gvram_contig || gvram_inten) &&
-                             !(|d_addr[31:20]) && !pegc_256;
+  assign      gvram_window = (gvram_contig || gvram_inten) && dv[16] && !pegc_256;
 
               // The plane index is the window number: 0xA8000 >> 15 is 21, low two bits 1, hence the -1. The
               // in-plane offset is the address's low 15 bits - each window is one 32 KiB plane.
-  assign gvram_win_plane  = gvram_contig ? (gvram_low[16:15] - 2'd1) : 2'd3;
+  assign gvram_win_plane  = gvram_contig ? dv[1:0] : 2'd3;
   assign gvram_win_offset = gvram_low[14:0];
 
                       // Pack offset of the 32 KiB window at 0xF8000-0xFFFFF. Bank roles follow qemu-pc98's enum - 0 PCI,
                       // 1 APIC, 2 BASIC, 3 IDE option ROM, 4 ITF, 5..7 the 96 KiB main BIOS - which is the layout the
                       // firmware assumes; bank 4 is the reset-vector ITF, so banking away and back reaches the rest.
-  function automatic [31:0] bank_offset(input [3:0] state);
+  function automatic [19:0] bank_offset(input [3:0] state);
     case (state)
-      4'd0: bank_offset = 32'h0003_1000;
-      4'd1: bank_offset = 32'h0003_9000;
-      4'd2: bank_offset = 32'h0004_1000;
-      4'd3: bank_offset = 32'h0007_0000;   // IDE option ROM slot
-      4'd4: bank_offset = 32'h0000_0000;   // ITF slot, bank 4 of the ROM set
-      4'd5: bank_offset = 32'h0001_0000;   // main BIOS, first half
-      4'd6: bank_offset = 32'h0001_8000;   // main BIOS, second half
-      4'd7: bank_offset = 32'h0002_0000;   // main BIOS top: the default window
-      4'd8: bank_offset = 32'h0000_0000;   // BANK_ITF (0x043D)
-      4'd9: bank_offset = 32'h0002_0000;   // BANK_BIOS_TOP (0x043D)
-      default: bank_offset = 32'h0000_0000;
+      4'd0: bank_offset = 20'h31000;
+      4'd1: bank_offset = 20'h39000;
+      4'd2: bank_offset = 20'h41000;
+      4'd3: bank_offset = 20'h70000;   // IDE option ROM slot
+      4'd4: bank_offset = 20'h00000;   // ITF slot, bank 4 of the ROM set
+      4'd5: bank_offset = 20'h10000;   // main BIOS, first half
+      4'd6: bank_offset = 20'h18000;   // main BIOS, second half
+      4'd7: bank_offset = 20'h20000;   // main BIOS top: the default window
+      4'd8: bank_offset = 20'h00000;   // BANK_ITF (0x043D)
+      4'd9: bank_offset = 20'h20000;   // BANK_BIOS_TOP (0x043D)
+      default: bank_offset = 20'h00000;
     endcase
   endfunction
 
@@ -359,23 +425,45 @@ module pc9821_memory_map (
   wire   fw_shadow_read   = fw_window && !cpu_write && top_shadow_en &&
                             fw_shadow_dirty && fw_bios_top_visible;
   wire   fw_shadow_access = fw_shadow_store || fw_shadow_read;
-  wire [31:0] peg_bank_off = {13'd0,
-                              (peg_b0 ? pegc_bank_b : pegc_bank_a), gvram_low[14:0]};
-  assign mem_addr = peg_window ? peg_base + (d_addr - 32'h00F0_0000) :
-                    pegc_packed ? peg_base + peg_bank_off :
-                    ide_rom_window ? pack_base + 32'h0007_0000 +
-                                {19'd0, d_addr[12:0]} :
-                    d8_alt_window ? pack_base + 32'h0003_1000 +
-                                {17'd0, d8_bank[1], d_addr[13:0]} :
-                    sound_rom_window ? pack_base + 32'h000C_6800 +
-                                {18'd0, d_addr[13:0]} :
-                    ems_page   ? ems_page_base + {16'd0, gvram_low[15:0]} :
-                    bios_lower ? pack_base + 32'h0001_0000 +
-                                (d_addr - 32'h000E_8000) :
-                    fw_window  ? (fw_shadow_access ? fw_shadow_base
-                                                   : pack_base + bank_offset(top_bank)) +
-                                {17'd0, fw_offset} :
-                                 d_addr;
+  // THE BACKEND ADDRESS IS A SPLICE OF {upper 12 bits, low 20 bits}, NOT A CHAIN OF 32-BIT ADDS.
+  // Every window base the backend is handed is a whole number of MiB plus a constant below 1 MiB
+  // (pack_base is 1/2/4/.../96 MiB; ems_page_base, fw_shadow_base and peg_base are
+  // pack_base + PACK_BYTES + 0x48000/0x58000/0x80000 with PACK_BYTES = 1 MiB), and every offset a
+  // window adds is a constant plus at most 16 dynamic bits that cannot carry past bit 19. So
+  // each arm is {base[31:20], 20-bit sum} and no adder reaches above bit 19; the only carries left
+  // are the short constant-plus-field adds below. The 32-bit `peg_base + (d_addr - 0xF00000)` and
+  // `peg_base + peg_bank_off` of the old form collapse to splices: inside the PEGC window
+  // d_addr[31:19] is 0x1E0, so d_addr - 0xF00000 is d_addr[18:0], and peg_base[18:0] is zero
+  // with bit 19 set. Bit-equal to the old form under those base invariants
+  // (tools/check_memmap_addr_equiv.py proves it over every input bit).
+  // pack_base's low 20 bits (zero) and peg_base's low 19 bits (zero) are therefore not read; the EMS
+  // page and shadow bases keep their own low 20 bits, which the offsets add to without a carry out.
+  /* verilator lint_off UNUSEDSIGNAL */   // the bases' zero low bits are not read
+  wire [31:20] pack_hi = pack_base[31:20];
+  wire [31:20] peg_hi  = peg_base[31:20];
+  wire [31:20] ems_hi  = ems_page_base[31:20];
+  wire [31:20] shd_hi  = fw_shadow_base[31:20];
+  /* verilator lint_on UNUSEDSIGNAL */
+  // bios_lower: pack + 0x10000 + (d_addr - 0xE8000). E8000-EFFFF -> 0x0000-0x7FFF and
+  // F0000-F7FFF -> 0x8000-0xFFFF, so the offset is {~d_addr[15], d_addr[14:0]}.
+  wire [19:0] lo_bios_lower = {3'd0, 1'b1, ~d_addr[15], d_addr[14:0]};
+  wire [19:0] lo_ide_rom    = {4'h7, 3'd0, d_addr[12:0]};                  // pack + 0x70000
+  wire [19:0] lo_d8_alt     = 20'h31000 + {5'd0, d8_bank[1], d_addr[13:0]};
+  wire [19:0] lo_sound_rom  = 20'hC6800 + {6'd0, d_addr[13:0]};
+  wire [19:0] lo_ems_page   = ems_page_base[19:0] + {4'd0, gvram_low[15:0]};
+  wire [19:0] bank_off      = bank_offset(top_bank);
+  wire [19:0] lo_fw         = (fw_shadow_access ? fw_shadow_base[19:0] : bank_off) +
+                              {5'd0, fw_offset};
+  wire [31:20] hi_fw        = fw_shadow_access ? shd_hi : pack_hi;
+  assign mem_addr = peg_window     ? {peg_hi, peg_base[19], d_addr[18:0]} :
+                    pegc_packed    ? {peg_hi, peg_base[19], (peg_b0 ? pegc_bank_b : pegc_bank_a), gvram_low[14:0]} :
+                    ide_rom_window ? {pack_hi, lo_ide_rom} :
+                    d8_alt_window  ? {pack_hi, lo_d8_alt} :
+                    sound_rom_window ? {pack_hi, lo_sound_rom} :
+                    ems_page       ? {ems_hi, lo_ems_page} :
+                    bios_lower     ? {pack_hi, lo_bios_lower} :
+                    fw_window      ? {hi_fw, lo_fw} :
+                                     d_addr;
 
   assign mem_din = cpu_din;
   assign mem_be = cpu_be;

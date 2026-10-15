@@ -234,9 +234,9 @@ module tb_pc9821_ata_multiple;
     rst_n = 1;
     repeat (4) @(negedge clk);
 
-    // Mount the image on the bank the machine answers at (0x0432 bit 0 is the
-    // connection test; device_present follows it).
-    write_byte(16'h0432, 8'h01);
+    // Select the hard disk's bank, bank 0 (0x0432 bit 0 is the connection test;
+    // device_present follows it).
+    write_byte(16'h0432, 8'h00);
 
     // ---- 1. SET MULTIPLE MODE: the negotiated counts are accepted ----
     set_multiple(8'd2);

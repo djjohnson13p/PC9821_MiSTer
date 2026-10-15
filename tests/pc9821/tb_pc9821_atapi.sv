@@ -1,9 +1,9 @@
-// tb_pc9821_atapi - the ATAPI CD-ROM on bank 1's slave, against NP2kai's answers.
+// tb_pc9821_atapi - the ATAPI CD-ROM on bank 1's master, against NP2kai's answers.
 
 `timescale 1ns / 1ps
 
 // ==== WHAT THIS PROVES ====
-// TB_PC9821_ATAPI: The CD-ROM answers as bank 1's ATAPI MASTER with the REAL pc9821_ata's one disk on bank 0, every expected value taken from NP2kai (cbus/ideio.c, cbus/atapicmd.c), from the Xe10's own IDE ROM or from the image the host model serves, never from the RTL: the IDE ROM's probe of bank 1's master (BANK3@0x0A0A) passes step by step - the pre-reset presence test (STATUS 0x00, the 0xEB/0x14 signature marking the unit ATAPI, ERROR 0x01), IDENTIFY DEVICE ending ERR+ABRT, the ready poll with its SRST-and-retry, and a PACKET INQUIRY whose byte 0 is 5 - so the ROM records a CD-ROM; device 0 on bank 1 reads the signature 0x01/0x01/0x14/0xEB with STATUS 0x00 after DEVICE RESET (ERROR 0x01, an interrupt) and 0x51/ERROR 0x01 after an SRST pulse, device 1 on bank 1 is an absent slave (STATUS and ALTERNATE STATUS 0x00, a command for it not executed), and bank 0's master is the hard disk; IDENTIFY DEVICE aborts with the signature and IDENTIFY PACKET DEVICE returns word 0 = 0x8580 and the model "NEC CD-ROM DRIVE:98"; a PACKET command shows the CoD phase (0x644 = 0x01, DRQ, no interrupt), INQUIRY returns NP2kai's 36 bytes ("NEC     CD-ROM DRIVE:98 1.0 ", type 5, removable) in a data phase whose 0x644/0x648/0x64A say IO and the byte count, then completes with 0x50 and 0x644 = 0x03; TEST UNIT READY with no medium and the first one after a mount answer CHECK with NOT READY / 0x3A in REQUEST SENSE (0x28 once NEC mode is on via MODE SENSE page 0x0F), the next one GOOD; READ CAPACITY returns the sector count and 2048; READ(10) streams each 2048-byte sector of an ISO and of a PCD (from the raw sector's MODE1 user data) through the slot's block handshake with one interrupt and byte count 2048 per sector, and a read past the end answers ILLEGAL REQUEST / 0x21; READ TOC format 0 returns the descriptors (LBA, MSF and NEC BCD forms) of a one-track ISO and of a three-track PCD header, lead-out 0xAA; MODE SENSE page 0x2A returns NP2kai's page with medium type 0x03 for a data+audio disc; PLAY AUDIO MSF streams the audio sectors' {R,L} samples into the CD-DA port and READ SUB-CHANNEL reports playing/paused/completed with the current position, which wanders by NP2kai's rand() & 7 frames while paused or completed; and PATACD.SYS's unit probe (bank 0/1, master/slave, IDENTIFY PACKET with the 0xEC fallback, word 0 bits 15:14 = 10, INQUIRY type 5, polled with nIEN, NOP after the packet command) finds the CD at bank 1's master, reads an all-zero identify page for the absent slave beside the disk, and finds nothing at the other three units; and the OSD's Eject CD-ROM (pc9821_mount_eject's size-0 event on slot 4, status[11] as the --cdrom top wires it) leaves no medium - TEST UNIT READY answers NOT READY / 0x3A every time and MODE SENSE reports medium type 0x70 - and a re-mount answers NOT READY / 0x28 once (NEC mode), then GOOD, and reads again; and a READ(10) whose block request waits while hps_io streams ANOTHER slot's words takes none of them.
+// TB_PC9821_ATAPI: The CD-ROM answers as bank 1's ATAPI MASTER with the REAL pc9821_ata's one disk on bank 0, every expected value taken from NP2kai (cbus/ideio.c, cbus/atapicmd.c), from the Xe10's own IDE ROM or from the image the host model serves, never from the RTL: the IDE ROM's probe of bank 1's master (BANK3@0x0A0A) passes step by step - the pre-reset presence test (STATUS 0x00, the 0xEB/0x14 signature marking the unit ATAPI, ERROR 0x01), IDENTIFY DEVICE ending ERR+ABRT, the ready poll with its SRST-and-retry, and a PACKET INQUIRY whose byte 0 is 5 - so the ROM records a CD-ROM; device 0 on bank 1 reads the signature 0x01/0x01/0x14/0xEB with STATUS 0x00 after DEVICE RESET (ERROR 0x01, an interrupt) and 0x51/ERROR 0x01 after an SRST pulse, device 1 on bank 1 is an absent slave (STATUS and ALTERNATE STATUS 0x00, a command for it not executed), and bank 0's master is the hard disk; IDENTIFY DEVICE aborts with the signature and IDENTIFY PACKET DEVICE returns word 0 = 0x8580 and the model "NEC CD-ROM DRIVE:98"; a PACKET command shows the CoD phase (0x644 = 0x01, DRQ, no interrupt), INQUIRY returns NP2kai's 36 bytes ("NEC     CD-ROM DRIVE:98 1.0 ", type 5, removable) in a data phase whose 0x644/0x648/0x64A say IO and the byte count, then completes with 0x50 and 0x644 = 0x03; TEST UNIT READY with no medium and the first one after a mount answer CHECK with NOT READY / 0x3A in REQUEST SENSE (0x28 once NEC mode is on via MODE SENSE page 0x0F), the next one GOOD; READ CAPACITY returns the sector count and 2048; READ(10) streams each 2048-byte sector of an ISO and of a PCD (from the raw sector's MODE1 user data) through the slot's block handshake with one interrupt and byte count 2048 per sector, and a read past the end answers ILLEGAL REQUEST / 0x21; READ TOC format 0 returns the descriptors (LBA, MSF and NEC BCD forms) of a one-track ISO and of a three-track PCD header, lead-out 0xAA; MODE SENSE page 0x2A returns NP2kai's page with medium type 0x03 for a data+audio disc; PLAY AUDIO MSF streams the audio sectors' {R,L} samples into the CD-DA port and READ SUB-CHANNEL reports playing/paused/completed with the current position, which wanders by NP2kai's rand() & 7 frames while paused or completed; and PATACD.SYS's unit probe (bank 0/1, master/slave, IDENTIFY PACKET with the 0xEC fallback, word 0 bits 15:14 = 10, INQUIRY type 5, polled with nIEN, NOP after the packet command) finds the CD at bank 1's master, reads an all-zero identify page for the absent slave beside the disk, and finds nothing at the other three units; and the OSD's Eject CD-ROM (pc9821_mount_eject's size-0 event on slot 4, status[11] as the --cdrom top wires it) leaves no medium - TEST UNIT READY answers NOT READY / 0x3A every time and MODE SENSE reports medium type 0x70 - and a re-mount answers NOT READY / 0x28 once (NEC mode), then GOOD, and reads again; and a READ(10) whose block request waits while hps_io streams ANOTHER slot's words takes none of them; and a PLAY AUDIO MSF issued while the previous play's audio sector is still being fetched streams its own first sector whole and completes at its own end (NP2kai's synchronous playaudio: the superseded fetch's completion does not advance the new play); and with nIEN set a drive RELEASES INTRQ (ATA-3 Device Control: high impedance) so an unacknowledged CD request cannot hide the disk's next IRQ9 edge on the ORed line (MAME pc9801.cpp ideirq INPUT_MERGER_ANY_HIGH), while the request itself follows NP2kai's ideio.c - a completion under nIEN neither raises nor clears it and a status read under nIEN does not acknowledge it.
 //
 // The CD is pc9821_atapi; the IDE read mux is the one pc9821_system builds (`cd_io_own` picks
 // the CD's byte). The host model serves hps_io slot 4 from an in-memory image: an ISO of
@@ -36,7 +36,7 @@ module tb_pc9821_atapi;
 
   // The master: a mounted hard disk with no block engine behind it (no command here reads it).
   /* verilator lint_off PINCONNECTEMPTY */
-  pc9821_ata #(.HDD_BANK0(1'b1)) ata (
+  pc9821_ata ata (
       .clk(clk), .rst_n(rst_n),
       .io_rd(io_rd), .io_wr(io_wr), .io_addr(io_addr), .io_din(io_din), .io_dout(ata_dout),
       .mounted(1'b1), .readonly(1'b0), .capacity(32'd20160),
@@ -96,7 +96,7 @@ module tb_pc9821_atapi;
   /* verilator lint_on PINCONNECTEMPTY */
 
 `ifndef NO_CD
-  pc9821_atapi #(.AUDIO_EN(1'b1), .AS_MASTER(1'b1), .LOG_EN(1'b1), .LOG_CLK_HZ(100_000)) cd (
+  pc9821_atapi #(.AUDIO_EN(1'b1), .LOG_EN(1'b1), .LOG_CLK_HZ(100_000)) cd (
       .clk(clk), .rst_n(rst_n),
       .io_rd(io_rd), .io_wr(io_wr), .io_addr(io_addr), .io_din(io_din), .io_dout(cd_dout),
       .io_own(cd_own), .irq(cd_irq),
@@ -228,6 +228,23 @@ module tb_pc9821_atapi;
 
   // ==== the CD-DA port ====
   integer cdda_n = 0;
+  // C18: the IRQ9 line as pc9821_system builds it (the two banks' INTRQ ORed, as MAME's
+  // INPUT_MERGER_ANY_HIGH "ideirq" does), and its rising edges - what the edge-latched PIC sees.
+  wire    irq9_line = ata_irq | cd_irq;
+  reg     irq9_q = 1'b0;
+  integer irq9_rises = 0;
+  always @(posedge clk) begin
+    irq9_q <= irq9_line;
+    if (irq9_line && !irq9_q) irq9_rises <= irq9_rises + 1;
+  end
+  // C17's own window of the stream (cdda_log stops at 16384 entries, which earlier cases use).
+  reg  [31:0] c17_log [0:4095];
+  integer     c17_n = 0;
+  reg         c17_on = 0;
+  always @(posedge clk) if (c17_on && cdda_wr) begin
+    if (c17_n < 4096) c17_log[c17_n] <= cdda_data;
+    c17_n <= c17_n + 1;
+  end
   reg [31:0] cdda_log [0:16383];
   always @(posedge clk) if (cdda_wr) begin
     if (cdda_n < 16384) cdda_log[cdda_n] <= cdda_data;
@@ -343,6 +360,16 @@ module tb_pc9821_atapi;
         $display("FAIL: %s: sense len %0d key %x asc %02x, want 18/%x/%02x", what, rlen,
                  rbuf[2], rbuf[12], key, code);
       end
+      // The rest of NP2kai's fixed-format page (atapicmd.c case 0x03: `ZeroMemory(drv->buf, 18)`,
+      // `buf[7] = 11; // length`, buf[13] = asc >> 8, which is 0 for every ASC this drive
+      // reports): the additional length and every other byte zero.
+      else for (int k = 1; k < 18; k++)
+        if (k != 2 && k != 12 && rbuf[k] !== ((k == 7) ? 8'h0B : 8'h00)) begin
+          errors++;
+          $display("FAIL: %s: sense byte %0d = %02x, want %02x", what, k, rbuf[k],
+                   (k == 7) ? 8'h0B : 8'h00);
+          break;
+        end
     end
   endtask
   task automatic expect_bytes(input byte want [$], input string what);
@@ -366,6 +393,11 @@ module tb_pc9821_atapi;
     integer a, r, pos, trk, tstart;
     begin
       rel = -1;
+      // bcd2i accepts any nibble, so a binary 0x0A would read as 10: every MSF byte must be
+      // BCD first (atapicmd.c storemsf's isBCD form in NEC mode).
+      for (int k = 9; k <= 15; k++) if (k != 12)
+        if (rbuf[k][3:0] > 4'd9 || rbuf[k][7:4] > 4'd9)
+          fail($sformatf("%s: MSF byte %0d = %02x is not BCD", what, k, rbuf[k]));
       a = bcd2i(rbuf[9]) * 4500 + bcd2i(rbuf[10]) * 75 + bcd2i(rbuf[11]);
       r = bcd2i(rbuf[13]) * 4500 + bcd2i(rbuf[14]) * 75 + bcd2i(rbuf[15]);
       pos = a - 150;
@@ -896,6 +928,111 @@ module tb_pc9821_atapi;
     // still streams another slot's 512 words must take none of them and read its own sector.
     host_foreign = 1;
     read10(5, 1, "C16 READ(10) behind another slot's transfer");
+
+    // ==== C17: a PLAY issued while the previous play's audio sector is still being fetched ====
+    // NP2kai's player is synchronous: atapicmd.c playaudio sets dacurpos/dalength and the
+    // next sector it streams is the NEW start (no fetch can be in flight across a command).
+    // So a PLAY of one sector (LBA 20) issued while the engine is mid-fetch of the previous
+    // play's sector must still stream all 588 stereo samples of sector 20, and complete at
+    // position 21 - the superseded fetch's completion must not advance the new play.
+    mount(1);
+    packet(8'h00, 0, 0, 0, 0, 0, 0, 0, 0, 0, "C17 TUR after the mount");
+    packet(8'h00, 0, 0, 0, 0, 0, 0, 0, 0, 0, "C17 second TUR");
+    expect_done("C17 the medium is ready");
+    cdda_req = 1;
+    begin
+      integer f0, f1, g0, g1, hit, rl;
+      f0 = 10 + 150; f1 = 13 + 150; g0 = 20 + 150; g1 = 21 + 150;
+      packet(8'h47, 0, 0, bcd8(f0 / 4500), bcd8((f0 / 75) % 60), bcd8(f0 % 75),
+             bcd8(f1 / 4500), bcd8((f1 / 75) % 60), bcd8(f1 % 75), 0, "C17 first PLAY");
+      for (int t = 0; t < 200000 && !(cd.e_st != 2'd0 && cd.e_kind == 2'd2); t++) @(negedge clk);
+      if (!(cd.e_st != 2'd0 && cd.e_kind == 2'd2)) fail("C17 setup: no audio fetch started");
+      c17_on = 1;
+      packet(8'h47, 0, 0, bcd8(g0 / 4500), bcd8((g0 / 75) % 60), bcd8(g0 % 75),
+             bcd8(g1 / 4500), bcd8((g1 / 75) % 60), bcd8(g1 % 75), 0, "C17 PLAY during a fetch");
+      expect_done("C17 PLAY during a fetch");
+      for (int t = 0; t < 400000; t++) begin
+        @(negedge clk);
+        if (t % 4096 == 0) begin
+          packet(8'h42, 0, 0, 8'h01, 0, 0, 0, 0, 8'd4, 0, "C17 poll");
+          if (rbuf[1] == 8'h13) break;
+        end
+      end
+      if (rbuf[1] !== 8'h13) fail("C17 the second play never completed");
+      repeat (20000) @(negedge clk);
+      c17_on = 0;
+      // sector 20's 588 samples, contiguous, somewhere in the window
+      hit = 0;
+      for (int b = 0; b + 588 <= c17_n && b + 588 <= 4096 && !hit; b++) begin
+        hit = 1;
+        for (int s2 = 0; s2 < 588 && hit; s2++)
+          if (c17_log[b + s2] !== {abyte(20, s2 * 4 + 3), abyte(20, s2 * 4 + 2),
+                                   abyte(20, s2 * 4 + 1), abyte(20, s2 * 4)}) hit = 0;
+      end
+      if (!hit) fail($sformatf("C17 sector 20 was not streamed (%0d samples after the second PLAY)", c17_n));
+      packet(8'h42, 8'h02, 8'h40, 8'h01, 0, 0, 0, 0, 8'd16, 0, "C17 SUB-CHANNEL completed");
+      expect_subq_np2(8'h13, 21, 7, "C17 SUB-CHANNEL position after the superseding play", rl);
+    end
+
+    // ==== C18: nIEN and the shared IRQ9 line ====
+    // ATA-3 s.7.2.9 (Device Control): "nIEN is the enable bit for the device assertion of INTRQ
+    // to the host. When nIEN=0, and the device is selected, INTRQ shall be enabled through a
+    // tri-state buffer. When nIEN=1, or the device is not selected, the INTRQ signal shall be
+    // in a high impedance state." The two banks' INTRQs are ORed onto IRQ9 (MAME pc9801.cpp
+    // INPUT_MERGER_ANY_HIGH "ideirq"), so a device whose driver set nIEN must RELEASE the line,
+    // or its unacknowledged request hides every later edge of the other bank's drive.
+    // The interrupt-pending state follows NP2kai cbus/ideio.c: setintr does nothing under
+    // nIEN (`if (!(drv->ctrl & IDECTRL_NIEN))`), and a status read clears the request only
+    // with nIEN clear (ideio_i64e, the same test), so a request survives a polled status read.
+    begin
+      integer r0;
+      reg [7:0] s;
+      // (a) a CD request left unacknowledged, then nIEN set by its driver: the line is released.
+      wr(16'h0432, 8'h01); wr(16'h064C, 8'hA0); wr(16'h074C, 8'h00);
+      wr(16'h064E, 8'h08);                       // CD DEVICE RESET: a request
+      if (!cd_irq) fail("C18 setup: the CD DEVICE RESET raised no request");
+      rd(16'h074C, s);                           // ALTERNATE STATUS only: not an acknowledge
+      wr(16'h074C, 8'h02);                       // the CD driver goes polled
+      repeat (2) @(negedge clk);
+      if (cd_irq) fail("C18 the CD holds INTRQ with nIEN set (ATA-3: high impedance)");
+      // (b) the disk on bank 0 must now reach the PIC as a fresh edge.
+      wr(16'h0432, 8'h00); wr(16'h064C, 8'hA0); wr(16'h074C, 8'h00);
+      r0 = irq9_rises;
+      wr(16'h064E, 8'h10);                       // RECALIBRATE: completes with an interrupt
+      repeat (20) @(negedge clk);
+      if (irq9_rises - r0 != 1) fail("C18 the disk's interrupt made no IRQ9 edge behind the CD's request");
+      rd(16'h064E, s);
+      // (c) a disk request survives a status read made under nIEN, and drives the line again
+      //     once nIEN clears (ideio_i64e resets only with NIEN clear).
+      wr(16'h064E, 8'h10);
+      repeat (20) @(negedge clk);
+      if (!ata_irq) fail("C18 setup: RECALIBRATE raised no disk request");
+      wr(16'h074C, 8'h02);
+      repeat (2) @(negedge clk);
+      if (ata_irq) fail("C18 the disk holds INTRQ with nIEN set (ATA-3: high impedance)");
+      rd(16'h064E, s);                           // a polled status read: not an acknowledge
+      wr(16'h074C, 8'h00);
+      repeat (2) @(negedge clk);
+      if (!ata_irq) fail("C18 a status read under nIEN cleared the disk's request (NP2kai ideio_i64e keeps it)");
+      rd(16'h064E, s);
+      if (ata_irq) fail("C18 the status read with nIEN clear did not acknowledge");
+      // (d) a completion under nIEN neither raises nor clears the request (NP2kai setintr).
+      wr(16'h064E, 8'h10);
+      repeat (20) @(negedge clk);
+      wr(16'h074C, 8'h02);
+      wr(16'h064E, 8'h10);                       // completes under nIEN
+      repeat (20) @(negedge clk);
+      wr(16'h074C, 8'h00);
+      repeat (2) @(negedge clk);
+      if (!ata_irq) fail("C18 a completion under nIEN cleared the pending disk request (NP2kai setintr is a no-op)");
+      rd(16'h064E, s);
+      wr(16'h074C, 8'h02);
+      wr(16'h064E, 8'h10);                       // nothing pending, completes under nIEN
+      repeat (20) @(negedge clk);
+      wr(16'h074C, 8'h00);
+      repeat (2) @(negedge clk);
+      if (ata_irq) fail("C18 a completion under nIEN raised a request (NP2kai setintr is a no-op)");
+    end
 
     if (errors == 0) begin
       // ==== VERDICT ====

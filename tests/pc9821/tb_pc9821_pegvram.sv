@@ -94,7 +94,7 @@ module tb_pc9821_pegvram;
       .clk(clk), .reset(reset), .top_bank(top_bank),
       .ems_state(ems_state), .ide_rom_enable(ide_rom_enable), .d8_bank(2'b00), .ide_ram_gate(1'b1),
       .bios_ram_gate(bios_ram_gate), .top_shadow_en(top_shadow_en),
-      .win0_sel(win0_sel), .sys16m_en(sys16m_en),
+      .win0_sel(win0_sel), .win0_sel_moved(win0_sel != 8'h08), .sys16m_en(sys16m_en),
       .pegc_256(pegc_256),
       .pack_base(pack_base), .guest_ram_bytes(guest_ram_bytes),
       .gvram_access_page(gvram_access_page),

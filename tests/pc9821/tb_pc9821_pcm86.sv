@@ -2,7 +2,7 @@
 
 // ==== WHAT THIS PROVES ====
 // TB_PC9821_PCM86:
-// The PC-9801-86's 86-PCM block through the real I/O bus: 0xA460 answering the board sound ID 0x40 with the extension latch in bit 0 and the ID nibble read-only, 0xA468 and 0xA46A reading back what was written with 0xA46A multiplexed between the IRQ threshold and the DAC control and the reset values 0x00 and 0x32, 0xA466 full/empty/phase status whose full bit only a real 32 KiB buffer can set, the drain stopping while playback is disabled and then consuming one sample frame per sample period at the selected rate, the 16-bit big-endian and 8-bit left-justified sample decode as an exact audio level, and the buffer-low interrupt at 0xA468 bit 4 as a LEVEL that is gated by the IRQ enable (bit 5), that re-asserts on a bit-4-clear write while the buffer is still below threshold, and that clears only when the level is no longer true. It does NOT cover DMA, which neither reference models, and it does not assert the analogue output.
+// The PC-9801-86's 86-PCM block through the real I/O bus: 0xA460 answering the board sound ID 0x40 with the extension latch in bit 0 and the ID nibble read-only, 0xA468 and 0xA46A reading back what was written with 0xA46A multiplexed between the IRQ threshold and the DAC control and the reset values 0x00 and 0x32, 0xA466 full/empty/phase status whose full bit only a real 32 KiB buffer can set, the drain stopping while playback is disabled and then consuming one sample frame per sample period at the selected rate, the 16-bit big-endian (mono and the reset format's stereo, left word first) and 8-bit left-justified sample decode as an exact audio level, and the buffer-low interrupt at 0xA468 bit 4 as a LEVEL that is gated by the IRQ enable (bit 5), that re-asserts on a bit-4-clear write while the buffer is still below threshold, and that clears only when the level is no longer true. It does NOT cover DMA, which neither reference models, and it does not assert the analogue output.
 
 
 // The DUTs are pc9821_iobus plus pc9821_pcm86 wired exactly as pc9821_system
@@ -49,6 +49,7 @@ module tb_pc9821_pcm86;
   wire ide_rom_enable, bios_ram_gate, sound_extend;
   wire ide_ram_gate;   // 0x1E8E's IDE work-RAM gate (the iobus drives it; unused here)
   wire [7:0] win0_sel;
+  wire       win0_sel_moved;   // pc9821_iobus's registered `win0_sel != 8'h08`
   wire sys16m_en;   // 0x043B bit 2, the 15-16 MiB system-space window
   wire a20_enable, cpu_reset_req;
   wire [15:0] unmapped_writes, unmapped_reads, last_unmapped_port;
@@ -445,6 +446,38 @@ pc9821_pcm86 #(.SYS_CLOCK_HZ(100_000_000)) pcm86 (
       $display("FAIL: 16-bit left is %04x, expected %04x (byte order)",
                pcm_snd_l, dac_scale(16'sh1234));
       errors = errors + 1;
+    end
+    // 16-bit STEREO (0xA46A format 3, the card's reset format 0x32): the frame is
+    // the LEFT word then the RIGHT word, each high byte first - NP2kai
+    // pcm86stereo16 (sound/pcm86g.c:127-133) takes `PCM86GET16(pcm86, dat);
+    // ... smp_l = dat;` and then the second PCM86GET16 into smp_r. The reset
+    // format was never decoded by this bench, so a frame whose words were
+    // swapped between the channels passed (bench-audit mutation, 2026-10-12).
+    write_byte(16'h0A468, 8'h88);      // buffer reset + playback enable
+    write_byte(16'h0A46A, 8'h30);      // 16-bit stereo
+    if (count !== 16'd0)
+      fail("the buffer is not empty before the 16-bit stereo frame");
+    write_byte(16'h0A46C, 8'h12);      // left, high byte first
+    write_byte(16'h0A46C, 8'h34);
+    write_byte(16'h0A46C, 8'hAB);      // right, high byte first
+    write_byte(16'h0A46C, 8'hCD);
+    seen = 1'b0;
+    for (n = 0; n < 20000 && !seen; n = n + 1) begin
+      @(posedge clk);
+      if (count == 16'd0) seen = 1'b1;
+    end
+    if (!seen) fail("the 16-bit stereo frame never drained");
+    else begin
+      if (pcm_snd_l !== dac_scale(16'sh1234)) begin
+        $display("FAIL: 16-bit stereo left is %04x, expected %04x",
+                 pcm_snd_l, dac_scale(16'sh1234));
+        errors = errors + 1;
+      end
+      if (pcm_snd_r !== dac_scale(16'shABCD)) begin
+        $display("FAIL: 16-bit stereo right is %04x, expected %04x",
+                 pcm_snd_r, dac_scale(16'shABCD));
+        errors = errors + 1;
+      end
     end
     // Back to the one-byte mode the rest of the bench uses.
     write_byte(16'h0A468, 8'h08);      // buffer reset, playback off

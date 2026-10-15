@@ -14,7 +14,7 @@ documented 307200 Hz, CLK50 = ARTIC * 50000000 / 307200 (clk_sys at the core's
 50 MHz), and PER = CLK50 * 1000 / UNITS (MILLI-clk_sys per unit).
 
 TIME BASE. ARTIC ticks are converted BOTH ways with the device clocks and no
-run-local scale (item 41's lesson): absolute ns = ticks * 3255.208 (307200 Hz,
+run-local scale (the /TIME ladder's lesson): absolute ns = ticks * 3255.208 (307200 Hz,
 machine-confirmed by r13/215 section 1.4's raster check), and clk_sys at 50 MHz
 for diffing against the core's own benchmarks. The printed CLK50/PER fields are
 recomputed from ARTIC here and flagged if they disagree (integer rounding).

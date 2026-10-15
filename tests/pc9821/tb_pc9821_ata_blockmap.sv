@@ -55,19 +55,27 @@
 //     (firmware/freebios/pc98ide.bin), which read-modify-writes 0x0432 and so
 //     satisfied bit 7; commit ad01e35 deleted that firmware, leaving the gate
 //     with no evidence at all.
+//   * THE CORE'S LAYOUT IS FIXED (owner, 2026-10-11), and it is NOT the owner's machine's: the
+//     hard disk is always bank 0's master and bank 1 is the CD-ROM's (or empty), the stock
+//     CD-equipped Xe10's layout and NP2kai's default (HDD unit 0, CD unit 2). The owner's Xe10
+//     answers at bank 1 only because its CF card sits in the CD connector. So this bench takes
+//     the machine's VALUES (the live-bank answers, the empty-bank float) and puts them at the
+//     core's banks: the disk answers at channel bit 0 CLEAR and the float is at bit 0 set. The
+//     port 0xF0 strap follows the same layout (pc9821_iobus), so the ITF's bitmap above then
+//     selects slot 0 - bank 0 - for the disk.
 //   * Banks 0x02 and 0x03 are UNMEASURED. Under the channel bit they are the two
-//     channels again: 0x02 (bit 0 clear) floats and 0x03 (bit 0 set) answers
-//     with the single interface this core has. The probe that settles them
+//     channels again: 0x02 (bit 0 clear) answers with the disk and 0x03 (bit 0
+//     set) floats. The probe that settles them
 //     drives 0x0432 over {0x00, 0x01, 0x02, 0x03, 0x2A, 0x80} and prints the
 //     task file for each (hwprobe open question 1).
 //
 // What this bench asserts, all of it through ports:
 //   1. 0x0432 latches the byte it is given and reads it back; a write with bit 7
 //      set is ignored and the previous value stays.
-//   2. At a bank whose channel bit is clear (0x00, 0x02): 0x064E reads the
+//   2. At a bank whose channel bit is set (0x01, 0x03): 0x064E reads the
 //      measured 0x0E float, 0x074C the measured 0x0F, 0x0640 and its odd partner
-//      0x0641 both read 0xFF. At a bank whose channel bit is set
-//      (0x01, and 0x03/0x09 by the same rule): 0x064E/0x074C report DRDY|DSC and
+//      0x0641 both read 0xFF. At a bank whose channel bit is clear
+//      (0x00, and 0x02/0x08 by the same rule): 0x064E/0x074C report DRDY|DSC and
 //      0x0640 follows the ATA data-register rule with DRQ clear.
 //   3. A task-file write at a floating bank does not reach the drive, and the
 //      same write at a connected bank does (the register is a window on the
@@ -91,7 +99,7 @@
 
 // ==== WHAT THIS PROVES ====
 // TB_PC9821_ATA_BLOCKMAP:
-// The 0x0432 IDE bank select as the machine has it: a write with bit 7 set is a no-op (so the ROM's own save-and-restore bracket leaves the interface connected), which channel is connected is decided by bit 0 rather than a byte comparison, the task file floats at a channel bit that is clear and answers at the one the built-in IDE is on (measured: bank 0x00 leaves every task-file register at 0x0E with 0x74C/0x74E at 0x0F and their odd partners at 0xFF; bank 0x01 answers 0x064E = 0x50 with 0x074C = 0x50 and 0x074E = 0x00), a task-file write follows the same window, and a command issued after the bank select reaches the drive.
+// The 0x0432 IDE bank select as the machine has it: a write with bit 7 set is a no-op (so the ROM's own save-and-restore bracket leaves the interface connected), which channel is connected is decided by bit 0 rather than a byte comparison, the task file answers at the hard disk's channel - bit 0 clear, bank 0's master, the fixed layout (owner 2026-10-11; the stock Xe10's and NP2kai's unit 0) - and floats at the other (the values measured on the owner's Xe10, whose empty bank was 0x00 and live bank 0x01: an empty bank leaves every task-file register at 0x0E with 0x74C/0x74E at 0x0F and their odd partners at 0xFF; the live bank answers 0x064E = 0x50 with 0x074C = 0x50 and 0x074E = 0x00), a task-file write follows the same window, and a command issued after the bank select reaches the drive.
 
 
 module tb_pc9821_ata_blockmap;
@@ -179,13 +187,13 @@ module tb_pc9821_ata_blockmap;
 
   // The ROM's own sequence at the bank its drive is on: select the bank, poll
   // DRDY, and require the drive to answer. The live read-backs are the machine's
-  // (the machine's probe results, "ATA and the task file", with 0x0432 = 0x01:
+  // at ITS live bank (the machine's probe results, "ATA and the task file", with 0x0432 = 0x01:
   // 0640=00 0642=00 0644=00 0646=02 0648=BC 064A=0E 064C=A0 064E=50 074C=50
   // 074E=00).
   task expect_bank_answers(input [8*40-1:0] what);
     integer i;
     begin
-      write_byte(16'h0432, 8'h01);
+      write_byte(16'h0432, 8'h00);
       expect_port(16'h064E, 8'h50, what);
       expect_port(16'h074C, 8'h50, "0x74C mirrors the live status");
       // 0x74E does NOT mirror it with the bank mapped: 0x00 there, 0x50 on
@@ -247,30 +255,30 @@ module tb_pc9821_ata_blockmap;
 
     // 1. 0x0432 latches the byte it is given and reads it back. The power-on
     //    value is 0x00, which is the bank the DOS-prompt capture shows the
-    //    register left at -- and the bank it floats in. A write with bit 7 set
+    //    register left at -- the disk's bank in this layout. A write with bit 7 set
     //    is ignored, which is the whole point of the ROM's bracket (step 7).
     expect_port(16'h0432, 8'h00, "0x0432 reset readback");
 
-    // 2. A bank whose channel bit is clear floats, at the values the machine
-    //    showed (probes/JOY.TXT, probes/WIN.TXT at the DOS prompt; bank 0x00).
-    expect_bank_floats(8'h00, "bank 0x00 floats (R10.TXT)");
+    // 2. A bank whose channel bit is set floats, at the values the machine
+    //    showed at ITS empty bank (probes/JOY.TXT, probes/WIN.TXT at the DOS prompt).
+    expect_bank_floats(8'h01, "bank 0x01 floats (R10.TXT values)");
 
     // 3. Banks 0x02/0x03 are unmeasured on the machine, and they differ under
-    //    the channel rule: 0x02 has bit 0 clear (no channel here) and 0x03 has
-    //    bit 0 set, i.e. the same channel the machine answers at. Byte equality
+    //    the channel rule: 0x03 has bit 0 set (the empty channel) and 0x02 has
+    //    bit 0 clear, i.e. the disk's channel. Byte equality
     //    floated both. QEMU models the channel select as `val & 1` and masks
     //    only the stored byte; NP2kai's task file follows `(bank & 0x7f) < 2`.
-    expect_bank_floats(8'h02, "bank 0x02 has no channel (bit 0 clear)");
-    write_byte(16'h0432, 8'h03);
-    expect_port(16'h064E, 8'h50, "bank 0x03 is the same channel as 0x01");
-    expect_port(16'h0432, 8'h03, "0x0432 stores what the guest wrote (no mask)");
+    expect_bank_floats(8'h03, "bank 0x03 has no disk (bit 0 set)");
+    write_byte(16'h0432, 8'h02);
+    expect_port(16'h064E, 8'h50, "bank 0x02 is the same channel as 0x00");
+    expect_port(16'h0432, 8'h02, "0x0432 stores what the guest wrote (no mask)");
 
     // 4. A task-file write at a floating bank does not reach the drive; the
-    //    same write at 0x01 does (step 6). The register is a window on the
+    //    same write at 0x00 does (step 6). The register is a window on the
     //    interface in both directions, which is what the float means.
-    write_byte(16'h0432, 8'h00);
-    write_byte(16'h0644, 8'h03);
     write_byte(16'h0432, 8'h01);
+    write_byte(16'h0644, 8'h03);
+    write_byte(16'h0432, 8'h00);
     expect_port(16'h0644, 8'h01, "a floating-bank write reached nothing");
 
     // 0x0640 is consume-on-read, so the machine's own probe does not sample it
@@ -278,13 +286,13 @@ module tb_pc9821_ata_blockmap;
     // with the bank floating -- the second fresh confirmation (r13/213 had one) --
     // which is also the ATA data register's own rule while DRQ is clear. Reading
     // it is safe in this bench because no transfer is in flight.
-    write_byte(16'h0432, 8'h00);
+    write_byte(16'h0432, 8'h01);
     expect_port(16'h0640, 8'hFF, "0x0640 floats at 0xFF (r13/215)");
 
     // 5. The bank the machine answers at: the ROM's own sequence. The readback
     //    carries content in the low bits too, so a decoder that only stored
     //    bit 7 would be caught here.
-    expect_bank_answers("0x64E status at the measured bank");
+    expect_bank_answers("0x64E status at the disk's bank");
 
     // 5b. A DWORD-capable driver writes bank|0x08: QEMU's bit 3 is the
     //     DWORD-transfer enable and its channel select is still `val & 1`, so the
@@ -292,10 +300,10 @@ module tb_pc9821_ata_blockmap;
     //     whole task file and every sector of a DWORD PIO transfer was silently
     //     discarded while the DRQ poll read the float's bit 3 and reported
     //     success.
-    write_byte(16'h0432, 8'h09);
-    expect_port(16'h064E, 8'h50, "bank 0x09 is still channel 1 (bit 3 is not a bank bit)");
-    expect_port(16'h0432, 8'h09, "0x0432 readback with bit 3 set");
-    expect_bank_answers("the measured bank again after 0x09");
+    write_byte(16'h0432, 8'h08);
+    expect_port(16'h064E, 8'h50, "bank 0x08 is still channel 0 (bit 3 is not a bank bit)");
+    expect_port(16'h0432, 8'h08, "0x0432 readback with bit 3 set");
+    expect_bank_answers("the disk's bank again after 0x08");
 
     // 6. A command issued after the bank select reaches the drive. This is the
     //    case the bit-7 gate broke: the task file floated, so the DRDY poll
@@ -325,21 +333,21 @@ module tb_pc9821_ata_blockmap;
     //    the restore re-writes 0x80, leaving the task file floating: the ROM's
     //    next `rep insw` from 0x0640 (BANK3@0x9917) then reads 0x0E/0xFF instead
     //    of IPL data, which is exactly the `reached IPL = 0` symptom.
-    write_byte(16'h0432, 8'h01);          // the handler's bank select
+    write_byte(16'h0432, 8'h00);          // the handler's bank select
     expect_port(16'h064E, 8'h50, "task file live before the bracket");
     write_byte(16'h0432, 8'h80);          // the ISR's park write
-    expect_port(16'h0432, 8'h01, "the 0x80 park write is a no-op: the readback is unchanged");
+    expect_port(16'h0432, 8'h00, "the 0x80 park write is a no-op: the readback is unchanged");
     expect_port(16'h064E, 8'h50, "the task file stays connected through the park write");
     // The value the ROM saves is the read-back of the 0x80 write, and it restores
     // exactly that. Save it here the way the ISR does.
     read_byte(16'h0432, saved_bank);
-    if (saved_bank !== 8'h01) fail("0x0432 readback of the park write (the ISR's es:0x2075)");
-    write_byte(16'h0432, 8'h01);          // es:0x2077, the drive's own bank byte
+    if (saved_bank !== 8'h00) fail("0x0432 readback of the park write (the ISR's es:0x2075)");
+    write_byte(16'h0432, 8'h00);          // es:0x2077, the drive's own bank byte
     expect_port(16'h0642, 8'h00, "ERROR readable inside the bracket");
     expect_port(16'h064E, 8'h50, "STATUS readable inside the bracket");
     write_byte(16'h0433, 8'h01);          // the ISR's acknowledge
     write_byte(16'h0432, saved_bank);     // the restore of es:0x2075
-    expect_port(16'h0432, 8'h01, "0x0432 after the bracket restore");
+    expect_port(16'h0432, 8'h00, "0x0432 after the bracket restore");
     expect_port(16'h064E, 8'h50, "task file live after the bracket restore");
 
     // The else is load-bearing: Verilator's $finish returns from the

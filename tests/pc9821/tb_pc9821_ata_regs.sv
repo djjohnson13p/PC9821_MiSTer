@@ -128,9 +128,9 @@ module tb_pc9821_ata_regs;
 
     // Select the bank the interface is on, the way the ROM does, then read the
     // whole task file. 0x0432 is a bank select, not a map gate: the task file
-    // answers at the bank the machine's built-in IDE is on (0x01) and floats at
-    // a bank with no interface (0x00, the value DOS leaves).
-    write_byte(16'h0432, 8'h01);
+    // answers at the hard disk's bank (0x00, bank 0's master) and floats at a
+    // bank with no interface (0x01 here: the CD's bank, which this bench does not build).
+    write_byte(16'h0432, 8'h00);
 
     // 0x074C is the alternate status: the guest polls it instead of 0x64E so
     // the read does not clear the interrupt. It had no port read anywhere.

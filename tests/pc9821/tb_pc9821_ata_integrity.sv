@@ -308,7 +308,7 @@ module tb_pc9821_ata_integrity;
     // 200000 sectors so every LBA below is in range.
     mount(64'd200000 * 64'd512, 1'b0);
     while (ata.current_cylinders !== 16'd1470) @(negedge clk);
-    write_byte(16'h0432, 8'h01);           // the bank the built-in interface is on
+    write_byte(16'h0432, 8'h00);           // the bank the built-in interface is on
 
     // ---- (a) the 16-bit lane and the word pointer ----
     // A 16-bit IN walks low (0x640) then high (0x641); the low lane is the sector's

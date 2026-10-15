@@ -49,7 +49,7 @@ module pc9821_gvram_dut #(
     input wire [15:0] egc_leng,
     input wire        egc_shift_we,
 
-    // The graphics GDC's draw-engine visit (item 63 slice 1) - the same port share
+    // The graphics GDC's draw-engine visit (the GDC2 WRITE slice) - the same port share
     // pc9821_memory_subsystem wires. Unconnected in the older benches, which leaves
     // gdc_valid low and the CPU side permanently owning the port.
     input  wire        gdc_mem_valid,

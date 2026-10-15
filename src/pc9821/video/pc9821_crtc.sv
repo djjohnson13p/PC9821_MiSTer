@@ -263,98 +263,174 @@ module pc9821_crtc (
   reg [7:0] sync_live[0:7];
   reg [7:0] v_sync[0:7];
 
-  // ---- NP2kai's fields ----
-  /* verilator lint_off UNUSEDSIGNAL */   // para[0] (the block's sync-format byte, which
-  // gdc_updateclock() never reads) and the arriving block's unused horizontal fields: the
-  // fields below are all read.
-  wire [15:0] s_tmp    = {v_sync[3], v_sync[2]};        // word(para[2..3])
-  wire [15:0] s_n_tmp  = {sync_live[3], sync_live[2]};  // ...as it ARRIVES
-  wire [15:0] s_n_tmp2 = {sync_live[7], sync_live[6]};  // word(para[6..7]) as it arrives
-  /* verilator lint_on UNUSEDSIGNAL */
-  wire [9:0]  s_cr    = {2'b00, v_sync[1]} + 10'd2;
-  wire [4:0]  s_hs_f  = s_tmp[4:0];
-  wire [6:0]  s_hfp_f = {1'b0, s_tmp[15:10]} + {1'b0, v_sync[4][5:0]};
-  wire [4:0]  s_vs_f  = s_tmp[9:5];
-  wire [5:0]  s_vfp_f = v_sync[5][5:0];
-  // The VERTICAL fields are taken from the block AS IT ARRIVES (the s_n_ form): their only
-  // consumer is the frame-boundary root copy below, which samples them on the exact edge
-  // the v_sync copy runs, so the roots land bit-identical with v_sync at every cycle (the
-  // timing seam, spelled out at the copy). The porches keep the v_sync-domain s_vs_f/
-  // s_vfp_f directly; both domains carry the same frame-boundary copy at every dot.
-  wire [4:0]  s_n_vs_f  = s_n_tmp[9:5];
-  wire [5:0]  s_n_vfp_f = sync_live[5][5:0];
-  wire [5:0]  s_n_vbp_f = s_n_tmp2[15:10];
-  // ((tmp2 - 1) & 0x3ff) + 1 is the low ten bits of tmp2 minus one, plus one.
-  wire [9:0]  s_n_lfm1 = s_n_tmp2[9:0] - 10'd1;
-  wire [10:0] s_n_lf   = {1'b0, s_n_lfm1} + 11'd1;
-
-  // ---- NP2kai's roots, then the clamp ----
-  wire [8:0]  s_hfbs  = {4'b0000, s_hs_f} + {2'b00, s_hfp_f} + HBP_CH;
-  wire [9:0]  s_x_raw = s_cr + {1'b0, s_hfbs};
-  wire [7:0]  s_x     = (s_x_raw < CLK_MINX) ? CLK_MINX[7:0]
-                      : (s_x_raw > CLK_MAXX) ? CLK_MAXX[7:0] : s_x_raw[7:0];
-  wire [7:0]  s_n_vfbs0 = {3'b000, s_n_vs_f} + {2'b00, s_n_vfp_f} + {2'b00, s_n_vbp_f};
-  wire [7:0]  s_n_vfbs  = (s_n_vfbs0 == 8'd0) ? 8'd1 : s_n_vfbs0;
-  wire [11:0] s_n_y_raw = {1'b0, s_n_lf} + {4'b0000, s_n_vfbs};
-  wire [9:0]  s_n_y     = (s_n_y_raw < {2'b00, CLK_MINY}) ? CLK_MINY
-                        : (s_n_y_raw > {2'b00, CLK_MAXY}) ? CLK_MAXY : s_n_y_raw[9:0];
-
-  // ---- THE VERTICAL ROOTS: the frame-boundary copy is the TIMING SEAM ----
-  // The fitted lightoc build's worst path ran v_sync[2][5] (s_vs_f[0]) through the vertical
-  // decode, the fetch walker's row wrap and the row*pitch multiply into the TRAM port-B
-  // address register (23.388 ns across 16 levels). The vertical decode now ENDS in s_lf_r/
-  // s_y_r and the multiply ends in f_rowbase_r (the fetch section), leaving register-to-
-  // register paths only.
+  // ---- THE GEOMETRY, IN TWO REGISTERED HALVES (V1-a, a timing seam) ----
+  // NP2kai's field map, its roots and the clamp, then the porch fits, are four functions of
+  // the eight parameter bytes (b0..b7 = para[0..7]):
+  //   crtc_x/y/lf, crtc_hact/vact the ROOTS: the clamped character and line totals and the
+  //                              active window (HACTIVE, VACTIVE). Evaluated on the block AS IT
+  //                              ARRIVES and registered (s_x_r/s_y_r/s_ha_r/s_va_r) on the edge
+  //                              the v_sync copy runs, from the same pre-edge sync_live, so
+  //                              they equal the same functions of v_sync at EVERY cycle.
+  //   crtc_d                     the DERIVED compare operands (HACTIVE+HFP, +HSYNC_W,
+  //                              VACTIVE+VFP, +VSYNC_W, the "- 1" bounds,
+  //                              the walk slot), registered EVERY clk_sys from the roots and
+  //                              v_sync (geom_d). So every raster compare reads registers; the
+  //                              old single path ran v_sync through the field map, the clamp,
+  //                              the porch fits and the sums into HSYNC/VSYNC (16 levels).
+  // geom_d lags its inputs by ONE clk_sys, and its inputs move only on the frame-boundary edge
+  // (and reset, which loads both halves with the default block's values together). So geom_d
+  // can differ from crtc_d(the roots) only in the ONE clk_sys right after that edge, when
+  // hdot = vline = 0. Every compare made there has the same answer for ANY two geometries:
+  // HS_ON >= 16 and VS_ON >= VACTIVE >= 1 (no pulse at dot 0 / line 0), and HTOT_M1 >= 799,
+  // VTOT_M1 >= 399, WK_SNAP >= 383 (no line
+  // end, frame end or walk slot) - tools/equiv/crtc_geom_lag.sv proves exactly that for every
+  // pair of blocks. The one register that samples a compare there, f_wrap_r (VACT_M1), is
+  // re-sampled at the next dot and read only at the line's last cell (its own header). Every
+  // OUTPUT is therefore the pre-change module's at every cycle: tb_pc9821_crtc_geom_equiv
+  // pins that against the pre-change text, and tools/equiv/crtc_geom.sv proves the functions
+  // equal to the old wiring for every block. HTOTAL/VTOTAL/HACTIVE/VACTIVE themselves are roots
+  // (8*x, y and the active window), so o_htotal/o_vtotal, feed_odd, the active window and the
+  // fetch walker read edge-registered values equal to the old decode at every cycle.
   //
-  // WHY THIS IS NOT A BEHAVIOUR CHANGE (the refactor-equivalence contract pinned cycle-
-  // exactly by tests/pc9821/tb_pc9821_tram_addr_equiv.sv): s_lf_r/s_y_r are loaded from
-  // the block as it ARRIVES (the s_n_ wires above) on the exact edge the v_sync copy runs
-  // BESIDE them in the block below - so they equal the s_lf/s_y decode of v_sync at EVERY
-  // cycle: v_sync only ever moves on that same edge from that same pre-edge sync_live (a
-  // parameter write landing ON the edge is in neither), both reset to the default block,
-  // and nothing else writes either. The geometry every consumer reads - this module's
-  // counters and porches, the fetch walker's row wrap, pc9821_gdc2's wrapped display line
-  // through o_vtotal, and the odd-line feed_odd/at_line_tick expression - is therefore ONE
-  // value at ONE time, bit-identical to the pre-seam wiring at every dot: no next-frame
-  // value early, no stale one late (the frame-boundary snapshot semantics are untouched).
-  // A registered copy must NEVER feed only SOME of those consumers: a live/registered mix
-  // would break the feed_odd = gdc2 v_oline[0] identity the odd-sync-parity fix proves
-  // (cross-lane contract), which is why these registers ARE VTOTAL/VACTIVE's source.
-  reg [10:0] s_lf_r;   // s_lf, the block's lf
-  reg  [9:0] s_y_r;    // s_y, the clamped y = VTOTAL
-
-  // ---- the geometry this module counts on ----
-  wire [9:0] HTOTAL   = s_x * 10'd8;     // 8*x characters: 800..896 dots (a multiply by a
-                                         // constant is a shift, and it keeps the width honest)
-  wire [9:0] VTOTAL   = s_y_r;           // 400..575 lines (the seam's copy: see s_y_r)
+  // THE FIELD MAP AND CLAMP (unchanged; see the block comment above).
+  /* verilator lint_off UNUSEDSIGNAL */   // each function takes whole parameter bytes and reads
+  // only the fields NP2kai's map puts in them (b0, the sync-format byte, is never read).
+  function automatic [7:0] crtc_x;
+    input [7:0] b1, b2, b3, b4;
+    reg  [9:0] cr; reg [4:0] hs_f; reg [6:0] hfp_f; reg [8:0] hfbs; reg [9:0] x_raw;
+    begin
+      cr    = {2'b00, b1} + 10'd2;
+      hs_f  = b2[4:0];
+      hfp_f = {1'b0, b3[7:2]} + {1'b0, b4[5:0]};
+      hfbs  = {4'b0000, hs_f} + {2'b00, hfp_f} + HBP_CH;
+      x_raw = cr + {1'b0, hfbs};
+      crtc_x = (x_raw < CLK_MINX) ? CLK_MINX[7:0]
+             : (x_raw > CLK_MAXX) ? CLK_MAXX[7:0] : x_raw[7:0];
+    end
+  endfunction
+  // ((tmp2 - 1) & 0x3ff) + 1 is the low ten bits of tmp2 minus one, plus one.
+  function automatic [10:0] crtc_lf;
+    input [7:0] b6, b7;
+    reg [9:0] lfm1;
+    begin
+      lfm1    = {b7[1:0], b6} - 10'd1;
+      crtc_lf = {1'b0, lfm1} + 11'd1;
+    end
+  endfunction
+  function automatic [9:0] crtc_y;
+    input [7:0] b2, b3, b5, b6, b7;
+    reg [4:0] vs_f; reg [5:0] vfp_f, vbp_f; reg [7:0] vfbs0, vfbs; reg [11:0] y_raw;
+    begin
+      vs_f  = {b3[1:0], b2[7:5]};
+      vfp_f = b5[5:0];
+      vbp_f = b7[7:2];
+      vfbs0 = {3'b000, vs_f} + {2'b00, vfp_f} + {2'b00, vbp_f};
+      vfbs  = (vfbs0 == 8'd0) ? 8'd1 : vfbs0;
+      y_raw = {1'b0, crtc_lf(b6, b7)} + {4'b0000, vfbs};
+      crtc_y = (y_raw < {2'b00, CLK_MINY}) ? CLK_MINY
+             : (y_raw > {2'b00, CLK_MAXY}) ? CLK_MAXY : y_raw[9:0];
+    end
+  endfunction
   // The active window always leaves blanking to hold its own sync (x = cr + at least 3
   // characters, so for a block whose cr is inside its line this is cr exactly - and it is
-  // clamped INTO the frame), and the pulse fits inside what is left.
-  wire [12:0] s_hact8  = {s_cr, 3'b000};
-  wire [9:0]  s_hactmax= HTOTAL - 10'd8;
-  wire [9:0]  HACTIVE  = (s_hact8 > {3'b000, s_hactmax}) ? s_hactmax : s_hact8[9:0];
-  wire [9:0]  s_hblank = HTOTAL - HACTIVE;                        // >= 8 dots
-  wire [9:0]  s_hfp8   = {s_hfp_f, 3'b000};
-  wire [9:0]  s_hs8    = {2'b00, s_hs_f, 3'b000};
-  wire [9:0]  HFP      = (s_hfp8 <= (s_hblank - 10'd8)) ? s_hfp8 : (s_hblank - 10'd8);
-  wire [9:0]  HSYNC_W  = (s_hs8 == 10'd0) ? HSYNC_MIN
-                       : (s_hs8 <= (s_hblank - HFP)) ? s_hs8 : (s_hblank - HFP);
-  wire [9:0]  s_lfmax  = VTOTAL - 10'd1;
-  wire [9:0]  VACTIVE  = (s_lf_r > {1'b0, s_lfmax}) ? s_lfmax : s_lf_r[9:0];
-  wire [9:0]  s_vblank = VTOTAL - VACTIVE;                        // >= 1 line
-  wire [9:0]  s_vfp10  = {4'b0000, s_vfp_f};
-  wire [9:0]  VFP      = (s_vfp10 > (s_vblank - 10'd1)) ? (s_vblank - 10'd1) : s_vfp10;
-  wire [9:0]  s_vs10   = {5'b00000, s_vs_f};
-  wire [9:0]  s_vs_room= s_vblank - VFP;                          // >= 1 line
-  wire [9:0]  VSYNC_W  = (s_vs10 == 10'd0) ? VSYNC_MIN
-                       : (s_vs10 > s_vs_room) ? s_vs_room : s_vs10;
+  // clamped INTO the frame). HACTIVE and VACTIVE are ROOTS too (edge-registered, so equal to
+  // the old decode at every cycle like HTOTAL/VTOTAL - the four values the odd-sync-parity
+  // contract names, tb_pc9821_tram_addr_equiv's geom-shared-bit-identity).
+  function automatic [9:0] crtc_hact;
+    input [7:0] x; input [7:0] b1;
+    reg [12:0] hact8; reg [9:0] hactmax;
+    begin
+      hact8     = {({2'b00, b1} + 10'd2), 3'b000};
+      hactmax   = (x * 10'd8) - 10'd8;
+      crtc_hact = (hact8 > {3'b000, hactmax}) ? hactmax : hact8[9:0];
+    end
+  endfunction
+  function automatic [9:0] crtc_vact;
+    input [9:0] y; input [10:0] lf;
+    reg [9:0] lfmax;
+    begin
+      lfmax     = y - 10'd1;
+      crtc_vact = (lf > {1'b0, lfmax}) ? lfmax : lf[9:0];
+    end
+  endfunction
+  // THE DERIVED OPERANDS, from the roots (x, y, HACTIVE, VACTIVE) and the porch fields. Field layout, low to
+  // high, every field 10 bits:
+  localparam integer G_HTOT_M1 = 0,  G_HS_ON = 10,   G_HS_OFF = 20,  G_VTOT_M1 = 30,
+                     G_VACT_M1 = 40, G_VS_ON = 50,   G_VS_OFF = 60,  G_WK_SLOT = 70,
+                     G_WK_SNAP = 80, G_VFP = 90,     G_VSYNC_W = 100, G_W = 110;
+  function automatic [G_W-1:0] crtc_d;
+    input [7:0] x; input [9:0] y; input [9:0] hactive; input [9:0] vactive;
+    input [7:0] b2, b3, b4, b5;
+    reg [4:0] hs_f; reg [6:0] hfp_f; reg [4:0] vs_f; reg [5:0] vfp_f;
+    reg [9:0] htotal, vtotal, hblank, hfp8, hs8, hfp, hsync_w;
+    reg [9:0] vblank, vfp10, vfp, vs10, vs_room, vsync_w, wk_slot;
+    begin
+      hs_f    = b2[4:0];
+      hfp_f   = {1'b0, b3[7:2]} + {1'b0, b4[5:0]};
+      vs_f    = {b3[1:0], b2[7:5]};
+      vfp_f   = b5[5:0];
+      // HTOTAL = 8*x characters: 800..896 dots; VTOTAL = y: 400..575 lines; the pulse fits
+      // inside the blanking the active window leaves.
+      htotal  = x * 10'd8;
+      vtotal  = y;
+      hblank  = htotal - hactive;                                     // >= 8 dots
+      hfp8    = {hfp_f, 3'b000};
+      hs8     = {2'b00, hs_f, 3'b000};
+      hfp     = (hfp8 <= (hblank - 10'd8)) ? hfp8 : (hblank - 10'd8);
+      hsync_w = (hs8 == 10'd0) ? HSYNC_MIN
+              : (hs8 <= (hblank - hfp)) ? hs8 : (hblank - hfp);
+      vblank  = vtotal - vactive;                                     // >= 1 line
+      vfp10   = {4'b0000, vfp_f};
+      vfp     = (vfp10 > (vblank - 10'd1)) ? (vblank - 10'd1) : vfp10;
+      vs10    = {5'b00000, vs_f};
+      vs_room = vblank - vfp;                                         // >= 1 line
+      vsync_w = (vs10 == 10'd0) ? VSYNC_MIN
+              : (vs10 > vs_room) ? vs_room : vs10;
+      wk_slot = (vtotal - 10'd1) & 10'h3F0;
+      // Each operand is the 10-bit value its consumer compared against before (the pulses'
+      // bounds were 10-bit sums in a 10-bit compare; the "- 1" bounds are exact because
+      // HTOTAL >= 800 and VTOTAL >= 400 never wrap).
+      crtc_d = {vsync_w, vfp, wk_slot - 10'd1, wk_slot,
+                vactive + vfp + vsync_w, vactive + vfp, vactive - 10'd1,
+                vtotal - 10'd1,
+                hactive + hfp + hsync_w, hactive + hfp, htotal - 10'd1};
+    end
+  endfunction
+
+  /* verilator lint_on UNUSEDSIGNAL */
+
+  // The roots (registered on the frame-boundary edge with v_sync, below).
+  reg  [7:0] s_x_r;    // the clamped x: HTOTAL = 8*x
+  reg  [9:0] s_y_r;    // the clamped y = VTOTAL
+  reg  [9:0] s_ha_r;   // HACTIVE
+  reg  [9:0] s_va_r;   // VACTIVE
+  // The derived operands (registered every clk_sys, below).
+  reg [G_W-1:0] geom_d;
+  wire [9:0] HTOTAL   = s_x_r * 10'd8;            // 800..896 dots (8*x: a shift)
+  wire [9:0] VTOTAL   = s_y_r;                    // 400..575 lines
+  wire [9:0] HTOT_M1  = geom_d[G_HTOT_M1 +: 10];
+  wire [9:0] HACTIVE  = s_ha_r;
+  wire [9:0] HS_ON    = geom_d[G_HS_ON   +: 10];   // HACTIVE + HFP
+  wire [9:0] HS_OFF   = geom_d[G_HS_OFF  +: 10];   // HACTIVE + HFP + HSYNC_W
+  wire [9:0] VTOT_M1  = geom_d[G_VTOT_M1 +: 10];
+  wire [9:0] VACTIVE  = s_va_r;
+  wire [9:0] VACT_M1  = geom_d[G_VACT_M1 +: 10];
+  wire [9:0] VS_ON    = geom_d[G_VS_ON   +: 10];   // VACTIVE + VFP
+  wire [9:0] VS_OFF   = geom_d[G_VS_OFF  +: 10];   // VACTIVE + VFP + VSYNC_W
+  wire [9:0] wk_slot  = geom_d[G_WK_SLOT +: 10];
+  wire [9:0] WK_SNAP  = geom_d[G_WK_SNAP +: 10];   // wk_slot - 1
+  /* verilator lint_off UNUSEDSIGNAL */            // diagnosis only (tb_pc9821_userdisk's dump)
+  wire [9:0] VFP      = geom_d[G_VFP     +: 10];
+  wire [9:0] VSYNC_W  = geom_d[G_VSYNC_W +: 10];
+  /* verilator lint_on UNUSEDSIGNAL */
+  wire [5:0] VBP      = v_sync[7][7:2];           // the block's vbp field (o_vbp)
 
   // ---------------------------------------------------------------
   // Video timing counters
   // ---------------------------------------------------------------
   reg [9:0] hdot;
   reg [9:0] vline;
-  wire in_hsync = (hdot >= HACTIVE + HFP) && (hdot < HACTIVE + HFP + HSYNC_W);
+  wire in_hsync = (hdot >= HS_ON) && (hdot < HS_OFF);
   // The VSYNC PULSE. This is the GDC's vertical sync output: VFP lines of front porch after the
   // last active line, then VSYNC_W lines of sync, then the back porch that is left. The split is
   // MAME's uPD7220 model to the line - `update_vsync_timer` drives the output active at
@@ -362,10 +438,10 @@ module pc9821_crtc (
   // :428-429) - and the width is the block's vs field (see the SYNC block above). The vblank IRQ
   // is raised on THIS pulse's rising edge (see vsync_irq), so with the default block the guest's
   // drawing window after the interrupt is vline 407 to the next frame's vline 0 = 33 lines.
-  wire in_vsync = (vline >= VACTIVE + VFP) && (vline < VACTIVE + VFP + VSYNC_W);
+  wire in_vsync = (vline >= VS_ON) && (vline < VS_OFF);
   wire h_active = (hdot < HACTIVE);
   wire v_active = (vline < VACTIVE);
-  wire frame_end = (vline == VTOTAL - 1) && (hdot == HTOTAL - 1);
+  wire frame_end = (vline == VTOT_M1) && (hdot == HTOT_M1);
   // The last walk slot of the vertical blanking interval, where the walker's own display-start
   // inputs are copied ahead of the walk trigger in the next slot (vline 432 for the default
   // 440-line frame). Row 0's cache is filled a whole frame before it is drawn, so the walker
@@ -373,27 +449,40 @@ module pc9821_crtc (
   // frame's. The walk slots are the vline[3:0] == 0 grid, so the last one inside the frame is
   // VTOTAL-1 rounded down to that grid. The rest of the configuration, and the scanout itself,
   // still commits at frame_end below.
-  wire [9:0] wk_slot = (VTOTAL - 10'd1) & 10'h3F0;
-  wire wk_cfg_snap = (vline == wk_slot - 10'd1) && (hdot == HTOTAL - 1);
+  wire wk_cfg_snap = (vline == WK_SNAP) && (hdot == HTOT_M1);
 
-  // The raster half's copy of the sync block: unconditional at the frame boundary, like
-  // v_mode1_200 below - the geometry is not one of the registers the scanout snapshot carries.
-  // The vertical roots' copy (s_lf_r/s_y_r) runs in this SAME block so it samples the same
-  // pre-edge sync_live on the same edge - see the timing seam above.
+  // The raster half's copy of the sync block and its roots: unconditional at the frame
+  // boundary, like v_mode1_200 below - the geometry is not one of the registers the scanout
+  // snapshot carries. The roots run in this SAME block so they sample the same pre-edge
+  // sync_live on the same edge (see the two-halves note above).
   always @(posedge clk_sys) begin
     if (!rst_n_sys) begin
       v_sync[0] <= 8'h10; v_sync[1] <= 8'h4e; v_sync[2] <= 8'h07; v_sync[3] <= 8'h25;
       v_sync[4] <= 8'h07; v_sync[5] <= 8'h07; v_sync[6] <= 8'h90; v_sync[7] <= 8'h65;
-      s_lf_r <= 11'd400;   // defsyncm24's lf
-      s_y_r  <= 10'd440;   // ...and its y
+      s_x_r  <= 8'd106;    // defsyncm24's x
+      s_y_r  <= 10'd440;   // ...its y
+      s_ha_r <= 10'd640;   // ...its HACTIVE (8*cr)
+      s_va_r <= 10'd400;   // ...and its VACTIVE (lf)
     end else if (pixel_ce && frame_end) begin
       v_sync[0] <= sync_live[0]; v_sync[1] <= sync_live[1];
       v_sync[2] <= sync_live[2]; v_sync[3] <= sync_live[3];
       v_sync[4] <= sync_live[4]; v_sync[5] <= sync_live[5];
       v_sync[6] <= sync_live[6]; v_sync[7] <= sync_live[7];
-      s_lf_r <= s_n_lf;
-      s_y_r  <= s_n_y;
+      s_x_r  <= crtc_x(sync_live[1], sync_live[2], sync_live[3], sync_live[4]);
+      s_y_r  <= crtc_y(sync_live[2], sync_live[3], sync_live[5], sync_live[6], sync_live[7]);
+      s_ha_r <= crtc_hact(crtc_x(sync_live[1], sync_live[2], sync_live[3], sync_live[4]),
+                          sync_live[1]);
+      s_va_r <= crtc_vact(crtc_y(sync_live[2], sync_live[3], sync_live[5], sync_live[6],
+                                 sync_live[7]), crtc_lf(sync_live[6], sync_live[7]));
     end
+  end
+  // The derived operands, every clk_sys from the roots (one clk_sys behind them; see above).
+  // The reset value is the default block's, loaded with the roots' own.
+  always @(posedge clk_sys) begin
+    if (!rst_n_sys)
+      geom_d <= crtc_d(8'd106, 10'd440, 10'd640, 10'd400, 8'h07, 8'h25, 8'h07, 8'h07);
+    else
+      geom_d <= crtc_d(s_x_r, s_y_r, s_ha_r, s_va_r, v_sync[2], v_sync[3], v_sync[4], v_sync[5]);
   end
 
   always @(posedge clk_sys) begin
@@ -403,7 +492,7 @@ module pc9821_crtc (
     end else if (pixel_ce && frame_end) begin
       hdot  <= 10'd0;
       vline <= 10'd0;
-    end else if (pixel_ce && hdot == HTOTAL - 1) begin
+    end else if (pixel_ce && hdot == HTOT_M1) begin
       hdot  <= 10'd0;
       vline <= vline + 10'd1;
     end else if (pixel_ce) hdot <= hdot + 10'd1;
@@ -710,9 +799,14 @@ module pc9821_crtc (
             end
             default: gdc_snd_cnt <= 3'd0;
           endcase
+          // EVERY command byte ends an unfinished SYNC block: NP2kai gdc_work reloads
+          // `item->ptr`/`item->rcv` from the new command's gdc_cmd.tbl row (io/gdc.c), so a
+          // SYNC cut short by the next command takes no more bytes - its parameters must
+          // not swallow the next command's (they would rewrite the raster geometry).
+          // ONE assignment per command write (R2): armed by 0x0E/0x0F, cleared by the rest.
+          sync_pending <= (io_din == 8'h0E) || (io_din == 8'h0F);
+          sync_cnt     <= 3'd0;
           if (io_din == 8'h0E || io_din == 8'h0F) begin  // SYNC off/on
-            sync_pending <= 1'b1;
-            sync_cnt     <= 3'd0;
             cmd_active   <= 1'b0;
             gdc_start    <= io_din[0];  // 0x0F on / 0x0E off
           end else if (io_din == 8'h0D || io_din == 8'h6B) begin
@@ -761,16 +855,16 @@ module pc9821_crtc (
             // is decoded in pc9821_grcg, so the EGC gate must be taken from there.
             8'h02: if (mode2_wren) mode2_egc <= io_din[0];
             // num 0x10 (256-colour) and num 0x20 (text shift) are real firmware traffic
-            // (BANK4@0xFD6D8-0xFD6E2, BANK6@0xFFD4F-0xFFD87) that nothing here consumes
-            // yet, so they are latched under the same guard rather than acted on.
+            // (BANK4@0xFD6D8-0xFD6E2, BANK6@0xFFD4F-0xFFD87).
             // num 0x10's writes (FF2 dat 0x20/0x21) are NP2kai's GDCANALOG_256
             // setters (gdc_analogext, gated on mode2 bit 3 exactly as here), so the
             // 0x9A0 query's index 0x0A reports this bit. num 0x20's (dat 0x40/0x41)
             // are NP2kai's GDCDISP_PLAZMA setters, and dat 0x80/0x81 (num 0x40) move
             // the SAME bit there (io/gdc.c:572-581), so the query's index 0x05
-            // reports it too.
+            // reports it too - UNGUARDED: NP2kai's dat switch tests `gdc.mode2 & 0x08`
+            // for 0x20/0x21 only, and MAME pc9821_video_ff_w protects dat 4/5 alone.
             8'h10: if (mode2_wren) mode2_256col <= io_din[0];
-            8'h20, 8'h40: if (mode2_wren) mode2_textshift <= io_din[0];
+            8'h20, 8'h40: mode2_textshift <= io_din[0];
             // num 0x34 (dat 0x68/0x69) is GDCANALOG_256E and nums 0x41/0x42
             // (dat 0x82/0x83 and 0x84/0x85) the two gdc.clock bits - NP2kai's
             // gdc_o6a dat cases toggle all three unconditionally and the 0x9A0
@@ -1033,7 +1127,7 @@ module pc9821_crtc (
         cfg_ack <= ~cfg_ack;
       end
       // The vline-432 walk trigger has read the flag by the end of that scanline.
-      if ((vline == wk_slot) && (hdot == HTOTAL - 1)) v_row0_stale <= 1'b0;
+      if ((vline == wk_slot) && (hdot == HTOT_M1)) v_row0_stale <= 1'b0;
     end
   end
 
@@ -1052,7 +1146,7 @@ module pc9821_crtc (
   assign o_hdot         = hdot;
   assign o_htotal       = HTOTAL;
   assign o_vtotal       = VTOTAL;
-  assign o_vbp          = v_sync[7][7:2];
+  assign o_vbp          = VBP;
 
   // ---------------------------------------------------------------
   // Text fetch pipeline
@@ -1087,7 +1181,7 @@ module pc9821_crtc (
   reg f_wrap_r;
   always @(posedge clk_sys) begin
     if (!rst_n_sys) f_wrap_r <= 1'b0;   // vline 0 never wraps for a VACTIVE >= 2 raster
-    else if (pixel_ce) f_wrap_r <= (vline == VACTIVE - 10'd1);
+    else if (pixel_ce) f_wrap_r <= (vline == VACT_M1);
   end
   /* verilator lint_off UNUSEDSIGNAL */   // f_line[9] has no reader: the fetch splits it into
   // the char row [8:4] and the font raster row [3:0]. KNOWN LIMITATION (audit rtl-audit-video
@@ -1565,7 +1659,7 @@ module pc9821_crtc (
   // The wrap subtracts VTOTAL from (vline + 2), which flips the sum's parity exactly
   // when VTOTAL is odd - the whole flip in one bit.
   wire feed_odd = vline[0] ^ ((vline + 10'd2 >= VTOTAL) && VTOTAL[0]);
-  wire at_line_tick = (hdot == HTOTAL - 10'd1);
+  wire at_line_tick = (hdot == HTOT_M1);
   assign gfx_odd_line = v_mode1_200 && (at_line_tick ? feed_odd : vline[0]);
   assign gfx_mode16   = v_mode16;
   assign gfx_dig      = {v_dig_a8, v_dig_aa, v_dig_ac, v_dig_ae};

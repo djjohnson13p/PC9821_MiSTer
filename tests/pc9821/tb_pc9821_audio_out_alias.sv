@@ -2,7 +2,7 @@
 // pre-fix output stage in the same run.
 //
 // ==== WHAT THIS PROVES ====
-// A 45 kHz tone carried on the mixer's 2.4576 MHz grid - above the 48 kHz presentation's 24 kHz Nyquist, so it MUST be removed and not folded - comes out of the pre-fix output stage (a bare register loaded on audio_volume_valid, the stage this lane replaced) folded onto 3 kHz at the tone's own level, and comes out of pc9821_audio_out at <= -60 dB relative: the bare-latch arm measures the fold at about 0 dB (the fold is real and the stimulus is non-vacuous) while the filtered arm's 5/32 polyphase prototype holds a 28 kHz stopband at -100 dB by design, so the aliasing that a bare strobe cannot avoid is removed instead of folded.
+// A 45 kHz tone carried on the mixer's 2.4576 MHz grid - above the 48 kHz presentation's 24 kHz Nyquist, so it MUST be removed and not folded - comes out of the pre-fix output stage (a bare register loaded on audio_volume_valid, the stage this lane replaced) folded onto 3 kHz at the tone's own level, and comes out of pc9821_audio_out at <= -60 dB relative: the bare-latch arm measures the fold at about 0 dB (the fold is real and the stimulus is non-vacuous) while the filtered arm's 5/32 polyphase prototype holds a 28 kHz stopband at -100 dB by design, so the aliasing that a bare strobe cannot avoid is removed instead of folded - and an in-band 3 kHz tone at the same drive on the right channel passes at 0 dB +-0.5 dB, so the stopband cannot be met by a stage that attenuates everything.
 //
 // ==== DUT ====
 // pc9821_audio_out (src/pc9821/audio/pc9821_audio_out.sv) in parallel with the PRE-FIX
@@ -13,6 +13,11 @@
 //       drive amplitude, so the stimulus is not silently empty.
 // CHK-2 the fold is at or below -60 dB of the drive in the filtered arm.
 // CHK-3 the filtered arm did not pass the out-of-band tone as itself.
+// CHK-4 the filtered arm PASSES the band: a 3 kHz tone at the same drive on the RIGHT
+//       channel comes out at 0 dB +-0.5 dB (the module's design flatness is 0.071 dB over
+//       0-20 kHz, pc9821_audio_out.sv's header). Without it CHK-2 is satisfied by a filter
+//       that attenuates everything - a muted or gutted stage passed (bench-audit mutation
+//       2026-10-12: half the C prototype zeroed still met -60 dB).
 //
 // ==== VERDICT ====
 // PASS when the bare arm shows the fold and the filtered arm does not; FAIL naming which
@@ -68,13 +73,14 @@ module tb_pc9821_audio_out_alias;
       seq <= seq + 1;
       phase = 2.0 * 3.141592653589793 * 45000.0 * seq / 2457600.0;
       in_l <= isin(phase);
-      in_r <= isin(phase);
+      in_r <= isin(2.0 * 3.141592653589793 * FOLD * seq / 2457600.0);
     end
   end
 
   // ---- Goertzel over the presentation grid, on both arms ------------------------------
   integer out_div = 0, n = 0;
   real    acc_filtered_re, acc_filtered_im, acc_bare_re, acc_bare_im, acc_dc;
+  real    acc_pass_re, acc_pass_im;
   real    win_sum;
   integer settling = 0;
 
@@ -97,6 +103,8 @@ module tb_pc9821_audio_out_alias;
             acc_bare_re     = acc_bare_re + xn * w * $cos(th);
             acc_bare_im     = acc_bare_im - xn * w * $sin(th);
             acc_dc          = acc_dc + xs;
+            acc_pass_re     = acc_pass_re + $itor(out_r) * w * $cos(th);
+            acc_pass_im     = acc_pass_im - $itor(out_r) * w * $sin(th);
             win_sum         = win_sum + w;
           end
           n = n + 1;
@@ -108,19 +116,23 @@ module tb_pc9821_audio_out_alias;
   initial begin
     acc_filtered_re = 0.0; acc_filtered_im = 0.0;
     acc_bare_re = 0.0; acc_bare_im = 0.0; acc_dc = 0.0; win_sum = 0.0;
+    acc_pass_re = 0.0; acc_pass_im = 0.0;
     // enough clk for settling (0.02 s of presentation grid) + the window
     #(10 * 2 * (512 * (960 + NSAMP + 8)));
     begin
-      real mag_f, mag_b, rel_f, rel_b, dc;
+      real mag_f, mag_b, rel_f, rel_b, dc, mag_p, rel_p;
       mag_f = 2.0 * $sqrt(acc_filtered_re*acc_filtered_re + acc_filtered_im*acc_filtered_im) / win_sum;
       mag_b = 2.0 * $sqrt(acc_bare_re*acc_bare_re + acc_bare_im*acc_bare_im) / win_sum;
       dc    = acc_dc / win_sum;
+      mag_p = 2.0 * $sqrt(acc_pass_re*acc_pass_re + acc_pass_im*acc_pass_im) / win_sum;
+      rel_p = 20.0 * $log10(mag_p / DRIVE + 1.0e-12);
       rel_b = 20.0 * $log10(mag_b / DRIVE);
       rel_f = 20.0 * $log10(mag_f / DRIVE);
       $display("tone 45 kHz on the grid, drive %.1f (-8.7 dBFS), fold lands at %.0f Hz:", DRIVE, FOLD);
       $display("  bare pre-fix latch : %0.1f dB relative to the drive (abs %.1f)", rel_b, mag_b);
       $display("  pc9821_audio_out  : %0.1f dB relative to the drive (abs %.1f)", rel_f, mag_f);
       $display("  filtered DC offset : %0.1f LSB", dc);
+      $display("  in-band 3 kHz (R)  : %0.2f dB relative to the drive (abs %.1f)", rel_p, mag_p);
 
       if (!(rel_b > -6.0))
         fail("CHK-1 the bare-latch arm did not show the fold: stimulus or fold is wrong");
@@ -128,6 +140,8 @@ module tb_pc9821_audio_out_alias;
         fail("CHK-2 the filtered arm folded the 45 kHz tone into the passband");
       if (!(mag_f < 200.0))
         fail("CHK-3 the filtered arm passed the out-of-band tone as itself");
+      if (!(rel_p > -0.5 && rel_p < 0.5))
+        fail("CHK-4 the filtered arm does not pass an in-band 3 kHz tone at 0 dB +-0.5 dB");
     end
     if (errors == 0) begin
       $display("TB_PC9821_AUDIO_OUT_ALIAS: PASS");

@@ -30,6 +30,7 @@ The files are byte-for-byte what the probe printed (DOS text, CRLF). Do not norm
 | `IDELAT.TXT`, `IDELAT-clean.TXT` | the IDE READ latency set (`idelat`): command -> first DRQ, per-sector PIO, throughput (the clean-tally run is the reference) |
 | `GFXB.TXT` | `gfxbench`: plain-fill bandwidth per VRAM window |
 | `GFX2.TXT`, `GFX2-rerun.TXT` | `gfxbenc2`: per-operation GVRAM drawing latency (GRCG RMW, plane writes, copies) |
+| `EGCP.TXT` | `egcplane`: EGC fill/ROP/copy time at 1-4 enabled planes (0x4A0), net of loop controls: flat on the Xe10 (writes ~0.7 ns net, same-page read+write ~677 ns net) |
 | `IRQWD.TXT` | `irqwd`: masked-ack / request-withdraw behaviour of the 8259 lines |
 | `OPNA.TXT` | `opnapro`: PC-9801-86 OPNA register read-back |
 | `PEGC.TXT` | `pegcwatch`: the PEGC register state a game leaves behind |

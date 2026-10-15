@@ -97,6 +97,7 @@ module tb_pc9821_gvram_porta_equiv;
   reg bios_ram_gate = 0;
   reg top_shadow_en = 0;
   reg [7:0] win0_sel = 8'h08;
+  wire       win0_sel_moved = (win0_sel != 8'h08);   // pc9821_iobus's registered compare
   reg  sys16m_en = 1'b1;
   reg  [1:0] ems_state = 2'd0;
   reg [31:0] pack_base = 32'h01F8_0000;
@@ -207,7 +208,7 @@ module tb_pc9821_gvram_porta_equiv;
   wire        dma_ready, dma_resp_valid;
   wire [31:0] dma_dout;
 /* verilator lint_on UNUSEDSIGNAL */
-  // The GDC draw engine's visit (item 63 slice 1) is not this bench's subject: tied
+  // The GDC draw engine's visit (the GDC2 WRITE slice) is not this bench's subject: tied
   // off, so the CPU side permanently owns the GVRAM port share.
   wire        gdc_mem_valid = 1'b0;
   wire        gdc_mem_write = 1'b0;
@@ -556,10 +557,10 @@ module tb_pc9821_gvram_porta_equiv;
   // machinery (the shifter mask advances per unit and its fetch is a read burst first) and
   // is refused here - that family is tb_pc9821_egc*'s; its two-word burst rides the same
   // g_single burst_fits + G_W2B port template the GRCG's TDW bursts pin above. The cadence
-  // is the documented state flow: S_IDLE accept at acc, S_FEED/S_STEP_LO/S_STEP_HI/
-  // S_COMMIT, then the S_WR column walk (one skip cycle per column below the unit's lane);
-  // the request is presented from the unit's column cycle and a single waits its own
-  // cl_done plus the rest of its column walk before the next unit's produce starts.
+  // is the documented state flow: S_IDLE accept at acc, S_FEED/S_STEP_LO/S_STEP_HI, the
+  // write's four-step plane loop in S_COMMIT (egc-serial), then the S_WR column walk, which
+  // starts AT the unit's own column (no skip cycles below or above it); a single waits its own
+  // cl_done before the next unit's produce starts.
   integer eg_next;
   task automatic gold_egc_wr(input integer acc, input [31:0] a, input [31:0] din,
                              input [3:0] be);
@@ -569,7 +570,7 @@ module tb_pc9821_gvram_porta_equiv;
     begin
       decode_req(a);
       base = {dec_page, dec_off[14:2], 2'b00};
-      slot = acc + 6;
+      slot = acc + 9;
       iu = 0;
       while (iu < 4) begin
         lane = -1;
@@ -582,18 +583,18 @@ module tb_pc9821_gvram_porta_equiv;
           fail("golden covers EGC byte units only: a word unit was formed");
           iu = lane + 2;
         end else begin
-          // one byte unit = one column single; the S_WR column walk costs one skip
-          // cycle per column below the unit's lane before the request is presented
+          // one byte unit = one column single, presented from the unit's own column
           d0 = din[8*lane +: 8];
           if (dec_hit) begin
             wa = base + lane[15:0];
-            exp(slot + lane, 1'b1, 4'hF, wa, {4{d0}});
+            exp(slot, 1'b1, 4'hF, wa, {4{d0}});
             gold_set_word(dec_page, wa, {4{d0}}, 4'hF);
           end
-          // after the single's cl_done the rest of the column walk (3 - lane cycles)
-          // runs before the next unit's produce: the step A_{i+1} - A_i is
-          // 10 - lane_i + lane_{i+1}, so the base advances by 10 and the exp stays
-          // at base + lane. NO PERIOD TERM HERE: the EGC's requests are the ENGINE's own produce
+          // after the single's cl_done the next unit's produce starts at once: the step
+          // A_{i+1} - A_i is 10 (the parallel engine's was 10 - lane_i + lane_{i+1}: its walk
+          // skipped a cycle per column below and above the lane, which the serial engine's
+          // two-column walk does not, and its one-cycle commit is the serial loop's four).
+          // NO PERIOD TERM HERE: the EGC's requests are the ENGINE's own produce
           // steps and pc9821_gvram_arb's GVRAM_PERIODS neither arms nor waits for them (the
           // capture has no matched control for the EGC rows), so the engine's own cadence is
           // unchanged.
@@ -601,7 +602,7 @@ module tb_pc9821_gvram_porta_equiv;
           iu = lane + 1;
         end
       end
-      eg_next = slot;
+      eg_next = slot - 3;
       free_at = eg_next;
     end
   endtask

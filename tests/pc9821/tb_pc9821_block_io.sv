@@ -4,7 +4,7 @@
 
 // ==== WHAT THIS PROVES ====
 // TB_PC9821_BLOCK_IO:
-// The MiSTer image metadata and SD-block handshake: an unmounted request fails immediately, metadata is latched, the request reaches hps_io, the buffer streams through, sd_rd clears on acknowledge, completion pulses with status, and a short block is rejected; words hps_io streams for ANOTHER slot's transfer while this request waits for its own acknowledge are ignored.
+// The MiSTer image metadata and SD-block handshake: an unmounted request fails immediately, metadata is latched, the request reaches hps_io, the buffer streams through, sd_rd clears on acknowledge, completion pulses with status, and a short block is rejected; words hps_io streams for ANOTHER slot's transfer while this request waits for its own acknowledge are ignored. And a remount empties the read-ahead window: after a third sequential read bursts 8 sectors into it, a window sector is replayed with no handshake and carries the image's words, and after the slot is remounted the same LBA goes back to hps_io and returns the new image's words.
 
 
 module tb_pc9821_block_io;
@@ -72,6 +72,46 @@ module tb_pc9821_block_io;
       .busy(busy)
   );
   // ==== STIMULUS ====
+
+  // The read-ahead window case below: every completion pulse and every buffer word, so a
+  // multi-block fetch (which completes when its FIRST sector is in) and a window replay can be
+  // judged without racing the pulse.
+  integer done_count = 0, done_err_count = 0;
+  reg [15:0] cap [0:255];
+  always @(posedge clk) begin
+    if (req_done) begin
+      done_count <= done_count + 1;
+      if (req_error) done_err_count <= done_err_count + 1;
+    end
+    if (buf_we) cap[buf_addr] <= buf_data;
+  end
+  // The host model's sector word: the image (A = 1, B = 2), the LBA's low nibble and the index.
+  function automatic [15:0] hword(input [3:0] img, input [31:0] lba, input integer w);
+    hword = {img, lba[3:0], 8'(w)};
+  endfunction
+  // hps_io serving the presented handshake: (sd_blk_cnt + 1) sectors, the slot in
+  // sd_buff_addr[10:8], one word per clk.
+  task automatic host_serve(input [3:0] img);
+    integer b, w, nb;
+    reg [31:0] base;
+    begin
+      nb = dut.sd_blk_cnt + 1;
+      base = sd_lba;
+      @(negedge clk);
+      sd_ack = 1;
+      for (b = 0; b < nb; b = b + 1)
+        for (w = 0; w < 256; w = w + 1) begin
+          sd_buff_wr = 1;
+          sd_buff_addr = 13'(b * 256 + w);
+          sd_buff_dout = hword(img, base + b, w);
+          @(posedge clk);
+          @(negedge clk);
+        end
+      sd_buff_wr = 0;
+      sd_ack = 0;
+      repeat (4) @(negedge clk);
+    end
+  endtask
 
   task fail(input [8*80-1:0] message);
     begin
@@ -306,6 +346,44 @@ module tb_pc9821_block_io;
     pulse_write_request(32'd1000);
     if (!req_done || !req_error || busy || sd_wr)
       fail("out-of-range write was not rejected");
+
+    // ---- a REMOUNT empties the read-ahead window (win_flush) ----
+    // pc9821_block_io's header: the window caches blocks of ONE image, so a mount that replaces
+    // the image must drop them - "the same LBA now names different bytes". A third sequential
+    // read earns an 8-sector burst (run_len_next >= 3), so LBA 12..19 land in the window; the
+    // control proves LBA 13 is then served from it with no handshake, and after a remount the
+    // same LBA must go back to hps_io and return the NEW image's words. (Nothing pinned this:
+    // a window that survived the remount passed every bench; bench-audit 2026-10-12.)
+    pulse_mount(64'd512 * 100, 1'b1);
+    pulse_request(32'd10); host_serve(4'd1);
+    pulse_request(32'd11); host_serve(4'd1);
+    pulse_request(32'd12);
+    if (!sd_rd || dut.sd_blk_cnt == 6'd0) fail("window case: the third sequential read did not burst");
+    host_serve(4'd1);
+    done_count = 0; done_err_count = 0;
+    pulse_request(32'd13);
+    if (sd_rd) fail("window case (control): LBA 13 was not served from the window");
+    repeat (300) @(negedge clk);
+    if (done_count != 1 || done_err_count != 0) fail("window case (control): the window replay did not complete once, cleanly");
+    for (word_index = 0; word_index < 256; word_index = word_index + 1)
+      if (cap[word_index] !== hword(4'd1, 32'd13, word_index)) begin
+        fail("window case (control): the replayed sector is not image A's LBA 13");
+        word_index = 256;
+      end
+    pulse_mount(64'd512 * 100, 1'b1);           // image B replaces A in the same slot
+    done_count = 0; done_err_count = 0;
+    pulse_request(32'd13);
+    if (!sd_rd || sd_lba !== 32'd13)
+      fail("after a remount LBA 13 was served from the OLD image's window instead of hps_io");
+    else begin
+      host_serve(4'd2);
+      if (done_count != 1 || done_err_count != 0) fail("after a remount the fresh read did not complete once, cleanly");
+      for (word_index = 0; word_index < 256; word_index = word_index + 1)
+        if (cap[word_index] !== hword(4'd2, 32'd13, word_index)) begin
+          fail("after a remount the sector is not image B's LBA 13");
+          word_index = 256;
+        end
+    end
   // ==== VERDICT ====
 
     if (errors == 0) begin
@@ -316,7 +394,7 @@ module tb_pc9821_block_io;
   end
 
   initial begin
-    #100_000;
+    #400_000;
     $fatal(1, "TB_PC9821_BLOCK_IO: TIMEOUT");
   end
 

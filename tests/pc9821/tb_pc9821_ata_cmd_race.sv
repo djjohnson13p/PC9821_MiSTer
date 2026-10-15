@@ -173,7 +173,7 @@ module tb_pc9821_ata_cmd_race;
       repeat (4) @(negedge clk);
       ad_busy = 0;
       ad_reqs = 0;
-      write_byte(16'h0432, 8'h01);
+      write_byte(16'h0432, 8'h00);
       if (dut.status_reg !== 8'h50) fail("reset_drive: not READY at scenario start");
     end
   endtask
@@ -195,7 +195,7 @@ module tb_pc9821_ata_cmd_race;
     rst_n = 1;
     while (dut.current_cylinders !== 16'd7) @(negedge clk);
     repeat (4) @(negedge clk);
-    write_byte(16'h0432, 8'h01);
+    write_byte(16'h0432, 8'h00);
 
     // ---------------------------------------------------------------
     // S1 (FAIL FIRST). The X_WAIT_BLOCK confirm case: the sector fetch's

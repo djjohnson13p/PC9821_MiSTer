@@ -591,7 +591,7 @@ module tb_pc9821_block_hostcost;
     @(negedge clk);
     img_mounted = 0;
     while (ata.current_cylinders !== 16'd735) @(negedge clk);
-    tf_write(16'h0432, 8'h01);
+    tf_write(16'h0432, 8'h00);
     tf_write(16'h074C, 8'h02);   // nIEN: this bench polls 0x74C/0x64E, it does not run an ISR
 
     $display("PATTERN 1");

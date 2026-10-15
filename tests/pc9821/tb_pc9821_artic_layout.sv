@@ -170,6 +170,18 @@ module tb_pc9821_artic_layout;
       errors = errors + 1;
     end
 
+    // PRELOAD the counter so its three bytes DIFFER and check 3's window crosses a carry
+    // into cnt[23:16] (bench-audit 2026-10-12; after check 1, whose 0xFF test is for an
+    // undecoded port and would read a live 0xFF byte as one). From reset the counter reaches only ~550
+    // ticks in this bench, so cnt[23:16] - and the byte a wrong 0x5E or 0x5F decode would
+    // return instead - is 0x00 everywhere it is read: a 0x5E wired to cnt[23:16], or a
+    // 0x5F wired to cnt[31:24], read 0x00 = 0x5D's own 0x00 and passed checks 2 and 3.
+    // 0x00C3FF00 gives 0x5C/0x5D/0x5F = 00/FF/C3 (0x5E must read FF, not C3), and
+    // ~550 ticks later 0x5D has wrapped and 0x5F reads C4. Reaching the same state by
+    // counting would take 2^16 ticks (10.7 M clk_sys) and still leave 0x5D near 0x5F.
+    @(negedge clk);
+    dut.artic_cnt = 32'h00C3_FF00;
+
     // 2. THE MIRROR. Read 0x5D then 0x5E back-to-back four times: 0x5E must equal 0x5D
     //    or be a few ahead (ticks land between the two reads). Two independent adjacent
     //    bytes would differ by an arbitrary amount 255 times out of 256.

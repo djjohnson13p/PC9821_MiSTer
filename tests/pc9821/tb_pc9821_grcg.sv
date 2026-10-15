@@ -90,7 +90,7 @@ module tb_pc9821_grcg;
   pc9821_memory_map map_dut (
       .top_bank(top_bank), .ide_rom_enable(ide_rom_enable), .d8_bank(2'b00),
       .ide_ram_gate(ide_ram_gate),
-      .bios_ram_gate(bios_ram_gate), .win0_sel(win0_sel),
+      .bios_ram_gate(bios_ram_gate), .win0_sel(win0_sel), .win0_sel_moved(win0_sel != 8'h08),
       // No EMS here: the identity state leaves 0xB0000-0xBFFFF as the ordinary plane window.
       .ems_state(2'd0), .ems_page_base(32'd0),
       .pack_base(PACK_BASE), .guest_ram_bytes(PACK_BASE),
@@ -98,7 +98,7 @@ module tb_pc9821_grcg;
       .peg_window(1'b0), .peg_base(32'd0),
       .gvram_window(gvram_window), .gvram_win_plane(gvram_win_plane),
       .gvram_win_offset(gvram_win_offset),
-      .cpu_addr(cpu_addr), .cpu_din(cpu_din), .cpu_dout(map_cpu_dout),
+      .cpu_addr(cpu_addr), .cpu_addr_raw(cpu_addr), .xl_low20(1'b0), .xl_peg(1'b0), .cpu_din(cpu_din), .cpu_dout(map_cpu_dout),
       .cpu_line_dout(map_cpu_line_dout), .cpu_be(cpu_be),
       .cpu_burstcount(cpu_burstcount), .cpu_line_read(cpu_line_read),
       // The subsystem's route gate: the map never serves a plane window.

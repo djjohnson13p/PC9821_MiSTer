@@ -261,7 +261,7 @@ module tb_pc9821_ata_advertised;
     @(negedge clk);
     rst_n = 1;
     repeat (200) @(posedge clk);      // let the capacity-derived cylinder count settle
-    write_byte(16'h0432, 8'h01);      // the bank the built-in interface is on
+    write_byte(16'h0432, 8'h00);      // the bank the built-in interface is on
     read_byte(16'h064E, value);       // clear any pending interrupt
 
     // ---- 1. Read the model's whole IDENTIFY page ----

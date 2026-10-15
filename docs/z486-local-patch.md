@@ -7,8 +7,17 @@ reason. The fork's `docs/fork-rebase-policy.md` (inside `src/z486/docs/`) record
 series is kept: a correction is folded into the commit it corrects, and a fork fix is dropped
 when upstream's own implementation passes its fail-first test.
 
-**Vendored commit:** the fork at `f6ada39` (docs only on top of `ebd1879`, fix(interrupt_controller):
-re-arm the INTR latch at the next instruction boundary, not only on INTR low). The tree carries no local patch: the
+**Vendored commit:** the fork at `85d8190` (`5bcc1eb` plus five cycle-identical timing commits: the
+LAR/LLIM/LBAS read-backs and the descriptor-cache writes keyed by the microcode segment command and target
+instead of the issue-muxed ones, each legal by an invariant the fork asserts in simulation and an independent review checked against every word of the shipped microcode ROM; the D1 skeleton's `ucode_action` decoded from the raw entry
+beside the overlay qualifiers; the speculative target-line compares in carry-free `A+B==K` form; and the
+GPR forwarding views fed the plain loaded value instead of the direct-load ALU result they never select). `5bcc1eb` is cycle-identical area commits on `2447ede`: TR7's PFN is read a
+cycle later from one 32 x 20 MLAB so the TLB's auxiliary tag copies drop their PFN half; the auxiliary
+port's three readers share one tag compare and valid read; the I-cache's fill response returns `fill_line`
+instead of a `line_r` copy; `address_unit` shares one adder across the IND two-term updates and one
+across the issue stack/moffs relocation; LBAS reads `seg_base_for`'s base mux; `mul_div` negates each
+divide operand once at full width and takes the DIV step's carry from the step's own adder; and an
+attribute that turns the fitter's register retiming off in `segmentation_unit` and `prefetch`). The tree carries no local patch: the
 diff map below is the explicit `(none)` row.
 
 ## The fork-first rule
@@ -49,9 +58,9 @@ undocumented delta and a stale row in temporary copies); it needs no external ch
 
 None.
 
-### Verified diff map (the fork at f6ada39)
+### Verified diff map (the fork at 85d8190)
 
-`Z486 PATCH MAP: PASS (0 documented files, 0 deliberately not carried, 0 tree-only, upstream f6ada391f557)`.
+`Z486 PATCH MAP: PASS (0 documented files, 0 deliberately not carried, 0 tree-only, upstream 85d8190c452e)`.
 
 | file | entries |
 |---|---|

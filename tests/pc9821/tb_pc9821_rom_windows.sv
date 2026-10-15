@@ -113,7 +113,7 @@ module tb_pc9821_rom_windows;
       .clk(clk), .reset(reset), .top_bank(top_bank),
       .ems_state(ems_state), .ide_rom_enable(ide_rom_enable), .d8_bank(2'b00), .ide_ram_gate(ide_ram_gate),
       .bios_ram_gate(bios_ram_gate), .top_shadow_en(top_shadow_en),
-      .win0_sel(win0_sel), .sys16m_en(1'b0),
+      .win0_sel(win0_sel), .win0_sel_moved(win0_sel != 8'h08), .sys16m_en(1'b0),
       .pack_base(pack_base), .guest_ram_bytes(guest_ram_bytes),
       .gvram_access_page(gvram_access_page),
       .grcg_we(grcg_we), .grcg_addr(grcg_addr), .grcg_din(grcg_din),

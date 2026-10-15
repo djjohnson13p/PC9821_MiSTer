@@ -453,7 +453,7 @@ def print_cal(cal: list[dict]) -> dict[str, float]:
         )
         if min(d30, d81) > 0.20:
             print(
-                "    INDETERMINATE - item 41 stays open: the measurement is within ~20%"
+                "    INDETERMINATE - the 0x5F anchor stays open: the measurement is within ~20%"
                 " of neither\n    axis.  Do NOT print a nearest-axis verdict from it.  If"
                 " this number came from a\n    legacy capture, apply the x2 rule first"
                 " (halved-era PIT ns, r13/215 section 1.3:\n    double them) and re-run"
@@ -466,7 +466,7 @@ def print_cal(cal: list[dict]) -> dict[str, float]:
             )
             print(
                 f"    Verdict: closer to {verdict} (within 20%)."
-                f"\n    This decides the item 41 anchor question (r13/245 section 6):"
+                f"\n    This decides the 0x5F anchor question (r13/245 section 6):"
                 f" quote class\n    times on the axis above.  Note the documented 600 ns"
                 f" may be the inserted WAIT\n    only, not the total access cost - if the"
                 f" measurement lands ~1.6-1.7 us, the 600 ns\n    figure and the total"

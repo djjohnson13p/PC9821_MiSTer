@@ -233,7 +233,7 @@ module pc9821_audio_out (
     end
 
     pc9821_audio_fir_engine #(
-        .TAPS(19), .STRIDE(1), .RAM_AW(5), .CMIRROR(9), .COEF_AW(4), .SHIFT(17)
+        .TAPS(19), .STRIDE(1), .RAM_AW(5), .CMIRROR(9), .COEF_AW(4), .SHIFT(17), .HOLD_OUT(0)
     ) u_fir_b (
         .clk(clk),
         .wr_en(b_wr), .wr_addr(b_waddr), .wr_l(cic_l), .wr_r(cic_r),

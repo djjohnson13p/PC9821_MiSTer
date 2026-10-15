@@ -45,7 +45,11 @@ valid raw disc for other tools.
 Usage:
   tools/cue2pcd.py GAME.cue [GAME.pcd] [--ecc] [--force]
   tools/cue2pcd.py GAME.cue --info          # the parsed layout and the TOC, no output
+  tools/cue2pcd.py --batch DIR              # every CUE under DIR without an up-to-date PCD
   tools/cue2pcd.py --selftest               # synthetic CUEs (mixed sizes, PREGAP) round-trip
+
+The batch mode is what the MiSTer Scripts-menu entry tools/mister/pc9821_cue2pcd.sh runs on the
+card (Python 3.9 there), so this file must stay within Python 3.9.
 """
 
 from __future__ import annotations
@@ -370,15 +374,137 @@ def describe(disc: Disc) -> str:
     return "\n".join(out)
 
 
-def convert(cue: str, out: str, with_ecc: bool) -> Disc:
-    disc = parse_cue(cue)
+def convert(cue: str, out: str, with_ecc: bool, progress=None, disc: Disc | None = None) -> Disc:
+    """Write OUT through OUT.part and rename it into place, so an interrupted run never leaves
+    a truncated image under the real name. PROGRESS(done, total) is called every 1% or so."""
+    disc = disc or parse_cue(cue)
     tmp = out + ".part"
-    with open(tmp, "wb") as o:
-        o.write(header(disc))
-        for sector in sectors(disc, with_ecc):
-            o.write(sector)
-    os.replace(tmp, out)
+    step = max(1, disc.leadout // 100)
+    try:
+        with open(tmp, "wb") as o:
+            o.write(header(disc))
+            for n, sector in enumerate(sectors(disc, with_ecc)):
+                o.write(sector)
+                if progress and n % step == 0:
+                    progress(n, disc.leadout)
+        os.replace(tmp, out)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+    if progress:
+        progress(disc.leadout, disc.leadout)
     return disc
+
+
+# ---- batch mode (--batch DIR): the MiSTer Scripts-menu entry (tools/mister/pc9821_cue2pcd.sh) ----
+# Every CUE under DIR gets a PCD beside it (same stem) unless an up-to-date one is already
+# there. The sources are only ever opened for reading. A PCD is up to date when it is a PCD of
+# exactly the size the CUE's layout gives, its header sector is the one this tool would write, and
+# it is not older than the CUE or any file the CUE names: then it is skipped, so the batch is safe
+# to re-run. Free space is checked per image BEFORE writing (the whole image plus a margin).
+PCD_MARGIN = 64 << 20
+
+
+def pcd_size(disc: Disc) -> int:
+    return RAW * (1 + disc.leadout)
+
+
+def _sources(cue: str, disc: Disc) -> list[str]:
+    return [cue] + sorted({t.file for t in disc.tracks})
+
+
+def pcd_up_to_date(cue: str, out: str, disc: Disc) -> bool:
+    try:
+        st = os.stat(out)
+    except FileNotFoundError:
+        return False
+    if st.st_size != pcd_size(disc):
+        return False
+    with open(out, "rb") as f:
+        if f.read(RAW) != header(disc):
+            return False
+    return all(st.st_mtime >= os.stat(s).st_mtime for s in _sources(cue, disc))
+
+
+def find_cues(root: str) -> list[str]:
+    found = []
+    for d, dirs, files in os.walk(root):
+        dirs[:] = sorted(x for x in dirs if not x.startswith("."))
+        found += [os.path.join(d, f) for f in sorted(files)
+                  if f.lower().endswith(".cue") and not f.startswith(".")]
+    return found
+
+
+def _human(n: int) -> str:
+    return f"{n / (1 << 20):.0f} MiB"
+
+
+def batch(root: str, with_ecc: bool = False, free_bytes=None, log=print) -> int:
+    """Convert every CUE under ROOT. Returns the number of CUEs that failed (0 = all done or
+    already up to date). FREE_BYTES(path) is injectable for the self-test."""
+    import shutil
+    free_bytes = free_bytes or (lambda path: shutil.disk_usage(path).free)
+    if not os.path.isdir(root):
+        log(f"cue2pcd: {root} is not a directory")
+        return 1
+    cues = find_cues(root)
+    log(f"cue2pcd: {len(cues)} CUE sheet(s) under {root}, {_human(free_bytes(root))} free")
+    made = skipped = failed = 0
+    for i, cue in enumerate(cues, 1):
+        rel = os.path.relpath(cue, root)
+        out = os.path.splitext(cue)[0] + ".pcd"
+        log(f"[{i}/{len(cues)}] {rel}")
+        try:
+            disc = parse_cue(cue)
+        except (ValueError, OSError) as e:
+            log(f"  SKIP: cannot use this CUE: {e}")
+            failed += 1
+            continue
+        srcs = [os.path.realpath(s) for s in _sources(cue, disc)]
+        if os.path.realpath(out) in srcs or os.path.realpath(out + ".part") in srcs:
+            log(f"  SKIP: the output name {os.path.basename(out)} is one of the CUE's own files")
+            failed += 1
+            continue
+        if os.path.exists(out):
+            if pcd_up_to_date(cue, out, disc):
+                log(f"  up to date: {os.path.basename(out)}")
+                skipped += 1
+                continue
+            with open(out, "rb") as f:
+                if f.read(len(MAGIC)) != MAGIC:
+                    log(f"  SKIP: {os.path.basename(out)} exists and is not a PCD; not replacing it")
+                    failed += 1
+                    continue
+            log(f"  {os.path.basename(out)} is stale (older than its sources or a different "
+                f"layout): rebuilding")
+        if os.path.exists(out + ".part"):
+            os.remove(out + ".part")          # a previous run was interrupted
+        need = pcd_size(disc)
+        free = free_bytes(os.path.dirname(out) or ".")
+        if free < need + PCD_MARGIN:
+            log(f"  SKIP: needs {_human(need)} (+{_human(PCD_MARGIN)} margin), only "
+                f"{_human(free)} free")
+            failed += 1
+            continue
+        log(f"  {len(disc.tracks)} track(s), {disc.leadout} sectors -> "
+            f"{os.path.basename(out)} ({_human(need)})")
+        last = [-1]
+
+        def progress(done, total):
+            pct = done * 100 // max(1, total)
+            if pct >= last[0] + 10 or done == total:
+                last[0] = pct
+                log(f"    {pct:3d}%")
+        try:
+            convert(cue, out, with_ecc, progress, disc)
+        except (ValueError, OSError) as e:
+            log(f"  FAILED: {e}")
+            failed += 1
+            continue
+        made += 1
+    log(f"cue2pcd: {made} converted, {skipped} already up to date, {failed} failed")
+    return failed
 
 
 # ---- self-test: synthetic discs, every rule above checked against independent arithmetic ----
@@ -471,8 +597,117 @@ def selftest() -> int:
             check(False, "a size that is not whole sectors must be rejected")
         except ValueError:
             pass
+        fails += _selftest_batch(d, os.path.join(d, "x0.pcd"))
     print("cue2pcd selftest:", "PASS" if fails == 0 else f"FAIL ({fails})")
     return 0 if fails == 0 else 1
+
+
+def _selftest_batch(d: str, x_ref: str) -> int:
+    """--batch: converts what needs it, skips what is up to date, never writes a source, refuses
+    a name collision or a foreign file, honours free space and cleans an interrupted run."""
+    import hashlib
+    import shutil
+    fails = 0
+
+    def check(cond, what):
+        nonlocal fails
+        if not cond:
+            fails += 1
+            print("SELFTEST FAIL (batch):", what)
+
+    root = os.path.join(d, "games")
+    g1, g2, hid = (os.path.join(root, n) for n in ("g1", "g2", ".hidden"))
+    for x in (g1, g2, hid):
+        os.makedirs(x)
+    shutil.copy(os.path.join(d, "x.bin"), g1)
+    shutil.copy(os.path.join(d, "x.cue"), os.path.join(g1, "X.CUE"))   # case of the extension
+    # a multi-FILE cue: a raw MODE1/2352 data track and an AUDIO track, one BIN each
+    with open(os.path.join(g2, "m1.bin"), "wb") as f:
+        f.write(bytes((i * 13) & 0xFF for i in range(3 * RAW)))
+    with open(os.path.join(g2, "m2.bin"), "wb") as f:
+        f.write(bytes((i * 7 + 1) & 0xFF for i in range(4 * RAW)))
+    with open(os.path.join(g2, "m.cue"), "w") as f:
+        f.write('FILE "m1.bin" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n'
+                'FILE "m2.bin" BINARY\n  TRACK 02 AUDIO\n    INDEX 00 00:00:00\n'
+                '    INDEX 01 00:00:01\n')
+    with open(os.path.join(g2, "bad.cue"), "w") as f:     # names a missing file
+        f.write('FILE "none.bin" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n')
+    with open(os.path.join(g2, "c.pcd"), "wb") as f:      # a cue whose own BIN is c.pcd
+        f.write(bytes(RAW))
+    with open(os.path.join(g2, "c.cue"), "w") as f:
+        f.write('FILE "c.pcd" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n')
+    shutil.copy(os.path.join(g2, "m1.bin"), os.path.join(g2, "n.bin"))
+    with open(os.path.join(g2, "n.cue"), "w") as f:
+        f.write('FILE "n.bin" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n')
+    with open(os.path.join(g2, "n.pcd"), "wb") as f:      # someone else's file of that name
+        f.write(b"not a pcd")
+    shutil.copy(os.path.join(g1, "X.CUE"), os.path.join(hid, "h.cue"))
+    shutil.copy(os.path.join(d, "x.bin"), hid)
+
+    def snap(names):
+        out = {}
+        for n in names:
+            st = os.stat(n)
+            out[n] = (hashlib.sha256(open(n, "rb").read()).hexdigest(), st.st_mtime_ns)
+        return out
+    srcs = [os.path.join(g1, "x.bin"), os.path.join(g1, "X.CUE"), os.path.join(g2, "m1.bin"),
+            os.path.join(g2, "m2.bin"), os.path.join(g2, "m.cue"), os.path.join(g2, "c.pcd"),
+            os.path.join(g2, "n.pcd"), os.path.join(g2, "n.bin")]
+    before = snap(srcs)
+    logs: list[str] = []
+    big = lambda path: 1 << 40   # noqa: E731
+
+    xp, mp = os.path.join(g1, "X.pcd"), os.path.join(g2, "m.pcd")
+    n_fail = batch(root, free_bytes=big, log=logs.append)
+    check(n_fail == 3, f"first run: 3 refusals (bad, c, n), got {n_fail}")
+    check(os.path.exists(xp) and open(xp, "rb").read() == open(x_ref, "rb").read(),
+          "the batch PCD equals the single-file conversion")
+    m = open(mp, "rb").read() if os.path.exists(mp) else b""
+    check(len(m) == RAW * (1 + 3 + 4), "multi-FILE PCD length")
+    check(m[RAW:RAW * 4] == open(os.path.join(g2, "m1.bin"), "rb").read(), "multi-FILE data track")
+    check(m[RAW * 4:] == open(os.path.join(g2, "m2.bin"), "rb").read(), "multi-FILE audio track")
+    check(struct.unpack_from(">I", m, 512 + 4)[0] == 4, "multi-FILE track 2 LBA (INDEX 01 = 3 + 1)")
+    check(open(os.path.join(g2, "n.pcd"), "rb").read() == b"not a pcd", "a foreign .pcd is kept")
+    check(not os.path.exists(os.path.join(hid, "h.pcd")), "hidden directories are not walked")
+    check(any("one of the CUE's own files" in x for x in logs), "the collision is reported")
+
+    t_x, t_m = os.stat(xp).st_mtime_ns, os.stat(mp).st_mtime_ns
+    logs.clear()
+    batch(root, free_bytes=big, log=logs.append)
+    check(sum(x.startswith("  up to date") for x in logs) == 2, "second run: both images up to date")
+    check((os.stat(xp).st_mtime_ns, os.stat(mp).st_mtime_ns) == (t_x, t_m),
+          "second run rewrites nothing")
+
+    # a source newer than its PCD: rebuilt (and only that one)
+    st = os.stat(mp)
+    os.utime(os.path.join(g2, "m2.bin"), ns=(st.st_atime_ns, st.st_mtime_ns + 10**9))
+    before[os.path.join(g2, "m2.bin")] = snap([os.path.join(g2, "m2.bin")])[os.path.join(g2, "m2.bin")]
+    logs.clear()
+    batch(root, free_bytes=big, log=logs.append)
+    check(any("stale" in x for x in logs) and os.stat(xp).st_mtime_ns == t_x,
+          "a newer source rebuilds its PCD only")
+    check(open(mp, "rb").read() == m, "the rebuilt PCD is the same image")
+
+    # a truncated PCD is not up to date
+    with open(xp, "r+b") as f:
+        f.truncate(RAW * 3)
+    batch(root, free_bytes=big, log=lambda _: None)
+    check(open(xp, "rb").read() == open(x_ref, "rb").read(), "a truncated PCD is rebuilt")
+
+    # no room: nothing written, no .part left; a stale .part from an interrupted run is removed
+    os.remove(xp)
+    with open(xp + ".part", "wb") as f:
+        f.write(b"interrupted")
+    logs.clear()
+    batch(root, free_bytes=lambda path: 1 << 20, log=logs.append)
+    check(not os.path.exists(xp) and not os.path.exists(xp + ".part"),
+          "too little space: nothing written, the stale .part removed")
+    check(any("free" in x and "SKIP" in x for x in logs), "the space refusal is reported")
+    batch(root, free_bytes=big, log=lambda _: None)
+    check(os.path.exists(xp) and not os.path.exists(xp + ".part"), "converted once space allows")
+
+    check(snap(srcs) == before, "no source file was modified (content and mtime)")
+    return fails
 
 
 def main(argv: list[str]) -> int:
@@ -482,10 +717,14 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--ecc", action="store_true", help="compute EDC/ECC for wrapped data sectors")
     ap.add_argument("--info", action="store_true", help="print the layout; write nothing")
     ap.add_argument("--force", action="store_true", help="overwrite an existing output")
+    ap.add_argument("--batch", metavar="DIR",
+                    help="convert every CUE under DIR that has no up-to-date PCD beside it")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest()
+    if a.batch:
+        return 1 if batch(a.batch, a.ecc, log=lambda m: print(m, flush=True)) else 0
     if not a.cue:
         ap.error("a CUE sheet is required")
     if a.info:
