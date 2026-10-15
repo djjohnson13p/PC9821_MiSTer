@@ -1,0 +1,19 @@
+# Command parser/default/persistent-state tests
+# suite=pc98-gdc-tests-v1.0-rc6 clock=2.5MHz bios054d=50 bios054c=4F
+case,class,expect,outcome,test,changes,curd,detail
+FIGS_DEFAULTS_RAW,FIGS_DEFAULT,INFO,OBS,FIGS-short,5/R:0800:0000>0008|R:0828:0000>0006|R:0850:0000>8001|R:0878:0000>4000|R:08A0:0000>3000,-,changed_bits=8 raw-short-FIGS-fingerprint
+FIGS_DIFFP1_EQ_0,FIGS_DEFAULT,STRICT,FAIL,partial-vs-explicit,mode=diffP1 fields=0 partial=2/2 explicit=1/1 curd_equal=0,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_DIFFP1_EQ_1,FIGS_DEFAULT,STRICT,FAIL,partial-vs-explicit,mode=diffP1 fields=1 partial=1/1 explicit=6/6 curd_equal=0,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_DIFFP1_EQ_2,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=diffP1 fields=2 partial=6/6 explicit=6/6 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_DIFFP1_EQ_3,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=diffP1 fields=3 partial=2/2 explicit=2/2 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_DIFFP1_EQ_4,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=diffP1 fields=4 partial=3/3 explicit=3/3 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_SAMEP1_EQ_0,FIGS_DEFAULT,STRICT,FAIL,partial-vs-explicit,mode=sameP1 fields=0 partial=2/2 explicit=1/1 curd_equal=0,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_SAMEP1_EQ_1,FIGS_DEFAULT,STRICT,FAIL,partial-vs-explicit,mode=sameP1 fields=1 partial=1/1 explicit=6/6 curd_equal=0,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_SAMEP1_EQ_2,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=sameP1 fields=2 partial=6/6 explicit=6/6 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_SAMEP1_EQ_3,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=sameP1 fields=3 partial=2/2 explicit=2/2 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_SAMEP1_EQ_4,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=sameP1 fields=4 partial=3/3 explicit=3/3 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+PITCH_EXTRA_PARAM,PARSER,INFO,OBS,PITCH+20+80,4/R:0800:0000>0010|R:0814:0000>0010|R:0828:0000>0010|R:083C:0000>0010,-,matches-clean-P20=1 ref_n=4 got_n=4
+ROP_PERSIST_CLEAR,STATE,STRICT,PASS,ROP-clear,-,-,word=FFFD pop=15 expected-pop=15
+PATTERN_RUN1,PATTERN_STATE,INFO,OBS,A53C,2/R:0800:0000>A53C|R:0801:0000>A53C,02-88-F0-01-00/08802/M0001/D0,first-32-pixel-line
+PATTERN_RUN2,PATTERN_STATE,INFO,OBS,no-reload,2/R:0820:0000>A53C|R:0821:0000>A53C,22-88-F0-01-00/08822/M0001/D0,second-line-pattern-phase
+# rows=15 strict_fail=4 errors=0

@@ -1,0 +1,197 @@
+PROBE2 BEGIN
+BEGIN:SNAPSHOT
+WORKAREA 0000:0400..05FF (16 per line):
+02 00 00 00 F8 00 30 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 97 
+02 00 27 84 40 48 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 D3 62 00 00 0E 00 32 04 
+00 00 00 00 00 00 00 00 00 00 00 FF 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 18 00 00 D8 D8 00 00 00 00 00 00 00 
+D8 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+EA AA AA AA 00 00 00 00 00 00 00 00 00 00 00 00 
+04 00 A0 F5 00 00 00 00 00 68 03 00 00 00 00 00 
+EE EA 02 00 80 FD 00 00 03 24 6D 2F 65 12 20 34 
+3E 31 20 34 74 14 69 17 6D 2F 65 12 2E 31 74 14 
+78 2A 74 14 0D 1C 74 14 69 17 2B 0B 1E 05 1E 05 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 0F 80 00 00 00 00 00 37 09 80 FD 00 00 
+00 00 00 00 4F 50 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 01 01 00 00 00 00 00 00 C8 00 00 00 
+00 00 00 00 C9 00 00 00 00 00 00 00 CA 00 00 00 
+00 00 00 00 CB 00 00 00 00 00 00 00 80 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 84 
+00 00 00 00 00 00 00 00 00 00 00 00 FF 00 00 00 
+00 F3 6D CB 00 00 73 00 FF 00 00 80 00 00 00 00 
+00 10 04 00 00 00 00 00 00 00 00 00 00 00 2B 0B 
+80 FD FF 96 D7 1A 80 FD 00 00 00 00 00 00 00 00 
+C0 00 C0 00 C0 00 C0 00 00 00 00 00 00 00 00 00 
+18 07 00 D8 12 07 00 D8 00 00 00 00 00 00 00 00 
+AF 1A 80 FD 00 00 00 00 
+TRAM A0000/A2000 first 160 cells (read before any output):
+01 7A 81 7A 20 00 20 00 
+31 00 20 00 20 00 20 00 20 00 20 00 20 00 20 00 
+20 00 20 00 20 00 20 00 20 00 20 00 20 00 20 00 
+20 00 20 00 20 00 20 00 20 00 20 00 20 00 20 00 
+20 00 20 00 20 00 20 00 20 00 20 00 20 00 20 00 
+20 00 20 00 20 00 20 00 20 00 20 00 20 00 20 00 
+20 00 20 00 20 00 20 00 20 00 20 00 20 00 20 00 
+20 00 20 00 20 00 20 00 20 00 20 00 20 00 20 00 
+20 00 20 00 20 00 20 00 20 00 20 00 20 00 20 00 
+20 00 20 00 20 00 20 00 20 00 20 00 20 00 20 00 
+20 00 20 00 20 00 20 00 C3 FF C3 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF 
+TRAM TAIL A3FE0..A3FFF (ITF row counter + 8 memory-switch cells):
+E1 FF 48 FF E1 FF 05 FF 
+E1 FF 0C FF E1 FF 00 FF E1 FF 01 FF E1 FF 00 FF 
+E1 FF 00 FF E1 FF 81 FF 
+A4000..A400F (CG window, across the TRAM boundary):
+8F 00 8F 00 8F 00 8F 00 
+8F 00 8F 00 8F 00 8F 00 
+0020=FF 0021=00
+0022=EF 0023=00
+0031=F3 0032=45
+0033=F9 0034=FF
+0035=B8 0036=FF
+0037=FF 0038=FF
+0041=9C 0042=94
+0043=85 0044=81
+005C=FC 005D=2D
+005E=2D 005F=8F
+0060=05 0061=FF
+0062=FF 0063=FF
+0064=1F 0065=FF
+0068=18 0069=FF
+006A=00 006B=FF
+006E=FF 006F=FF
+0070=00 0071=18
+0072=0F 0073=CC
+0074=10 0075=72
+0076=00 0077=FF
+0078=00 0079=FF
+007A=00 007B=FF
+007C=FF 007D=FF
+007E=FF 007F=FF
+0090=80 0091=FF
+0092=80 0093=FF
+0094=44 0095=FF
+0096=FF 0097=FF
+0098=FF 0099=FF
+009A=FF 009B=FF
+009C=FF 009D=FF
+009E=FF 009F=FF
+00A0=04 00A1=2F
+00A2=FF 00A3=57
+00A4=00 00A5=0F
+00A6=00 00A7=FF
+00A8=37 00A9=00
+00AA=15 00AB=FF
+00AC=26 00AD=FF
+00AE=04 00AF=FF
+0128=81 0129=FF
+0430=41 0431=FF
+0432=00 0433=00
+0433=00 0434=BE
+0435=00 0436=04
+043B=FB 043C=FF
+053D=1F 053E=FC
+063C=FC 063D=EC
+09A0=01 09A1=FF
+09A8=00 09A9=FF
+0EE0=FF 0EE1=FF
+1E8E=FE 1E8F=FF
+04A0=FF 04A1=FF
+04A2=FF 04A3=FF
+04A4=FF 04A5=FF
+04A6=FF 04A7=FF
+04A8=FF 04A9=FF
+04AA=FF 04AB=FF
+04AC=FF 04AD=FF
+04AE=FF 04AF=FF
+  (-- = consume-on-read port, not sampled: 0041 keyboard data, 0062 GDC1 data, 0640/0740 ATA data)
+ATA BLOCK as left by POST/DOS (port=value, and its odd partner):
+0640=-- 0641=--
+0642=0E 0643=FF
+0644=0E 0645=FF
+0646=0E 0647=FF
+0648=0E 0649=FF
+064A=0E 064B=FF
+064C=0E 064D=FF
+064E=0E 064F=FF
+074C=0F 074D=FF
+074E=0F 074F=FF
+ROM WINDOW
+  043D=FF  043F=C4
+  F8000:0000=A1
+  F8E90 (IDE option-ROM drive bitmap) byte/byte+1/word=04 B8 B804
+END:SNAPSHOT
+BEGIN:TIME
+TIME: the timing ladder. Every figure is a RATIO against two counters a 486 can read: the
+  free-running counter at 005C (low word) / 005E (high word), and the PIT's channel 0 read
+  through its own counter-latch command. /TIMEREF measures both counters against the
+  calendar's second and converts these rows to Hz, nanoseconds and 50 MHz core cycles.
+  READ-ONLY as far as live state goes. The only writes /TIME makes are 0077 <- 00 (the PIT
+  counter-latch command: it copies the counter into the latch register and changes no state,
+  and it is deliberately NOT in the RESTORE table, because 0077's read-back is FF and
+  replaying FF would write a PIT MODE word) and 005F (the documented I/O-wait port, a
+  write-only delay generator, recorded in RESTORE). Every other access is a read.
+  ARTIC 005C/005E = 8FA4A429
+  ARTIC again after the PIT samples below = 8FA5A58A (delta = 00010161 ticks)
+  work-area 0501 bit 7 (the byte the BIOS's own PIT setup tests at BANK7@0x5DE7) = 00
+    -> the BIOS's own divisor here is 0x6000 = 24576, so it expects a 2.4576 MHz counter
+
+  PIT channel 0 latch/read, three samples = EFCF E5CF DCCF
+    measured divisor = FF2D (largest count over a 20 ms scan; mode 3 sweeps divisor..0 in steps of 2)
+  work-area 054D bit 2 (the GDC clock the BIOS published: 0 = 2.5 MHz, 1 = 5 MHz) = 00
+  I/O access time: 1024 back-to-back accesses per class, cli across each class's window, no DOS call inside it.
+  BASE is the same loop with the bus access replaced by a same-length register move, so the
+  excess columns are ONE access over a non-I/O instruction of the same shape; they include the
+  CPU's own cost of the instruction, which a 486 cannot separate from the bus time, so each is
+  an upper bound on the device's share. The ns columns use the DOCUMENTED rates (ARTIC
+  307200 Hz, PIT 2.4576 MHz); /TIMEREF measures both and reprints these rows corrected.
+    class    port  artic_d  pit_c    exc_ns(artic) exc_ns(pit)
+BASE    ---- 00000024 00000400       0       0
+WAIT    005F 00020227 00001289  418277    1478
+SYSTEM  0043 0001012C 00002885  209159    3715
+CHIPSET 043B 0001012C 00002A85  209159    3919
+GDC1    0060 000100B4 0000C9B0  208777   20114
+GDC2    00A0 000100FE 0000EE31  209012   23828
+SOUND1880188 0001012D 00002984  209162    3817
+SOUND18A018A 0000012C 00002785     839    3614
+ATA     064E 0001012C 00002884  209159    3715
+PITDATA 0071 0001012D 00002A04  209162    3868
+OPENBUS 0EE0 0002012D 00002A84  417482    3918
+TRAM    A000 000100FE 0000ED31  209012   23727
+  raster: 00A0 polled in a tight loop for 614400 ARTIC ticks:
+    bit5 rising edges = 1 ; bit6 rising edges = 212 ; polls = 9216
+    (00A0 is the graphics GDC's status register; the machine's own GDC.TXT histogram has bit5
+     high 1.7% of the time and bit6 23.4%, so one of these rates is a vertical sync pulse and
+     the other a horizontal blanking interval - the rates themselves say which.)
+  CPU loop rate: a loop of four 1-byte adds, dec and jnz (six instructions, no memory write)
+  repeated in 4096-iteration batches:
+    iterations = 45056 ; ARTIC ticks = 328801
+    (an EFFECTIVE rate, not a clock: the 486's own instruction timing and any wait states are
+     inside it. The body is listed in tools/hwprobe/README.md.)
+END:TIME
+RESTORE (port=original -> now):
+  none (no writes were made)
+  note: /TIME issued the PIT counter-latch command (0077 <- 00) without a restore entry:
+        it changes no state, and replaying 0077's read-back (FF) would write a PIT mode word.
+  note: 043F/0461/0463/053D read back a strap, not a mirror of the write;
+        their 'now' byte cannot prove or disprove a restore.
+PROBE2 END

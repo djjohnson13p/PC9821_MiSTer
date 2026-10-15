@@ -1,0 +1,19 @@
+# Command parser/default/persistent-state tests
+# suite=pc98-gdc-tests-v1.0-rc6 clock=2.5MHz bios054d=10 bios054c=4F
+case,class,expect,outcome,test,changes,curd,detail
+FIGS_DEFAULTS_RAW,FIGS_DEFAULT,INFO,OBS,FIGS-short,0/,-,changed_bits=0 raw-short-FIGS-fingerprint
+FIGS_DIFFP1_EQ_0,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=diffP1 fields=0 partial=0/0 explicit=0/0 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_DIFFP1_EQ_1,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=diffP1 fields=1 partial=0/0 explicit=0/0 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_DIFFP1_EQ_2,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=diffP1 fields=2 partial=0/0 explicit=0/0 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_DIFFP1_EQ_3,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=diffP1 fields=3 partial=0/0 explicit=0/0 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_DIFFP1_EQ_4,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=diffP1 fields=4 partial=0/0 explicit=0/0 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_SAMEP1_EQ_0,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=sameP1 fields=0 partial=0/0 explicit=0/0 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_SAMEP1_EQ_1,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=sameP1 fields=1 partial=0/0 explicit=0/0 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_SAMEP1_EQ_2,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=sameP1 fields=2 partial=0/0 explicit=0/0 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_SAMEP1_EQ_3,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=sameP1 fields=3 partial=0/0 explicit=0/0 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+FIGS_SAMEP1_EQ_4,FIGS_DEFAULT,STRICT,PASS,partial-vs-explicit,mode=sameP1 fields=4 partial=0/0 explicit=0/0 curd_equal=1,-,defaults DC0 D8 D2=8 D1=-1 DM=-1
+PITCH_EXTRA_PARAM,PARSER,INFO,OBS,PITCH+20+80,0/,-,matches-clean-P20=1 ref_n=0 got_n=0
+ROP_PERSIST_CLEAR,STATE,STRICT,FAIL,ROP-clear,-,-,word=FFFF pop=16 expected-pop=15
+PATTERN_RUN1,PATTERN_STATE,INFO,OBS,A53C,0/,00-88-00-00-00/08800/M0000/D-,first-32-pixel-line
+PATTERN_RUN2,PATTERN_STATE,INFO,OBS,no-reload,0/,20-88-00-00-00/08820/M0000/D-,second-line-pattern-phase
+# rows=15 strict_fail=1 errors=0

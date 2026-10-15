@@ -1,0 +1,24 @@
+EGC v1.3 HARDWARE FINGERPRINT NOTES
+===================================
+
+INFO is not an error.  INFO rows preserve behavior for which the project does
+not yet claim one universal EGC model.
+
+READ fingerprints include:
+- normal CPU-visible reads with nonzero 04AC;
+- two-word carry/state for phases 1,2,7,8,15;
+- source-ahead and reverse direction;
+- byte read/compare paths;
+- compare versus shifter and transfer length;
+- P selector versus retained FG.
+
+WRITE fingerprints include:
+- FG-under-BG / BG-under-FG write gating;
+- PLOAD_W ordering and ACCESS interaction;
+- byte ROP/PAT low/high lanes;
+- OPE/SHIFT/LEN/ACCESS/FGBG writes in mid-stream;
+- direct P with nonzero alignment;
+- PAT and FG persistence across disable/enable.
+
+On real hardware preserve the exact CSV words.  A result matching neither
+candidate model is valuable and should not be normalized or discarded.

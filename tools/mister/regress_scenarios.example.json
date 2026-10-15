@@ -1,0 +1,127 @@
+{
+  "keymap": {
+    "_comment": "RUN FIRST: proves '\\\\' and '!' reach DOS before a game depends on them. Look at the screenshot: a directory listing of \\\\GAMES is a pass.",
+    "steps": [
+      [
+        "type",
+        "cd \\GAMES\n"
+      ],
+      [
+        "type",
+        "dir\n"
+      ],
+      [
+        "wait",
+        5
+      ]
+    ],
+    "run": 30,
+    "shot_every": 10,
+    "max_static_s": 300,
+    "min_changes": 0
+  },
+  "_comment": "Per game item: boot_wait (s from load_core to the DOS prompt; default --boot-wait), steps (type|wait|click|key), run (s of screenshots after the steps), shot_every (s), max_static_s (the longest the screen may sit unchanged), min_changes (screenshot pairs that must differ), known_frame {ref, max_diff, by_s, not_before_s}. A step argument that begins with '?' means the command has not been supplied yet: the item is SKIPPED, never passed. 'pngo' (a batch file on the example disk) and the 50 s wait and the title click are an example Policenauts recipe. known_frame refs are PNGs in --refs (your directory; game frames are not committed): make them with --record-refs from a build you have seen work. config_default: rewrite a 'REM DEFAULTn' boot-menu default in CONFIG.SYS of that item's image COPY (on the example disk: 0 = noemm, 1 = himem, 2 = emm386, 3 = full with NECCD; DOOM refuses EMM386 and needs 0).",
+  "policenauts": {
+    "boot_wait": 40,
+    "steps": [
+      [
+        "type",
+        "pngo\n"
+      ],
+      [
+        "wait",
+        50
+      ],
+      [
+        "click"
+      ]
+    ],
+    "run": 240,
+    "shot_every": 15,
+    "max_static_s": 90,
+    "min_changes": 6,
+    "known_frame": {
+      "ref": "policenauts-logo.png",
+      "max_diff": 12.0,
+      "by_s": 200,
+      "not_before_s": 30
+    }
+  },
+  "doom": {
+    "steps": [
+      [
+        "type",
+        "cd \\GAMES\\DOOM\n"
+      ],
+      [
+        "type",
+        "!start\n"
+      ],
+      [
+        "wait",
+        30
+      ]
+    ],
+    "run": 90,
+    "shot_every": 10,
+    "max_static_s": 40,
+    "min_changes": 3,
+    "known_frame": {
+      "ref": "doom-start.png",
+      "max_diff": 14.0,
+      "by_s": 80
+    },
+    "config_default": 0,
+    "boot_wait": 40
+  },
+  "th05": {
+    "steps": [
+      [
+        "type",
+        "cd \\GAMES\\TH05E\n"
+      ],
+      [
+        "type",
+        "!start\n"
+      ],
+      [
+        "wait",
+        30
+      ]
+    ],
+    "run": 90,
+    "shot_every": 10,
+    "max_static_s": 40,
+    "min_changes": 3,
+    "known_frame": {
+      "ref": "th05-title.png",
+      "max_diff": 14.0,
+      "by_s": 80
+    }
+  },
+  "rusty": {
+    "steps": [
+      [
+        "type",
+        "cd \\GAMES\\RUSTY\n"
+      ],
+      [
+        "type",
+        "!start\n"
+      ],
+      [
+        "wait",
+        30
+      ]
+    ],
+    "run": 120,
+    "shot_every": 10,
+    "max_static_s": 40,
+    "min_changes": 3,
+    "known_frame": {
+      "ref": "rusty-start.png",
+      "max_diff": 14.0,
+      "by_s": 100
+    }
+  }
+}

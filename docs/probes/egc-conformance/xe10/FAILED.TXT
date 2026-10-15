@@ -1,0 +1,2 @@
+EGCALL=1 
+EGCWRITE=2 

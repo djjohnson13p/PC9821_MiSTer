@@ -1,0 +1,129 @@
+# z486: A 486-Class Pipelined FPGA CPU with Integrated Floating-Point
+
+z486 is an 80486-class pipelined CPU core written in SystemVerilog. It combines
+a fast frontend and hardwired implementations of common instructions with a
+microcoded control engine for complex x86 behavior. The core also integrates
+experimental, incomplete x87 floating-point support sufficient to run DOS
+Quake.
+
+The design targets useful 486-class performance on mid-sized FPGAs while
+retaining protected mode, paging, segmentation, and the complex architectural
+behavior inherited from z386.
+
+This repository contains the CPU RTL and its verification environment. To run
+z486 as a complete PC on MiSTer, use
+[z486_MiSTer](https://github.com/nand2mario/z486_MiSTer).
+
+## Design
+
+The frontend decodes instruction structure and literals through D1 and D2
+stages. From D2, instructions enter one of two control paths:
+
+* Hardwired control executes common data movement, arithmetic, stack, branch,
+  and memory operations as short sequences of hardware steps.
+* The microsequencer executes complex instructions and architectural corner
+  cases through the existing microcoded datapath.
+
+Both paths share the address, integer data, memory, protection, interrupt, and
+floating-point units. Separate configurable instruction and data caches connect
+the CPU to the external memory interface. The microcode-driven x87 unit shares
+arithmetic hardware across operations to keep its FPGA area manageable.
+
+![z486 architecture](docs/architecture.svg)
+
+The code is roughly organized following the i486 block diagram in US Patent
+5,134,693, Fig. 1. The redrawing below labels each unit with the z486 sources
+that implement it.
+
+![z486 sources on the i486 block diagram](docs/block_diagram.svg)
+
+## Performance
+
+The following are performance numbers for the first version of z486 (August 2026). Later
+versions are substantially faster. For example, Dhrystone CPI of the October version is
+2.0 instead of 2.8.
+
+### Dhrystone 2.1
+
+z486 delivers 70% more Dhrystone performance per MHz than ao486 and 47% more
+than z386, as measured by DMIPS/MHz.
+
+| Core | DMIPS/MHz | CPI | Cyclone V ALMs |
+| --- | ---: | ---: | ---: |
+| z386 | 0.225 | 4.101 | 15,545 |
+| ao486 | 0.194 | 4.556 | 15,190 |
+| **z486** | **0.330** | **2.800** | **21,906** |
+
+All cores execute the same i386 binary. z386 and z486 use matched 8 KB
+instruction and 8 KB data caches; ao486 uses its native cache. Area figures are
+standalone seed-1 fits on the same DE10-Nano Cyclone V with identical Quartus
+settings. z486 includes x87; without it, z486 uses 16,329 ALMs, 5.0% more than
+z386. ao486 counts retirement at a different pipeline boundary, so its CPI is
+less directly comparable.
+
+### DOOM
+
+At 85 MHz in z486_MiSTer, z486 runs the maximum-detail Doom timedemo at 29.1
+FPS: 39% faster than ao486 at 90 MHz and 27% faster than z386 v0.4 at 85 MHz.
+
+![Board-measured Doom and 3DBench performance](docs/dos_performance.svg)
+
+These are board measurements using each core's native release configuration:
+85 MHz for z386 and z486, and 90 MHz for ao486. The z386 v0.4 result uses its
+release 16 KB instruction and 16 KB data caches, whereas the Dhrystone
+comparison above uses matched 8 KB + 8 KB configurations for z386 and z486.
+
+## Technical report
+
+The [z486 technical report](https://nand2mario.github.io/posts/2026/z486/)
+describes the i486 pipeline concepts behind the design, z486's D1/D2 frontend,
+hardwired common instructions, integrated floating-point unit, and performance
+evaluation.
+
+## Build and test
+
+The regression tests use Verilator, NASM and Python. The fork's self-contained
+release gate is `make -C tests test-release`; it includes both memory-response
+widths, the PC-98 map profiles, a seeded self-checking pipeline fuzzer
+(`make -C tests test-fuzz`), generator checks and checker self-tests. The
+fork targets the Intel486 SX programming model (cache controls, PCD/PWT,
+alignment check, debug and test registers, LOCK#).
+[Current RTL status and evidence limits](docs/rtl-hardening-status.md) distinguish
+this gate from architectural reference datasets, FPGA timing and real boot.
+
+Individual targets for triage:
+
+```bash
+cd tests
+make test-simple
+make test-protected
+make test-l1-cache
+make test-l1-icache
+make test-x87-core
+make test-x87-integration
+```
+
+Additional targets cover Dhrystone, Berkeley TestFloat, the broader
+`test386.py` suite, and external real- and protected-mode single-step reference
+datasets. Run `make help` in `tests` for the current target list.
+
+## Related projects
+
+The [z386](https://github.com/nand2mario/z386) repository contains the
+80386-faithful predecessor.
+
+## Credits
+
+z486 was written by nand2mario and developed from z386. The underlying 80386
+work builds on Intel microcode disassembly and silicon reverse-engineering by
+[reenigne](https://www.reenigne.org/blog/),
+[gloriouscow](https://github.com/dbalsom),
+[smartest blob](https://github.com/a-mcego), and
+[Ken Shirriff](https://www.righto.com/).
+
+## License
+
+Copyright 2026 nand2mario. The SystemVerilog, Python, and Markdown files
+(`*.sv`, `*.svh`, `*.py`, and `*.md`) are licensed under the
+[Apache License 2.0](LICENSE). See [License Scope](LICENSE-SCOPE.md) for
+details. The recovered microcode image is not covered by this license.

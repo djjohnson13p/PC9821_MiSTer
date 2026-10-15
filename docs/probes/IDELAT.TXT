@@ -1,0 +1,75 @@
+IDELAT - PC-9821 real-machine IDE READ latency probe (tools/hwprobe/idelat.s)
+Measures command issue -> first DRQ, per-sector PIO transfer, single- vs
+multi-sector READ SECTORS, word throughput and the status-poll cost shape.
+READ-ONLY on disk: the only ATA commands are IDENTIFY 0xEC and READ SECTORS
+0x20 on cylinder 0 / head 0 / sectors 1..S (one track). Time bases are the
+device counters: PIT 2457600 counts/s (406.9 ns) and ARTIC 307200 Hz (3255.2
+ns); the two must agree at 8 raw PIT counts per ARTIC tick (r13/215).
+Sections are BEGIN:/END: bracketed: a hang leaves a BEGIN: with no END:.
+BEGIN:SETUP
+  BANK 0432 as found = 00
+  PITCAL swap=00
+  PITPAIR 4B C9
+  PITPAIR 54 C3
+  PITPAIR 5E BD
+  PITPAIR 69 B7
+  PITPAIR E8 B0
+  PITPAIR F3 AA
+  PITPAIR F9 A4
+  PITPAIR 07 9F
+  PITDIV (diagnostic only) coherent max=FFED accepted=0B26/0B26
+  IDENTIFY 0xEC st0 st1 = 50 50 polls=000004B7
+  GEO w1 w3 w6 w49 w60 w61 = 1E8A 0010 003F 0B00 3F60 0078
+  RANGE cyl=0000 head=00 nsec=8 spt=63
+  RATES pit_hz=2457600 artic_hz=307200 (r13/215 8:1, r13/219, raster-checked)
+END:SETUP
+BEGIN:CAL
+CAL WAIT5F   port=005F mode=W pit=112C base=00FD artic=00000225 bartic=0000001F
+CAL POLLSTA  port=064E mode=R pit=095C base=00FC artic=0000012C bartic=0000001F
+CAL POLLALT  port=074C mode=R pit=095D base=00FA artic=0000012B bartic=0000001E
+CAL POLLLP   port=064E mode=P pit=096D base=00F7 artic=0000012E bartic=0000001F
+CAL DATWORD  port=0640 mode=Q pit=0609 base=00F8 artic=000000C1 bartic=0000001F
+CAL TSTAMP   port=0000 mode=T pit=4C2B base=00FC artic=00000985 bartic=0000001F
+END:CAL
+BEGIN:READN
+RN t=1 k=1 sec=1 st=58 polls=0000043D to=0 ck=BC57 drq_pit=0AC3 drq_art=FFFFFEA8 xfer_pit=0166 xfer_art=FFFFFFD4
+RN t=1 k=2 sec=2 st=58 polls=00000001 to=0 ck=74FD drq_pit=0028 drq_art=FFFFFFFB xfer_pit=0165 xfer_art=FFFFFFD4
+RN t=1 k=3 sec=3 st=58 polls=00000001 to=0 ck=AD97 drq_pit=001B drq_art=FFFFFFFC xfer_pit=0164 xfer_art=FFFFFFD3
+RN t=1 k=4 sec=4 st=58 polls=00000001 to=0 ck=7B86 drq_pit=001C drq_art=FFFFFFFD xfer_pit=0163 xfer_art=FFFFFFD4
+RN t=1 k=5 sec=5 st=58 polls=00000001 to=0 ck=7836 drq_pit=001D drq_art=FFFFFFFC xfer_pit=0163 xfer_art=FFFFFFD3
+RN t=1 k=6 sec=6 st=58 polls=00000001 to=0 ck=FE5D drq_pit=001C drq_art=FFFFFFFD xfer_pit=0164 xfer_art=FFFFFFD4
+RN t=1 k=7 sec=7 st=58 polls=00000001 to=0 ck=2100 drq_pit=001C drq_art=FFFFFFFC xfer_pit=0164 xfer_art=FFFFFFD3
+RN t=1 k=8 sec=8 st=58 polls=00000001 to=0 ck=F280 drq_pit=001C drq_art=FFFFFFFD xfer_pit=0164 xfer_art=FFFFFFD3
+RNEND t=1 st=50 polls=00000001 to=0 done_pit=001D done_art=FFFFFFFD sum_ck=E484 fst=50
+RN t=2 k=1 sec=1 st=58 polls=000003CB to=0 ck=BC57 drq_pit=09A1 drq_art=FFFFFECC xfer_pit=0167 xfer_art=FFFFFFD3
+RN t=2 k=2 sec=2 st=58 polls=00000001 to=0 ck=74FD drq_pit=0025 drq_art=FFFFFFFB xfer_pit=0163 xfer_art=FFFFFFD4
+RN t=2 k=3 sec=3 st=58 polls=00000001 to=0 ck=AD97 drq_pit=001C drq_art=FFFFFFFC xfer_pit=0163 xfer_art=FFFFFFD3
+RN t=2 k=4 sec=4 st=58 polls=00000001 to=0 ck=7B86 drq_pit=001C drq_art=FFFFFFFD xfer_pit=0164 xfer_art=FFFFFFD4
+RN t=2 k=5 sec=5 st=58 polls=00000001 to=0 ck=7836 drq_pit=001A drq_art=FFFFFFFC xfer_pit=0163 xfer_art=FFFFFFD3
+RN t=2 k=6 sec=6 st=58 polls=00000001 to=0 ck=FE5D drq_pit=001B drq_art=FFFFFFFD xfer_pit=0166 xfer_art=FFFFFFD4
+RN t=2 k=7 sec=7 st=58 polls=00000001 to=0 ck=2100 drq_pit=001A drq_art=FFFFFFFC xfer_pit=0164 xfer_art=FFFFFFD4
+RN t=2 k=8 sec=8 st=58 polls=00000001 to=0 ck=F280 drq_pit=001D drq_art=FFFFFFFC xfer_pit=0163 xfer_art=FFFFFFD4
+RNEND t=2 st=50 polls=00000001 to=0 done_pit=001E done_art=FFFFFFFC sum_ck=E484 fst=50
+END:READN
+BEGIN:READ1
+R1 t=1 sec=9 warm=0 st0=58 st1=50 polls=000003C8 to=0 ck=8F6F drq_pit=0999 drq_art=FFFFFECD xfer_pit=0165 xfer_art=FFFFFFD3
+R1 t=2 sec=10 warm=0 st0=58 st1=50 polls=00000043 to=0 ck=EAFC drq_pit=00CD drq_art=FFFFFFE7 xfer_pit=0164 xfer_art=FFFFFFD4
+R1 t=3 sec=11 warm=0 st0=58 st1=50 polls=0000003F to=0 ck=5B5E drq_pit=00C2 drq_art=FFFFFFE8 xfer_pit=0166 xfer_art=FFFFFFD4
+R1 t=4 sec=9 warm=1 st0=58 st1=50 polls=00000042 to=0 ck=8F6F drq_pit=00C9 drq_art=FFFFFFE7 xfer_pit=0163 xfer_art=FFFFFFD3
+R1 t=5 sec=9 warm=1 st0=58 st1=50 polls=000003C9 to=0 ck=8F6F drq_pit=099B drq_art=FFFFFECD xfer_pit=0166 xfer_art=FFFFFFD4
+R1 t=6 sec=9 warm=1 st0=58 st1=50 polls=00000040 to=0 ck=8F6F drq_pit=00C7 drq_art=FFFFFFE8 xfer_pit=0163 xfer_art=FFFFFFD4
+END:READ1
+BEGIN:RESTORE
+  0432 was 00 -> now 00
+  writes made by this probe: 0432 bank (restored above), task-file setup
+  0644/0646/0648/064A/064C, 064E commands 0xEC IDENTIFY and 0x20 READ SECTORS
+  only, 0077<-00 (the PIT counter-latch command, stateless), 005F (the
+  documented write-only I/O delay port, written 1024 times by CAL WAIT5F),
+  and 000A (the slave IMR: saved at each command window and restored from
+  the save). No disk data was written: READ SECTORS is read-only and the
+  scratch range is cylinder 0 / head 0 / sectors 1..S - one track while
+  IDENTIFY word 6 is honest and >= 4; a lying/absent IDENTIFY can make a
+  read cross a track boundary (still read-only, the timing may include a
+  reposition).
+END:RESTORE
+IDELAT DONE

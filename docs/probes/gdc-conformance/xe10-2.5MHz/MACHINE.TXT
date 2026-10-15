@@ -1,0 +1,18 @@
+MODEL=
+MODEL_REVISION=
+CPU=
+CPU_CLOCK=
+MEMORY=
+BIOS_VERSION=
+DOS=
+GDC_CLOCK_RUN=
+GDC_OR_VIDEO_CHIPSET=
+VIDEO_BOARD=
+GRCG_EGC_PRESENT=
+OTHER_VIDEO_OPTIONS=
+NOTES=
+
+GDC marking/revision (if known): ______________________________
+GDC clock selection method: __________________________________
+
+Use GDC_CLOCK_RUN=2.5MHz or 5MHz for each separate dataset.

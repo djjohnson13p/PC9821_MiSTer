@@ -1,0 +1,15 @@
+# The port blocks r12/08 F3 touches: the aliased PIT block at 0x3FD9..0x3FDF,
+# the PIT's own block, the ATA connection ports and both task-file ranges
+# (0x0640..0x064E with its 0x064F boundary, and the second channel's mirror at
+# 0x0740..0x074E), plus the PC-9801-86's 0x0188..0x018E, which gdc_cs has to
+# yield to. Reads only, the same discipline as probes/R10.TXT.
+#
+#   bash tests/pc9821/run_portharness.sh tests/pc9821/f3-port-ranges.txt
+note F3 port ranges
+scan 0x3fd8 0x3fdf
+scan 0x0070 0x0077
+scan 0x0640 0x064e
+scan 0x0740 0x074e
+scan 0x074c 0x074e
+scan 0x0430 0x0435
+scan 0x0188 0x018e

@@ -1,0 +1,917 @@
+# WDAT/RMW/MASK/transfer/address-step tests
+# suite=pc98-gdc-tests-v1.0-rc6 clock=2.5MHz bios054d=10 bios054c=4F
+case,class,expect,outcome,rop,xfer,old,src,mask,got,expected,changes,curd,detail
+W_0_0000_0000_0000,WDAT_WORD,STRICT,PASS,0,word,0000,0000,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_0_0000_0000_0001,WDAT_WORD,STRICT,PASS,0,word,0000,0000,0001,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_0_0000_0000_8000,WDAT_WORD,STRICT,PASS,0,word,0000,0000,8000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_0_0000_0000_00F0,WDAT_WORD,STRICT,PASS,0,word,0000,0000,00F0,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_0_0000_0000_A55A,WDAT_WORD,STRICT,PASS,0,word,0000,0000,A55A,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_0_0000_0000_FFFF,WDAT_WORD,STRICT,PASS,0,word,0000,0000,FFFF,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_0_0000_0001_0000,WDAT_WORD,STRICT,PASS,0,word,0000,0001,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_0_0000_0001_0001,WDAT_WORD,STRICT,FAIL,0,word,0000,0001,0001,0000,0080,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_0_0000_0001_8000,WDAT_WORD,STRICT,FAIL,0,word,0000,0001,8000,0000,0100,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_0_0000_0001_00F0,WDAT_WORD,STRICT,FAIL,0,word,0000,0001,00F0,0000,000F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_0_0000_0001_A55A,WDAT_WORD,STRICT,FAIL,0,word,0000,0001,A55A,0000,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_0_0000_0001_FFFF,WDAT_WORD,STRICT,FAIL,0,word,0000,0001,FFFF,0000,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_0_0000_0100_0000,WDAT_WORD,STRICT,PASS,0,word,0000,0100,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_0_0000_0100_0001,WDAT_WORD,STRICT,PASS,0,word,0000,0100,0001,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_0_0000_0100_8000,WDAT_WORD,STRICT,PASS,0,word,0000,0100,8000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_0_0000_0100_00F0,WDAT_WORD,STRICT,PASS,0,word,0000,0100,00F0,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_0_0000_0100_A55A,WDAT_WORD,STRICT,PASS,0,word,0000,0100,A55A,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_0_0000_0100_FFFF,WDAT_WORD,STRICT,PASS,0,word,0000,0100,FFFF,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_0_0000_3C5B_0000,WDAT_WORD,STRICT,PASS,0,word,0000,3C5B,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_0_0000_3C5B_0001,WDAT_WORD,STRICT,FAIL,0,word,0000,3C5B,0001,0000,0080,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_0_0000_3C5B_8000,WDAT_WORD,STRICT,FAIL,0,word,0000,3C5B,8000,0000,0100,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_0_0000_3C5B_00F0,WDAT_WORD,STRICT,FAIL,0,word,0000,3C5B,00F0,0000,000F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_0_0000_3C5B_A55A,WDAT_WORD,STRICT,FAIL,0,word,0000,3C5B,A55A,0000,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_0_0000_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,0,word,0000,3C5B,FFFF,0000,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_0_FFFF_0000_0000,WDAT_WORD,STRICT,PASS,0,word,FFFF,0000,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_0_FFFF_0000_0001,WDAT_WORD,STRICT,FAIL,0,word,FFFF,0000,0001,FFFF,FF7F,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_0_FFFF_0000_8000,WDAT_WORD,STRICT,FAIL,0,word,FFFF,0000,8000,FFFF,FEFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_0_FFFF_0000_00F0,WDAT_WORD,STRICT,FAIL,0,word,FFFF,0000,00F0,FFFF,FFF0,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_0_FFFF_0000_A55A,WDAT_WORD,STRICT,FAIL,0,word,FFFF,0000,A55A,FFFF,5AA5,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_0_FFFF_0000_FFFF,WDAT_WORD,STRICT,FAIL,0,word,FFFF,0000,FFFF,FFFF,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_0_FFFF_0001_0000,WDAT_WORD,STRICT,PASS,0,word,FFFF,0001,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_0_FFFF_0001_0001,WDAT_WORD,STRICT,PASS,0,word,FFFF,0001,0001,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_0_FFFF_0001_8000,WDAT_WORD,STRICT,PASS,0,word,FFFF,0001,8000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_0_FFFF_0001_00F0,WDAT_WORD,STRICT,PASS,0,word,FFFF,0001,00F0,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_0_FFFF_0001_A55A,WDAT_WORD,STRICT,PASS,0,word,FFFF,0001,A55A,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_0_FFFF_0001_FFFF,WDAT_WORD,STRICT,PASS,0,word,FFFF,0001,FFFF,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_0_FFFF_0100_0000,WDAT_WORD,STRICT,PASS,0,word,FFFF,0100,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_0_FFFF_0100_0001,WDAT_WORD,STRICT,FAIL,0,word,FFFF,0100,0001,FFFF,FF7F,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_0_FFFF_0100_8000,WDAT_WORD,STRICT,FAIL,0,word,FFFF,0100,8000,FFFF,FEFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_0_FFFF_0100_00F0,WDAT_WORD,STRICT,FAIL,0,word,FFFF,0100,00F0,FFFF,FFF0,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_0_FFFF_0100_A55A,WDAT_WORD,STRICT,FAIL,0,word,FFFF,0100,A55A,FFFF,5AA5,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_0_FFFF_0100_FFFF,WDAT_WORD,STRICT,FAIL,0,word,FFFF,0100,FFFF,FFFF,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_0_FFFF_3C5B_0000,WDAT_WORD,STRICT,PASS,0,word,FFFF,3C5B,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_0_FFFF_3C5B_0001,WDAT_WORD,STRICT,PASS,0,word,FFFF,3C5B,0001,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_0_FFFF_3C5B_8000,WDAT_WORD,STRICT,PASS,0,word,FFFF,3C5B,8000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_0_FFFF_3C5B_00F0,WDAT_WORD,STRICT,PASS,0,word,FFFF,3C5B,00F0,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_0_FFFF_3C5B_A55A,WDAT_WORD,STRICT,PASS,0,word,FFFF,3C5B,A55A,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_0_FFFF_3C5B_FFFF,WDAT_WORD,STRICT,PASS,0,word,FFFF,3C5B,FFFF,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_0_A55A_0000_0000,WDAT_WORD,STRICT,PASS,0,word,A55A,0000,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_0_A55A_0000_0001,WDAT_WORD,STRICT,PASS,0,word,A55A,0000,0001,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_0_A55A_0000_8000,WDAT_WORD,STRICT,FAIL,0,word,A55A,0000,8000,A55A,A45A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_0_A55A_0000_00F0,WDAT_WORD,STRICT,FAIL,0,word,A55A,0000,00F0,A55A,A550,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_0_A55A_0000_A55A,WDAT_WORD,STRICT,FAIL,0,word,A55A,0000,A55A,A55A,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_0_A55A_0000_FFFF,WDAT_WORD,STRICT,FAIL,0,word,A55A,0000,FFFF,A55A,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_0_A55A_0001_0000,WDAT_WORD,STRICT,PASS,0,word,A55A,0001,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_0_A55A_0001_0001,WDAT_WORD,STRICT,FAIL,0,word,A55A,0001,0001,A55A,A5DA,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_0_A55A_0001_8000,WDAT_WORD,STRICT,PASS,0,word,A55A,0001,8000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_0_A55A_0001_00F0,WDAT_WORD,STRICT,FAIL,0,word,A55A,0001,00F0,A55A,A55F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_0_A55A_0001_A55A,WDAT_WORD,STRICT,PASS,0,word,A55A,0001,A55A,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_0_A55A_0001_FFFF,WDAT_WORD,STRICT,FAIL,0,word,A55A,0001,FFFF,A55A,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_0_A55A_0100_0000,WDAT_WORD,STRICT,PASS,0,word,A55A,0100,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_0_A55A_0100_0001,WDAT_WORD,STRICT,PASS,0,word,A55A,0100,0001,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_0_A55A_0100_8000,WDAT_WORD,STRICT,FAIL,0,word,A55A,0100,8000,A55A,A45A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_0_A55A_0100_00F0,WDAT_WORD,STRICT,FAIL,0,word,A55A,0100,00F0,A55A,A550,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_0_A55A_0100_A55A,WDAT_WORD,STRICT,FAIL,0,word,A55A,0100,A55A,A55A,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_0_A55A_0100_FFFF,WDAT_WORD,STRICT,FAIL,0,word,A55A,0100,FFFF,A55A,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_0_A55A_3C5B_0000,WDAT_WORD,STRICT,PASS,0,word,A55A,3C5B,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_0_A55A_3C5B_0001,WDAT_WORD,STRICT,FAIL,0,word,A55A,3C5B,0001,A55A,A5DA,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_0_A55A_3C5B_8000,WDAT_WORD,STRICT,PASS,0,word,A55A,3C5B,8000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_0_A55A_3C5B_00F0,WDAT_WORD,STRICT,FAIL,0,word,A55A,3C5B,00F0,A55A,A55F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_0_A55A_3C5B_A55A,WDAT_WORD,STRICT,PASS,0,word,A55A,3C5B,A55A,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_0_A55A_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,0,word,A55A,3C5B,FFFF,A55A,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_0_1281_0000_0000,WDAT_WORD,STRICT,PASS,0,word,1281,0000,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_0_1281_0000_0001,WDAT_WORD,STRICT,FAIL,0,word,1281,0000,0001,1281,1201,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_0_1281_0000_8000,WDAT_WORD,STRICT,PASS,0,word,1281,0000,8000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_0_1281_0000_00F0,WDAT_WORD,STRICT,FAIL,0,word,1281,0000,00F0,1281,1280,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_0_1281_0000_A55A,WDAT_WORD,STRICT,PASS,0,word,1281,0000,A55A,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_0_1281_0000_FFFF,WDAT_WORD,STRICT,FAIL,0,word,1281,0000,FFFF,1281,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_0_1281_0001_0000,WDAT_WORD,STRICT,PASS,0,word,1281,0001,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_0_1281_0001_0001,WDAT_WORD,STRICT,PASS,0,word,1281,0001,0001,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_0_1281_0001_8000,WDAT_WORD,STRICT,FAIL,0,word,1281,0001,8000,1281,1381,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_0_1281_0001_00F0,WDAT_WORD,STRICT,FAIL,0,word,1281,0001,00F0,1281,128F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_0_1281_0001_A55A,WDAT_WORD,STRICT,FAIL,0,word,1281,0001,A55A,1281,B7DB,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_0_1281_0001_FFFF,WDAT_WORD,STRICT,FAIL,0,word,1281,0001,FFFF,1281,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_0_1281_0100_0000,WDAT_WORD,STRICT,PASS,0,word,1281,0100,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_0_1281_0100_0001,WDAT_WORD,STRICT,FAIL,0,word,1281,0100,0001,1281,1201,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_0_1281_0100_8000,WDAT_WORD,STRICT,PASS,0,word,1281,0100,8000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_0_1281_0100_00F0,WDAT_WORD,STRICT,FAIL,0,word,1281,0100,00F0,1281,1280,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_0_1281_0100_A55A,WDAT_WORD,STRICT,PASS,0,word,1281,0100,A55A,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_0_1281_0100_FFFF,WDAT_WORD,STRICT,FAIL,0,word,1281,0100,FFFF,1281,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_0_1281_3C5B_0000,WDAT_WORD,STRICT,PASS,0,word,1281,3C5B,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_0_1281_3C5B_0001,WDAT_WORD,STRICT,PASS,0,word,1281,3C5B,0001,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_0_1281_3C5B_8000,WDAT_WORD,STRICT,FAIL,0,word,1281,3C5B,8000,1281,1381,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_0_1281_3C5B_00F0,WDAT_WORD,STRICT,FAIL,0,word,1281,3C5B,00F0,1281,128F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_0_1281_3C5B_A55A,WDAT_WORD,STRICT,FAIL,0,word,1281,3C5B,A55A,1281,B7DB,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_0_1281_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,0,word,1281,3C5B,FFFF,1281,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_1_0000_0000_0000,WDAT_WORD,STRICT,PASS,1,word,0000,0000,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_1_0000_0000_0001,WDAT_WORD,STRICT,PASS,1,word,0000,0000,0001,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_1_0000_0000_8000,WDAT_WORD,STRICT,PASS,1,word,0000,0000,8000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_1_0000_0000_00F0,WDAT_WORD,STRICT,PASS,1,word,0000,0000,00F0,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_1_0000_0000_A55A,WDAT_WORD,STRICT,PASS,1,word,0000,0000,A55A,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_1_0000_0000_FFFF,WDAT_WORD,STRICT,PASS,1,word,0000,0000,FFFF,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_1_0000_0001_0000,WDAT_WORD,STRICT,PASS,1,word,0000,0001,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_1_0000_0001_0001,WDAT_WORD,STRICT,FAIL,1,word,0000,0001,0001,0000,0080,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_1_0000_0001_8000,WDAT_WORD,STRICT,FAIL,1,word,0000,0001,8000,0000,0100,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_1_0000_0001_00F0,WDAT_WORD,STRICT,FAIL,1,word,0000,0001,00F0,0000,000F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_1_0000_0001_A55A,WDAT_WORD,STRICT,FAIL,1,word,0000,0001,A55A,0000,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_1_0000_0001_FFFF,WDAT_WORD,STRICT,FAIL,1,word,0000,0001,FFFF,0000,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_1_0000_0100_0000,WDAT_WORD,STRICT,PASS,1,word,0000,0100,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_1_0000_0100_0001,WDAT_WORD,STRICT,PASS,1,word,0000,0100,0001,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_1_0000_0100_8000,WDAT_WORD,STRICT,PASS,1,word,0000,0100,8000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_1_0000_0100_00F0,WDAT_WORD,STRICT,PASS,1,word,0000,0100,00F0,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_1_0000_0100_A55A,WDAT_WORD,STRICT,PASS,1,word,0000,0100,A55A,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_1_0000_0100_FFFF,WDAT_WORD,STRICT,PASS,1,word,0000,0100,FFFF,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_1_0000_3C5B_0000,WDAT_WORD,STRICT,PASS,1,word,0000,3C5B,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_1_0000_3C5B_0001,WDAT_WORD,STRICT,FAIL,1,word,0000,3C5B,0001,0000,0080,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_1_0000_3C5B_8000,WDAT_WORD,STRICT,FAIL,1,word,0000,3C5B,8000,0000,0100,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_1_0000_3C5B_00F0,WDAT_WORD,STRICT,FAIL,1,word,0000,3C5B,00F0,0000,000F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_1_0000_3C5B_A55A,WDAT_WORD,STRICT,FAIL,1,word,0000,3C5B,A55A,0000,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_1_0000_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,1,word,0000,3C5B,FFFF,0000,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_1_FFFF_0000_0000,WDAT_WORD,STRICT,PASS,1,word,FFFF,0000,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_1_FFFF_0000_0001,WDAT_WORD,STRICT,PASS,1,word,FFFF,0000,0001,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_1_FFFF_0000_8000,WDAT_WORD,STRICT,PASS,1,word,FFFF,0000,8000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_1_FFFF_0000_00F0,WDAT_WORD,STRICT,PASS,1,word,FFFF,0000,00F0,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_1_FFFF_0000_A55A,WDAT_WORD,STRICT,PASS,1,word,FFFF,0000,A55A,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_1_FFFF_0000_FFFF,WDAT_WORD,STRICT,PASS,1,word,FFFF,0000,FFFF,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_1_FFFF_0001_0000,WDAT_WORD,STRICT,PASS,1,word,FFFF,0001,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_1_FFFF_0001_0001,WDAT_WORD,STRICT,FAIL,1,word,FFFF,0001,0001,FFFF,FF7F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_1_FFFF_0001_8000,WDAT_WORD,STRICT,FAIL,1,word,FFFF,0001,8000,FFFF,FEFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_1_FFFF_0001_00F0,WDAT_WORD,STRICT,FAIL,1,word,FFFF,0001,00F0,FFFF,FFF0,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_1_FFFF_0001_A55A,WDAT_WORD,STRICT,FAIL,1,word,FFFF,0001,A55A,FFFF,5AA5,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_1_FFFF_0001_FFFF,WDAT_WORD,STRICT,FAIL,1,word,FFFF,0001,FFFF,FFFF,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_1_FFFF_0100_0000,WDAT_WORD,STRICT,PASS,1,word,FFFF,0100,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_1_FFFF_0100_0001,WDAT_WORD,STRICT,PASS,1,word,FFFF,0100,0001,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_1_FFFF_0100_8000,WDAT_WORD,STRICT,PASS,1,word,FFFF,0100,8000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_1_FFFF_0100_00F0,WDAT_WORD,STRICT,PASS,1,word,FFFF,0100,00F0,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_1_FFFF_0100_A55A,WDAT_WORD,STRICT,PASS,1,word,FFFF,0100,A55A,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_1_FFFF_0100_FFFF,WDAT_WORD,STRICT,PASS,1,word,FFFF,0100,FFFF,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_1_FFFF_3C5B_0000,WDAT_WORD,STRICT,PASS,1,word,FFFF,3C5B,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_1_FFFF_3C5B_0001,WDAT_WORD,STRICT,FAIL,1,word,FFFF,3C5B,0001,FFFF,FF7F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_1_FFFF_3C5B_8000,WDAT_WORD,STRICT,FAIL,1,word,FFFF,3C5B,8000,FFFF,FEFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_1_FFFF_3C5B_00F0,WDAT_WORD,STRICT,FAIL,1,word,FFFF,3C5B,00F0,FFFF,FFF0,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_1_FFFF_3C5B_A55A,WDAT_WORD,STRICT,FAIL,1,word,FFFF,3C5B,A55A,FFFF,5AA5,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_1_FFFF_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,1,word,FFFF,3C5B,FFFF,FFFF,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_1_A55A_0000_0000,WDAT_WORD,STRICT,PASS,1,word,A55A,0000,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_1_A55A_0000_0001,WDAT_WORD,STRICT,PASS,1,word,A55A,0000,0001,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_1_A55A_0000_8000,WDAT_WORD,STRICT,PASS,1,word,A55A,0000,8000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_1_A55A_0000_00F0,WDAT_WORD,STRICT,PASS,1,word,A55A,0000,00F0,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_1_A55A_0000_A55A,WDAT_WORD,STRICT,PASS,1,word,A55A,0000,A55A,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_1_A55A_0000_FFFF,WDAT_WORD,STRICT,PASS,1,word,A55A,0000,FFFF,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_1_A55A_0001_0000,WDAT_WORD,STRICT,PASS,1,word,A55A,0001,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_1_A55A_0001_0001,WDAT_WORD,STRICT,FAIL,1,word,A55A,0001,0001,A55A,A5DA,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_1_A55A_0001_8000,WDAT_WORD,STRICT,FAIL,1,word,A55A,0001,8000,A55A,A45A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_1_A55A_0001_00F0,WDAT_WORD,STRICT,FAIL,1,word,A55A,0001,00F0,A55A,A555,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_1_A55A_0001_A55A,WDAT_WORD,STRICT,FAIL,1,word,A55A,0001,A55A,A55A,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_1_A55A_0001_FFFF,WDAT_WORD,STRICT,FAIL,1,word,A55A,0001,FFFF,A55A,5AA5,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_1_A55A_0100_0000,WDAT_WORD,STRICT,PASS,1,word,A55A,0100,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_1_A55A_0100_0001,WDAT_WORD,STRICT,PASS,1,word,A55A,0100,0001,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_1_A55A_0100_8000,WDAT_WORD,STRICT,PASS,1,word,A55A,0100,8000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_1_A55A_0100_00F0,WDAT_WORD,STRICT,PASS,1,word,A55A,0100,00F0,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_1_A55A_0100_A55A,WDAT_WORD,STRICT,PASS,1,word,A55A,0100,A55A,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_1_A55A_0100_FFFF,WDAT_WORD,STRICT,PASS,1,word,A55A,0100,FFFF,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_1_A55A_3C5B_0000,WDAT_WORD,STRICT,PASS,1,word,A55A,3C5B,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_1_A55A_3C5B_0001,WDAT_WORD,STRICT,FAIL,1,word,A55A,3C5B,0001,A55A,A5DA,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_1_A55A_3C5B_8000,WDAT_WORD,STRICT,FAIL,1,word,A55A,3C5B,8000,A55A,A45A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_1_A55A_3C5B_00F0,WDAT_WORD,STRICT,FAIL,1,word,A55A,3C5B,00F0,A55A,A555,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_1_A55A_3C5B_A55A,WDAT_WORD,STRICT,FAIL,1,word,A55A,3C5B,A55A,A55A,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_1_A55A_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,1,word,A55A,3C5B,FFFF,A55A,5AA5,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_1_1281_0000_0000,WDAT_WORD,STRICT,PASS,1,word,1281,0000,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_1_1281_0000_0001,WDAT_WORD,STRICT,PASS,1,word,1281,0000,0001,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_1_1281_0000_8000,WDAT_WORD,STRICT,PASS,1,word,1281,0000,8000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_1_1281_0000_00F0,WDAT_WORD,STRICT,PASS,1,word,1281,0000,00F0,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_1_1281_0000_A55A,WDAT_WORD,STRICT,PASS,1,word,1281,0000,A55A,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_1_1281_0000_FFFF,WDAT_WORD,STRICT,PASS,1,word,1281,0000,FFFF,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_1_1281_0001_0000,WDAT_WORD,STRICT,PASS,1,word,1281,0001,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_1_1281_0001_0001,WDAT_WORD,STRICT,FAIL,1,word,1281,0001,0001,1281,1201,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_1_1281_0001_8000,WDAT_WORD,STRICT,FAIL,1,word,1281,0001,8000,1281,1381,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_1_1281_0001_00F0,WDAT_WORD,STRICT,FAIL,1,word,1281,0001,00F0,1281,128E,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_1_1281_0001_A55A,WDAT_WORD,STRICT,FAIL,1,word,1281,0001,A55A,1281,B7DB,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_1_1281_0001_FFFF,WDAT_WORD,STRICT,FAIL,1,word,1281,0001,FFFF,1281,ED7E,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_1_1281_0100_0000,WDAT_WORD,STRICT,PASS,1,word,1281,0100,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_1_1281_0100_0001,WDAT_WORD,STRICT,PASS,1,word,1281,0100,0001,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_1_1281_0100_8000,WDAT_WORD,STRICT,PASS,1,word,1281,0100,8000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_1_1281_0100_00F0,WDAT_WORD,STRICT,PASS,1,word,1281,0100,00F0,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_1_1281_0100_A55A,WDAT_WORD,STRICT,PASS,1,word,1281,0100,A55A,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_1_1281_0100_FFFF,WDAT_WORD,STRICT,PASS,1,word,1281,0100,FFFF,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_1_1281_3C5B_0000,WDAT_WORD,STRICT,PASS,1,word,1281,3C5B,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_1_1281_3C5B_0001,WDAT_WORD,STRICT,FAIL,1,word,1281,3C5B,0001,1281,1201,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_1_1281_3C5B_8000,WDAT_WORD,STRICT,FAIL,1,word,1281,3C5B,8000,1281,1381,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_1_1281_3C5B_00F0,WDAT_WORD,STRICT,FAIL,1,word,1281,3C5B,00F0,1281,128E,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_1_1281_3C5B_A55A,WDAT_WORD,STRICT,FAIL,1,word,1281,3C5B,A55A,1281,B7DB,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_1_1281_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,1,word,1281,3C5B,FFFF,1281,ED7E,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_2_0000_0000_0000,WDAT_WORD,STRICT,PASS,2,word,0000,0000,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_2_0000_0000_0001,WDAT_WORD,STRICT,PASS,2,word,0000,0000,0001,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_2_0000_0000_8000,WDAT_WORD,STRICT,PASS,2,word,0000,0000,8000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_2_0000_0000_00F0,WDAT_WORD,STRICT,PASS,2,word,0000,0000,00F0,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_2_0000_0000_A55A,WDAT_WORD,STRICT,PASS,2,word,0000,0000,A55A,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_2_0000_0000_FFFF,WDAT_WORD,STRICT,PASS,2,word,0000,0000,FFFF,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_2_0000_0001_0000,WDAT_WORD,STRICT,PASS,2,word,0000,0001,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_2_0000_0001_0001,WDAT_WORD,STRICT,PASS,2,word,0000,0001,0001,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_2_0000_0001_8000,WDAT_WORD,STRICT,PASS,2,word,0000,0001,8000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_2_0000_0001_00F0,WDAT_WORD,STRICT,PASS,2,word,0000,0001,00F0,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_2_0000_0001_A55A,WDAT_WORD,STRICT,PASS,2,word,0000,0001,A55A,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_2_0000_0001_FFFF,WDAT_WORD,STRICT,PASS,2,word,0000,0001,FFFF,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_2_0000_0100_0000,WDAT_WORD,STRICT,PASS,2,word,0000,0100,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_2_0000_0100_0001,WDAT_WORD,STRICT,PASS,2,word,0000,0100,0001,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_2_0000_0100_8000,WDAT_WORD,STRICT,PASS,2,word,0000,0100,8000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_2_0000_0100_00F0,WDAT_WORD,STRICT,PASS,2,word,0000,0100,00F0,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_2_0000_0100_A55A,WDAT_WORD,STRICT,PASS,2,word,0000,0100,A55A,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_2_0000_0100_FFFF,WDAT_WORD,STRICT,PASS,2,word,0000,0100,FFFF,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_2_0000_3C5B_0000,WDAT_WORD,STRICT,PASS,2,word,0000,3C5B,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_2_0000_3C5B_0001,WDAT_WORD,STRICT,PASS,2,word,0000,3C5B,0001,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_2_0000_3C5B_8000,WDAT_WORD,STRICT,PASS,2,word,0000,3C5B,8000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_2_0000_3C5B_00F0,WDAT_WORD,STRICT,PASS,2,word,0000,3C5B,00F0,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_2_0000_3C5B_A55A,WDAT_WORD,STRICT,PASS,2,word,0000,3C5B,A55A,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_2_0000_3C5B_FFFF,WDAT_WORD,STRICT,PASS,2,word,0000,3C5B,FFFF,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_2_FFFF_0000_0000,WDAT_WORD,STRICT,PASS,2,word,FFFF,0000,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_2_FFFF_0000_0001,WDAT_WORD,STRICT,PASS,2,word,FFFF,0000,0001,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_2_FFFF_0000_8000,WDAT_WORD,STRICT,PASS,2,word,FFFF,0000,8000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_2_FFFF_0000_00F0,WDAT_WORD,STRICT,PASS,2,word,FFFF,0000,00F0,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_2_FFFF_0000_A55A,WDAT_WORD,STRICT,PASS,2,word,FFFF,0000,A55A,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_2_FFFF_0000_FFFF,WDAT_WORD,STRICT,PASS,2,word,FFFF,0000,FFFF,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_2_FFFF_0001_0000,WDAT_WORD,STRICT,PASS,2,word,FFFF,0001,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_2_FFFF_0001_0001,WDAT_WORD,STRICT,FAIL,2,word,FFFF,0001,0001,FFFF,FF7F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_2_FFFF_0001_8000,WDAT_WORD,STRICT,FAIL,2,word,FFFF,0001,8000,FFFF,FEFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_2_FFFF_0001_00F0,WDAT_WORD,STRICT,FAIL,2,word,FFFF,0001,00F0,FFFF,FFF0,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_2_FFFF_0001_A55A,WDAT_WORD,STRICT,FAIL,2,word,FFFF,0001,A55A,FFFF,5AA5,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_2_FFFF_0001_FFFF,WDAT_WORD,STRICT,FAIL,2,word,FFFF,0001,FFFF,FFFF,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_2_FFFF_0100_0000,WDAT_WORD,STRICT,PASS,2,word,FFFF,0100,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_2_FFFF_0100_0001,WDAT_WORD,STRICT,PASS,2,word,FFFF,0100,0001,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_2_FFFF_0100_8000,WDAT_WORD,STRICT,PASS,2,word,FFFF,0100,8000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_2_FFFF_0100_00F0,WDAT_WORD,STRICT,PASS,2,word,FFFF,0100,00F0,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_2_FFFF_0100_A55A,WDAT_WORD,STRICT,PASS,2,word,FFFF,0100,A55A,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_2_FFFF_0100_FFFF,WDAT_WORD,STRICT,PASS,2,word,FFFF,0100,FFFF,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_2_FFFF_3C5B_0000,WDAT_WORD,STRICT,PASS,2,word,FFFF,3C5B,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_2_FFFF_3C5B_0001,WDAT_WORD,STRICT,FAIL,2,word,FFFF,3C5B,0001,FFFF,FF7F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_2_FFFF_3C5B_8000,WDAT_WORD,STRICT,FAIL,2,word,FFFF,3C5B,8000,FFFF,FEFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_2_FFFF_3C5B_00F0,WDAT_WORD,STRICT,FAIL,2,word,FFFF,3C5B,00F0,FFFF,FFF0,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_2_FFFF_3C5B_A55A,WDAT_WORD,STRICT,FAIL,2,word,FFFF,3C5B,A55A,FFFF,5AA5,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_2_FFFF_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,2,word,FFFF,3C5B,FFFF,FFFF,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_2_A55A_0000_0000,WDAT_WORD,STRICT,PASS,2,word,A55A,0000,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_2_A55A_0000_0001,WDAT_WORD,STRICT,PASS,2,word,A55A,0000,0001,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_2_A55A_0000_8000,WDAT_WORD,STRICT,PASS,2,word,A55A,0000,8000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_2_A55A_0000_00F0,WDAT_WORD,STRICT,PASS,2,word,A55A,0000,00F0,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_2_A55A_0000_A55A,WDAT_WORD,STRICT,PASS,2,word,A55A,0000,A55A,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_2_A55A_0000_FFFF,WDAT_WORD,STRICT,PASS,2,word,A55A,0000,FFFF,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_2_A55A_0001_0000,WDAT_WORD,STRICT,PASS,2,word,A55A,0001,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_2_A55A_0001_0001,WDAT_WORD,STRICT,PASS,2,word,A55A,0001,0001,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_2_A55A_0001_8000,WDAT_WORD,STRICT,FAIL,2,word,A55A,0001,8000,A55A,A45A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_2_A55A_0001_00F0,WDAT_WORD,STRICT,FAIL,2,word,A55A,0001,00F0,A55A,A550,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_2_A55A_0001_A55A,WDAT_WORD,STRICT,FAIL,2,word,A55A,0001,A55A,A55A,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_2_A55A_0001_FFFF,WDAT_WORD,STRICT,FAIL,2,word,A55A,0001,FFFF,A55A,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_2_A55A_0100_0000,WDAT_WORD,STRICT,PASS,2,word,A55A,0100,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_2_A55A_0100_0001,WDAT_WORD,STRICT,PASS,2,word,A55A,0100,0001,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_2_A55A_0100_8000,WDAT_WORD,STRICT,PASS,2,word,A55A,0100,8000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_2_A55A_0100_00F0,WDAT_WORD,STRICT,PASS,2,word,A55A,0100,00F0,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_2_A55A_0100_A55A,WDAT_WORD,STRICT,PASS,2,word,A55A,0100,A55A,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_2_A55A_0100_FFFF,WDAT_WORD,STRICT,PASS,2,word,A55A,0100,FFFF,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_2_A55A_3C5B_0000,WDAT_WORD,STRICT,PASS,2,word,A55A,3C5B,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_2_A55A_3C5B_0001,WDAT_WORD,STRICT,PASS,2,word,A55A,3C5B,0001,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_2_A55A_3C5B_8000,WDAT_WORD,STRICT,FAIL,2,word,A55A,3C5B,8000,A55A,A45A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_2_A55A_3C5B_00F0,WDAT_WORD,STRICT,FAIL,2,word,A55A,3C5B,00F0,A55A,A550,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_2_A55A_3C5B_A55A,WDAT_WORD,STRICT,FAIL,2,word,A55A,3C5B,A55A,A55A,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_2_A55A_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,2,word,A55A,3C5B,FFFF,A55A,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_2_1281_0000_0000,WDAT_WORD,STRICT,PASS,2,word,1281,0000,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_2_1281_0000_0001,WDAT_WORD,STRICT,PASS,2,word,1281,0000,0001,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_2_1281_0000_8000,WDAT_WORD,STRICT,PASS,2,word,1281,0000,8000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_2_1281_0000_00F0,WDAT_WORD,STRICT,PASS,2,word,1281,0000,00F0,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_2_1281_0000_A55A,WDAT_WORD,STRICT,PASS,2,word,1281,0000,A55A,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_2_1281_0000_FFFF,WDAT_WORD,STRICT,PASS,2,word,1281,0000,FFFF,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_2_1281_0001_0000,WDAT_WORD,STRICT,PASS,2,word,1281,0001,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_2_1281_0001_0001,WDAT_WORD,STRICT,FAIL,2,word,1281,0001,0001,1281,1201,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_2_1281_0001_8000,WDAT_WORD,STRICT,PASS,2,word,1281,0001,8000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_2_1281_0001_00F0,WDAT_WORD,STRICT,FAIL,2,word,1281,0001,00F0,1281,1280,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_2_1281_0001_A55A,WDAT_WORD,STRICT,PASS,2,word,1281,0001,A55A,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_2_1281_0001_FFFF,WDAT_WORD,STRICT,FAIL,2,word,1281,0001,FFFF,1281,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_2_1281_0100_0000,WDAT_WORD,STRICT,PASS,2,word,1281,0100,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_2_1281_0100_0001,WDAT_WORD,STRICT,PASS,2,word,1281,0100,0001,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_2_1281_0100_8000,WDAT_WORD,STRICT,PASS,2,word,1281,0100,8000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_2_1281_0100_00F0,WDAT_WORD,STRICT,PASS,2,word,1281,0100,00F0,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_2_1281_0100_A55A,WDAT_WORD,STRICT,PASS,2,word,1281,0100,A55A,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_2_1281_0100_FFFF,WDAT_WORD,STRICT,PASS,2,word,1281,0100,FFFF,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_2_1281_3C5B_0000,WDAT_WORD,STRICT,PASS,2,word,1281,3C5B,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_2_1281_3C5B_0001,WDAT_WORD,STRICT,FAIL,2,word,1281,3C5B,0001,1281,1201,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_2_1281_3C5B_8000,WDAT_WORD,STRICT,PASS,2,word,1281,3C5B,8000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_2_1281_3C5B_00F0,WDAT_WORD,STRICT,FAIL,2,word,1281,3C5B,00F0,1281,1280,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_2_1281_3C5B_A55A,WDAT_WORD,STRICT,PASS,2,word,1281,3C5B,A55A,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_2_1281_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,2,word,1281,3C5B,FFFF,1281,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_3_0000_0000_0000,WDAT_WORD,STRICT,PASS,3,word,0000,0000,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_3_0000_0000_0001,WDAT_WORD,STRICT,PASS,3,word,0000,0000,0001,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_3_0000_0000_8000,WDAT_WORD,STRICT,PASS,3,word,0000,0000,8000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_3_0000_0000_00F0,WDAT_WORD,STRICT,PASS,3,word,0000,0000,00F0,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_3_0000_0000_A55A,WDAT_WORD,STRICT,PASS,3,word,0000,0000,A55A,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_3_0000_0000_FFFF,WDAT_WORD,STRICT,PASS,3,word,0000,0000,FFFF,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_3_0000_0001_0000,WDAT_WORD,STRICT,PASS,3,word,0000,0001,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_3_0000_0001_0001,WDAT_WORD,STRICT,FAIL,3,word,0000,0001,0001,0000,0080,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_3_0000_0001_8000,WDAT_WORD,STRICT,FAIL,3,word,0000,0001,8000,0000,0100,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_3_0000_0001_00F0,WDAT_WORD,STRICT,FAIL,3,word,0000,0001,00F0,0000,000F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_3_0000_0001_A55A,WDAT_WORD,STRICT,FAIL,3,word,0000,0001,A55A,0000,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_3_0000_0001_FFFF,WDAT_WORD,STRICT,FAIL,3,word,0000,0001,FFFF,0000,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_3_0000_0100_0000,WDAT_WORD,STRICT,PASS,3,word,0000,0100,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_3_0000_0100_0001,WDAT_WORD,STRICT,PASS,3,word,0000,0100,0001,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_3_0000_0100_8000,WDAT_WORD,STRICT,PASS,3,word,0000,0100,8000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_3_0000_0100_00F0,WDAT_WORD,STRICT,PASS,3,word,0000,0100,00F0,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_3_0000_0100_A55A,WDAT_WORD,STRICT,PASS,3,word,0000,0100,A55A,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_3_0000_0100_FFFF,WDAT_WORD,STRICT,PASS,3,word,0000,0100,FFFF,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_3_0000_3C5B_0000,WDAT_WORD,STRICT,PASS,3,word,0000,3C5B,0000,0000,0000,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_3_0000_3C5B_0001,WDAT_WORD,STRICT,FAIL,3,word,0000,3C5B,0001,0000,0080,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_3_0000_3C5B_8000,WDAT_WORD,STRICT,FAIL,3,word,0000,3C5B,8000,0000,0100,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_3_0000_3C5B_00F0,WDAT_WORD,STRICT,FAIL,3,word,0000,3C5B,00F0,0000,000F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_3_0000_3C5B_A55A,WDAT_WORD,STRICT,FAIL,3,word,0000,3C5B,A55A,0000,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_3_0000_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,3,word,0000,3C5B,FFFF,0000,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_3_FFFF_0000_0000,WDAT_WORD,STRICT,PASS,3,word,FFFF,0000,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_3_FFFF_0000_0001,WDAT_WORD,STRICT,PASS,3,word,FFFF,0000,0001,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_3_FFFF_0000_8000,WDAT_WORD,STRICT,PASS,3,word,FFFF,0000,8000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_3_FFFF_0000_00F0,WDAT_WORD,STRICT,PASS,3,word,FFFF,0000,00F0,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_3_FFFF_0000_A55A,WDAT_WORD,STRICT,PASS,3,word,FFFF,0000,A55A,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_3_FFFF_0000_FFFF,WDAT_WORD,STRICT,PASS,3,word,FFFF,0000,FFFF,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_3_FFFF_0001_0000,WDAT_WORD,STRICT,PASS,3,word,FFFF,0001,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_3_FFFF_0001_0001,WDAT_WORD,STRICT,PASS,3,word,FFFF,0001,0001,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_3_FFFF_0001_8000,WDAT_WORD,STRICT,PASS,3,word,FFFF,0001,8000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_3_FFFF_0001_00F0,WDAT_WORD,STRICT,PASS,3,word,FFFF,0001,00F0,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_3_FFFF_0001_A55A,WDAT_WORD,STRICT,PASS,3,word,FFFF,0001,A55A,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_3_FFFF_0001_FFFF,WDAT_WORD,STRICT,PASS,3,word,FFFF,0001,FFFF,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_3_FFFF_0100_0000,WDAT_WORD,STRICT,PASS,3,word,FFFF,0100,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_3_FFFF_0100_0001,WDAT_WORD,STRICT,PASS,3,word,FFFF,0100,0001,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_3_FFFF_0100_8000,WDAT_WORD,STRICT,PASS,3,word,FFFF,0100,8000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_3_FFFF_0100_00F0,WDAT_WORD,STRICT,PASS,3,word,FFFF,0100,00F0,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_3_FFFF_0100_A55A,WDAT_WORD,STRICT,PASS,3,word,FFFF,0100,A55A,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_3_FFFF_0100_FFFF,WDAT_WORD,STRICT,PASS,3,word,FFFF,0100,FFFF,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_3_FFFF_3C5B_0000,WDAT_WORD,STRICT,PASS,3,word,FFFF,3C5B,0000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_3_FFFF_3C5B_0001,WDAT_WORD,STRICT,PASS,3,word,FFFF,3C5B,0001,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_3_FFFF_3C5B_8000,WDAT_WORD,STRICT,PASS,3,word,FFFF,3C5B,8000,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_3_FFFF_3C5B_00F0,WDAT_WORD,STRICT,PASS,3,word,FFFF,3C5B,00F0,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_3_FFFF_3C5B_A55A,WDAT_WORD,STRICT,PASS,3,word,FFFF,3C5B,A55A,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_3_FFFF_3C5B_FFFF,WDAT_WORD,STRICT,PASS,3,word,FFFF,3C5B,FFFF,FFFF,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_3_A55A_0000_0000,WDAT_WORD,STRICT,PASS,3,word,A55A,0000,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_3_A55A_0000_0001,WDAT_WORD,STRICT,PASS,3,word,A55A,0000,0001,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_3_A55A_0000_8000,WDAT_WORD,STRICT,PASS,3,word,A55A,0000,8000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_3_A55A_0000_00F0,WDAT_WORD,STRICT,PASS,3,word,A55A,0000,00F0,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_3_A55A_0000_A55A,WDAT_WORD,STRICT,PASS,3,word,A55A,0000,A55A,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_3_A55A_0000_FFFF,WDAT_WORD,STRICT,PASS,3,word,A55A,0000,FFFF,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_3_A55A_0001_0000,WDAT_WORD,STRICT,PASS,3,word,A55A,0001,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_3_A55A_0001_0001,WDAT_WORD,STRICT,FAIL,3,word,A55A,0001,0001,A55A,A5DA,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_3_A55A_0001_8000,WDAT_WORD,STRICT,PASS,3,word,A55A,0001,8000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_3_A55A_0001_00F0,WDAT_WORD,STRICT,FAIL,3,word,A55A,0001,00F0,A55A,A55F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_3_A55A_0001_A55A,WDAT_WORD,STRICT,PASS,3,word,A55A,0001,A55A,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_3_A55A_0001_FFFF,WDAT_WORD,STRICT,FAIL,3,word,A55A,0001,FFFF,A55A,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_3_A55A_0100_0000,WDAT_WORD,STRICT,PASS,3,word,A55A,0100,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_3_A55A_0100_0001,WDAT_WORD,STRICT,PASS,3,word,A55A,0100,0001,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_3_A55A_0100_8000,WDAT_WORD,STRICT,PASS,3,word,A55A,0100,8000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_3_A55A_0100_00F0,WDAT_WORD,STRICT,PASS,3,word,A55A,0100,00F0,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_3_A55A_0100_A55A,WDAT_WORD,STRICT,PASS,3,word,A55A,0100,A55A,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_3_A55A_0100_FFFF,WDAT_WORD,STRICT,PASS,3,word,A55A,0100,FFFF,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_3_A55A_3C5B_0000,WDAT_WORD,STRICT,PASS,3,word,A55A,3C5B,0000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_3_A55A_3C5B_0001,WDAT_WORD,STRICT,FAIL,3,word,A55A,3C5B,0001,A55A,A5DA,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_3_A55A_3C5B_8000,WDAT_WORD,STRICT,PASS,3,word,A55A,3C5B,8000,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_3_A55A_3C5B_00F0,WDAT_WORD,STRICT,FAIL,3,word,A55A,3C5B,00F0,A55A,A55F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_3_A55A_3C5B_A55A,WDAT_WORD,STRICT,PASS,3,word,A55A,3C5B,A55A,A55A,A55A,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_3_A55A_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,3,word,A55A,3C5B,FFFF,A55A,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_3_1281_0000_0000,WDAT_WORD,STRICT,PASS,3,word,1281,0000,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_3_1281_0000_0001,WDAT_WORD,STRICT,PASS,3,word,1281,0000,0001,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_3_1281_0000_8000,WDAT_WORD,STRICT,PASS,3,word,1281,0000,8000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_3_1281_0000_00F0,WDAT_WORD,STRICT,PASS,3,word,1281,0000,00F0,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_3_1281_0000_A55A,WDAT_WORD,STRICT,PASS,3,word,1281,0000,A55A,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_3_1281_0000_FFFF,WDAT_WORD,STRICT,PASS,3,word,1281,0000,FFFF,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_3_1281_0001_0000,WDAT_WORD,STRICT,PASS,3,word,1281,0001,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_3_1281_0001_0001,WDAT_WORD,STRICT,PASS,3,word,1281,0001,0001,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_3_1281_0001_8000,WDAT_WORD,STRICT,FAIL,3,word,1281,0001,8000,1281,1381,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_3_1281_0001_00F0,WDAT_WORD,STRICT,FAIL,3,word,1281,0001,00F0,1281,128F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_3_1281_0001_A55A,WDAT_WORD,STRICT,FAIL,3,word,1281,0001,A55A,1281,B7DB,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_3_1281_0001_FFFF,WDAT_WORD,STRICT,FAIL,3,word,1281,0001,FFFF,1281,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+W_3_1281_0100_0000,WDAT_WORD,STRICT,PASS,3,word,1281,0100,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0000
+W_3_1281_0100_0001,WDAT_WORD,STRICT,PASS,3,word,1281,0100,0001,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0080
+W_3_1281_0100_8000,WDAT_WORD,STRICT,PASS,3,word,1281,0100,8000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=0100
+W_3_1281_0100_00F0,WDAT_WORD,STRICT,PASS,3,word,1281,0100,00F0,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=000F
+W_3_1281_0100_A55A,WDAT_WORD,STRICT,PASS,3,word,1281,0100,A55A,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=A55A
+W_3_1281_0100_FFFF,WDAT_WORD,STRICT,PASS,3,word,1281,0100,FFFF,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=0000 cpu-mask=FFFF
+W_3_1281_3C5B_0000,WDAT_WORD,STRICT,PASS,3,word,1281,3C5B,0000,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0000
+W_3_1281_3C5B_0001,WDAT_WORD,STRICT,PASS,3,word,1281,3C5B,0001,1281,1281,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0080
+W_3_1281_3C5B_8000,WDAT_WORD,STRICT,FAIL,3,word,1281,3C5B,8000,1281,1381,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=0100
+W_3_1281_3C5B_00F0,WDAT_WORD,STRICT,FAIL,3,word,1281,3C5B,00F0,1281,128F,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=000F
+W_3_1281_3C5B_A55A,WDAT_WORD,STRICT,FAIL,3,word,1281,3C5B,A55A,1281,B7DB,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=A55A
+W_3_1281_3C5B_FFFF,WDAT_WORD,STRICT,FAIL,3,word,1281,3C5B,FFFF,1281,FFFF,0/,-,changed=0 expected_changed=0 WG0 pattern=FFFF cpu-mask=FFFF
+B2_R0_O0000_S00_M0000,WDAT_BYTE,INFO,OBS,0,low,0000,00,0000,0000,-,0/,-,changed=0
+B2_R0_O0000_S00_M00FF,WDAT_BYTE,INFO,OBS,0,low,0000,00,00FF,0000,-,0/,-,changed=0
+B2_R0_O0000_S00_MFF00,WDAT_BYTE,INFO,OBS,0,low,0000,00,FF00,0000,-,0/,-,changed=0
+B2_R0_O0000_S00_MA55A,WDAT_BYTE,INFO,OBS,0,low,0000,00,A55A,0000,-,0/,-,changed=0
+B2_R0_O0000_S00_MFFFF,WDAT_BYTE,INFO,OBS,0,low,0000,00,FFFF,0000,-,0/,-,changed=0
+B2_R0_O0000_S01_M0000,WDAT_BYTE,INFO,OBS,0,low,0000,01,0000,0000,-,0/,-,changed=0
+B2_R0_O0000_S01_M00FF,WDAT_BYTE,INFO,OBS,0,low,0000,01,00FF,0000,-,0/,-,changed=0
+B2_R0_O0000_S01_MFF00,WDAT_BYTE,INFO,OBS,0,low,0000,01,FF00,0000,-,0/,-,changed=0
+B2_R0_O0000_S01_MA55A,WDAT_BYTE,INFO,OBS,0,low,0000,01,A55A,0000,-,0/,-,changed=0
+B2_R0_O0000_S01_MFFFF,WDAT_BYTE,INFO,OBS,0,low,0000,01,FFFF,0000,-,0/,-,changed=0
+B2_R0_O0000_S96_M0000,WDAT_BYTE,INFO,OBS,0,low,0000,96,0000,0000,-,0/,-,changed=0
+B2_R0_O0000_S96_M00FF,WDAT_BYTE,INFO,OBS,0,low,0000,96,00FF,0000,-,0/,-,changed=0
+B2_R0_O0000_S96_MFF00,WDAT_BYTE,INFO,OBS,0,low,0000,96,FF00,0000,-,0/,-,changed=0
+B2_R0_O0000_S96_MA55A,WDAT_BYTE,INFO,OBS,0,low,0000,96,A55A,0000,-,0/,-,changed=0
+B2_R0_O0000_S96_MFFFF,WDAT_BYTE,INFO,OBS,0,low,0000,96,FFFF,0000,-,0/,-,changed=0
+B2_R0_O0000_SFF_M0000,WDAT_BYTE,INFO,OBS,0,low,0000,FF,0000,0000,-,0/,-,changed=0
+B2_R0_O0000_SFF_M00FF,WDAT_BYTE,INFO,OBS,0,low,0000,FF,00FF,0000,-,0/,-,changed=0
+B2_R0_O0000_SFF_MFF00,WDAT_BYTE,INFO,OBS,0,low,0000,FF,FF00,0000,-,0/,-,changed=0
+B2_R0_O0000_SFF_MA55A,WDAT_BYTE,INFO,OBS,0,low,0000,FF,A55A,0000,-,0/,-,changed=0
+B2_R0_O0000_SFF_MFFFF,WDAT_BYTE,INFO,OBS,0,low,0000,FF,FFFF,0000,-,0/,-,changed=0
+B2_R0_OFFFF_S00_M0000,WDAT_BYTE,INFO,OBS,0,low,FFFF,00,0000,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S00_M00FF,WDAT_BYTE,INFO,OBS,0,low,FFFF,00,00FF,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S00_MFF00,WDAT_BYTE,INFO,OBS,0,low,FFFF,00,FF00,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S00_MA55A,WDAT_BYTE,INFO,OBS,0,low,FFFF,00,A55A,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S00_MFFFF,WDAT_BYTE,INFO,OBS,0,low,FFFF,00,FFFF,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S01_M0000,WDAT_BYTE,INFO,OBS,0,low,FFFF,01,0000,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S01_M00FF,WDAT_BYTE,INFO,OBS,0,low,FFFF,01,00FF,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S01_MFF00,WDAT_BYTE,INFO,OBS,0,low,FFFF,01,FF00,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S01_MA55A,WDAT_BYTE,INFO,OBS,0,low,FFFF,01,A55A,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S01_MFFFF,WDAT_BYTE,INFO,OBS,0,low,FFFF,01,FFFF,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S96_M0000,WDAT_BYTE,INFO,OBS,0,low,FFFF,96,0000,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S96_M00FF,WDAT_BYTE,INFO,OBS,0,low,FFFF,96,00FF,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S96_MFF00,WDAT_BYTE,INFO,OBS,0,low,FFFF,96,FF00,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S96_MA55A,WDAT_BYTE,INFO,OBS,0,low,FFFF,96,A55A,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_S96_MFFFF,WDAT_BYTE,INFO,OBS,0,low,FFFF,96,FFFF,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_SFF_M0000,WDAT_BYTE,INFO,OBS,0,low,FFFF,FF,0000,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_SFF_M00FF,WDAT_BYTE,INFO,OBS,0,low,FFFF,FF,00FF,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_SFF_MFF00,WDAT_BYTE,INFO,OBS,0,low,FFFF,FF,FF00,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_SFF_MA55A,WDAT_BYTE,INFO,OBS,0,low,FFFF,FF,A55A,FFFF,-,0/,-,changed=0
+B2_R0_OFFFF_SFF_MFFFF,WDAT_BYTE,INFO,OBS,0,low,FFFF,FF,FFFF,FFFF,-,0/,-,changed=0
+B2_R0_OA55A_S00_M0000,WDAT_BYTE,INFO,OBS,0,low,A55A,00,0000,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S00_M00FF,WDAT_BYTE,INFO,OBS,0,low,A55A,00,00FF,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S00_MFF00,WDAT_BYTE,INFO,OBS,0,low,A55A,00,FF00,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S00_MA55A,WDAT_BYTE,INFO,OBS,0,low,A55A,00,A55A,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S00_MFFFF,WDAT_BYTE,INFO,OBS,0,low,A55A,00,FFFF,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S01_M0000,WDAT_BYTE,INFO,OBS,0,low,A55A,01,0000,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S01_M00FF,WDAT_BYTE,INFO,OBS,0,low,A55A,01,00FF,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S01_MFF00,WDAT_BYTE,INFO,OBS,0,low,A55A,01,FF00,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S01_MA55A,WDAT_BYTE,INFO,OBS,0,low,A55A,01,A55A,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S01_MFFFF,WDAT_BYTE,INFO,OBS,0,low,A55A,01,FFFF,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S96_M0000,WDAT_BYTE,INFO,OBS,0,low,A55A,96,0000,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S96_M00FF,WDAT_BYTE,INFO,OBS,0,low,A55A,96,00FF,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S96_MFF00,WDAT_BYTE,INFO,OBS,0,low,A55A,96,FF00,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S96_MA55A,WDAT_BYTE,INFO,OBS,0,low,A55A,96,A55A,A55A,-,0/,-,changed=0
+B2_R0_OA55A_S96_MFFFF,WDAT_BYTE,INFO,OBS,0,low,A55A,96,FFFF,A55A,-,0/,-,changed=0
+B2_R0_OA55A_SFF_M0000,WDAT_BYTE,INFO,OBS,0,low,A55A,FF,0000,A55A,-,0/,-,changed=0
+B2_R0_OA55A_SFF_M00FF,WDAT_BYTE,INFO,OBS,0,low,A55A,FF,00FF,A55A,-,0/,-,changed=0
+B2_R0_OA55A_SFF_MFF00,WDAT_BYTE,INFO,OBS,0,low,A55A,FF,FF00,A55A,-,0/,-,changed=0
+B2_R0_OA55A_SFF_MA55A,WDAT_BYTE,INFO,OBS,0,low,A55A,FF,A55A,A55A,-,0/,-,changed=0
+B2_R0_OA55A_SFF_MFFFF,WDAT_BYTE,INFO,OBS,0,low,A55A,FF,FFFF,A55A,-,0/,-,changed=0
+B2_R1_O0000_S00_M0000,WDAT_BYTE,INFO,OBS,1,low,0000,00,0000,0000,-,0/,-,changed=0
+B2_R1_O0000_S00_M00FF,WDAT_BYTE,INFO,OBS,1,low,0000,00,00FF,0000,-,0/,-,changed=0
+B2_R1_O0000_S00_MFF00,WDAT_BYTE,INFO,OBS,1,low,0000,00,FF00,0000,-,0/,-,changed=0
+B2_R1_O0000_S00_MA55A,WDAT_BYTE,INFO,OBS,1,low,0000,00,A55A,0000,-,0/,-,changed=0
+B2_R1_O0000_S00_MFFFF,WDAT_BYTE,INFO,OBS,1,low,0000,00,FFFF,0000,-,0/,-,changed=0
+B2_R1_O0000_S01_M0000,WDAT_BYTE,INFO,OBS,1,low,0000,01,0000,0000,-,0/,-,changed=0
+B2_R1_O0000_S01_M00FF,WDAT_BYTE,INFO,OBS,1,low,0000,01,00FF,0000,-,0/,-,changed=0
+B2_R1_O0000_S01_MFF00,WDAT_BYTE,INFO,OBS,1,low,0000,01,FF00,0000,-,0/,-,changed=0
+B2_R1_O0000_S01_MA55A,WDAT_BYTE,INFO,OBS,1,low,0000,01,A55A,0000,-,0/,-,changed=0
+B2_R1_O0000_S01_MFFFF,WDAT_BYTE,INFO,OBS,1,low,0000,01,FFFF,0000,-,0/,-,changed=0
+B2_R1_O0000_S96_M0000,WDAT_BYTE,INFO,OBS,1,low,0000,96,0000,0000,-,0/,-,changed=0
+B2_R1_O0000_S96_M00FF,WDAT_BYTE,INFO,OBS,1,low,0000,96,00FF,0000,-,0/,-,changed=0
+B2_R1_O0000_S96_MFF00,WDAT_BYTE,INFO,OBS,1,low,0000,96,FF00,0000,-,0/,-,changed=0
+B2_R1_O0000_S96_MA55A,WDAT_BYTE,INFO,OBS,1,low,0000,96,A55A,0000,-,0/,-,changed=0
+B2_R1_O0000_S96_MFFFF,WDAT_BYTE,INFO,OBS,1,low,0000,96,FFFF,0000,-,0/,-,changed=0
+B2_R1_O0000_SFF_M0000,WDAT_BYTE,INFO,OBS,1,low,0000,FF,0000,0000,-,0/,-,changed=0
+B2_R1_O0000_SFF_M00FF,WDAT_BYTE,INFO,OBS,1,low,0000,FF,00FF,0000,-,0/,-,changed=0
+B2_R1_O0000_SFF_MFF00,WDAT_BYTE,INFO,OBS,1,low,0000,FF,FF00,0000,-,0/,-,changed=0
+B2_R1_O0000_SFF_MA55A,WDAT_BYTE,INFO,OBS,1,low,0000,FF,A55A,0000,-,0/,-,changed=0
+B2_R1_O0000_SFF_MFFFF,WDAT_BYTE,INFO,OBS,1,low,0000,FF,FFFF,0000,-,0/,-,changed=0
+B2_R1_OFFFF_S00_M0000,WDAT_BYTE,INFO,OBS,1,low,FFFF,00,0000,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S00_M00FF,WDAT_BYTE,INFO,OBS,1,low,FFFF,00,00FF,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S00_MFF00,WDAT_BYTE,INFO,OBS,1,low,FFFF,00,FF00,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S00_MA55A,WDAT_BYTE,INFO,OBS,1,low,FFFF,00,A55A,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S00_MFFFF,WDAT_BYTE,INFO,OBS,1,low,FFFF,00,FFFF,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S01_M0000,WDAT_BYTE,INFO,OBS,1,low,FFFF,01,0000,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S01_M00FF,WDAT_BYTE,INFO,OBS,1,low,FFFF,01,00FF,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S01_MFF00,WDAT_BYTE,INFO,OBS,1,low,FFFF,01,FF00,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S01_MA55A,WDAT_BYTE,INFO,OBS,1,low,FFFF,01,A55A,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S01_MFFFF,WDAT_BYTE,INFO,OBS,1,low,FFFF,01,FFFF,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S96_M0000,WDAT_BYTE,INFO,OBS,1,low,FFFF,96,0000,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S96_M00FF,WDAT_BYTE,INFO,OBS,1,low,FFFF,96,00FF,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S96_MFF00,WDAT_BYTE,INFO,OBS,1,low,FFFF,96,FF00,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S96_MA55A,WDAT_BYTE,INFO,OBS,1,low,FFFF,96,A55A,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_S96_MFFFF,WDAT_BYTE,INFO,OBS,1,low,FFFF,96,FFFF,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_SFF_M0000,WDAT_BYTE,INFO,OBS,1,low,FFFF,FF,0000,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_SFF_M00FF,WDAT_BYTE,INFO,OBS,1,low,FFFF,FF,00FF,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_SFF_MFF00,WDAT_BYTE,INFO,OBS,1,low,FFFF,FF,FF00,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_SFF_MA55A,WDAT_BYTE,INFO,OBS,1,low,FFFF,FF,A55A,FFFF,-,0/,-,changed=0
+B2_R1_OFFFF_SFF_MFFFF,WDAT_BYTE,INFO,OBS,1,low,FFFF,FF,FFFF,FFFF,-,0/,-,changed=0
+B2_R1_OA55A_S00_M0000,WDAT_BYTE,INFO,OBS,1,low,A55A,00,0000,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S00_M00FF,WDAT_BYTE,INFO,OBS,1,low,A55A,00,00FF,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S00_MFF00,WDAT_BYTE,INFO,OBS,1,low,A55A,00,FF00,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S00_MA55A,WDAT_BYTE,INFO,OBS,1,low,A55A,00,A55A,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S00_MFFFF,WDAT_BYTE,INFO,OBS,1,low,A55A,00,FFFF,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S01_M0000,WDAT_BYTE,INFO,OBS,1,low,A55A,01,0000,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S01_M00FF,WDAT_BYTE,INFO,OBS,1,low,A55A,01,00FF,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S01_MFF00,WDAT_BYTE,INFO,OBS,1,low,A55A,01,FF00,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S01_MA55A,WDAT_BYTE,INFO,OBS,1,low,A55A,01,A55A,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S01_MFFFF,WDAT_BYTE,INFO,OBS,1,low,A55A,01,FFFF,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S96_M0000,WDAT_BYTE,INFO,OBS,1,low,A55A,96,0000,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S96_M00FF,WDAT_BYTE,INFO,OBS,1,low,A55A,96,00FF,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S96_MFF00,WDAT_BYTE,INFO,OBS,1,low,A55A,96,FF00,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S96_MA55A,WDAT_BYTE,INFO,OBS,1,low,A55A,96,A55A,A55A,-,0/,-,changed=0
+B2_R1_OA55A_S96_MFFFF,WDAT_BYTE,INFO,OBS,1,low,A55A,96,FFFF,A55A,-,0/,-,changed=0
+B2_R1_OA55A_SFF_M0000,WDAT_BYTE,INFO,OBS,1,low,A55A,FF,0000,A55A,-,0/,-,changed=0
+B2_R1_OA55A_SFF_M00FF,WDAT_BYTE,INFO,OBS,1,low,A55A,FF,00FF,A55A,-,0/,-,changed=0
+B2_R1_OA55A_SFF_MFF00,WDAT_BYTE,INFO,OBS,1,low,A55A,FF,FF00,A55A,-,0/,-,changed=0
+B2_R1_OA55A_SFF_MA55A,WDAT_BYTE,INFO,OBS,1,low,A55A,FF,A55A,A55A,-,0/,-,changed=0
+B2_R1_OA55A_SFF_MFFFF,WDAT_BYTE,INFO,OBS,1,low,A55A,FF,FFFF,A55A,-,0/,-,changed=0
+B2_R2_O0000_S00_M0000,WDAT_BYTE,INFO,OBS,2,low,0000,00,0000,0000,-,0/,-,changed=0
+B2_R2_O0000_S00_M00FF,WDAT_BYTE,INFO,OBS,2,low,0000,00,00FF,0000,-,0/,-,changed=0
+B2_R2_O0000_S00_MFF00,WDAT_BYTE,INFO,OBS,2,low,0000,00,FF00,0000,-,0/,-,changed=0
+B2_R2_O0000_S00_MA55A,WDAT_BYTE,INFO,OBS,2,low,0000,00,A55A,0000,-,0/,-,changed=0
+B2_R2_O0000_S00_MFFFF,WDAT_BYTE,INFO,OBS,2,low,0000,00,FFFF,0000,-,0/,-,changed=0
+B2_R2_O0000_S01_M0000,WDAT_BYTE,INFO,OBS,2,low,0000,01,0000,0000,-,0/,-,changed=0
+B2_R2_O0000_S01_M00FF,WDAT_BYTE,INFO,OBS,2,low,0000,01,00FF,0000,-,0/,-,changed=0
+B2_R2_O0000_S01_MFF00,WDAT_BYTE,INFO,OBS,2,low,0000,01,FF00,0000,-,0/,-,changed=0
+B2_R2_O0000_S01_MA55A,WDAT_BYTE,INFO,OBS,2,low,0000,01,A55A,0000,-,0/,-,changed=0
+B2_R2_O0000_S01_MFFFF,WDAT_BYTE,INFO,OBS,2,low,0000,01,FFFF,0000,-,0/,-,changed=0
+B2_R2_O0000_S96_M0000,WDAT_BYTE,INFO,OBS,2,low,0000,96,0000,0000,-,0/,-,changed=0
+B2_R2_O0000_S96_M00FF,WDAT_BYTE,INFO,OBS,2,low,0000,96,00FF,0000,-,0/,-,changed=0
+B2_R2_O0000_S96_MFF00,WDAT_BYTE,INFO,OBS,2,low,0000,96,FF00,0000,-,0/,-,changed=0
+B2_R2_O0000_S96_MA55A,WDAT_BYTE,INFO,OBS,2,low,0000,96,A55A,0000,-,0/,-,changed=0
+B2_R2_O0000_S96_MFFFF,WDAT_BYTE,INFO,OBS,2,low,0000,96,FFFF,0000,-,0/,-,changed=0
+B2_R2_O0000_SFF_M0000,WDAT_BYTE,INFO,OBS,2,low,0000,FF,0000,0000,-,0/,-,changed=0
+B2_R2_O0000_SFF_M00FF,WDAT_BYTE,INFO,OBS,2,low,0000,FF,00FF,0000,-,0/,-,changed=0
+B2_R2_O0000_SFF_MFF00,WDAT_BYTE,INFO,OBS,2,low,0000,FF,FF00,0000,-,0/,-,changed=0
+B2_R2_O0000_SFF_MA55A,WDAT_BYTE,INFO,OBS,2,low,0000,FF,A55A,0000,-,0/,-,changed=0
+B2_R2_O0000_SFF_MFFFF,WDAT_BYTE,INFO,OBS,2,low,0000,FF,FFFF,0000,-,0/,-,changed=0
+B2_R2_OFFFF_S00_M0000,WDAT_BYTE,INFO,OBS,2,low,FFFF,00,0000,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S00_M00FF,WDAT_BYTE,INFO,OBS,2,low,FFFF,00,00FF,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S00_MFF00,WDAT_BYTE,INFO,OBS,2,low,FFFF,00,FF00,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S00_MA55A,WDAT_BYTE,INFO,OBS,2,low,FFFF,00,A55A,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S00_MFFFF,WDAT_BYTE,INFO,OBS,2,low,FFFF,00,FFFF,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S01_M0000,WDAT_BYTE,INFO,OBS,2,low,FFFF,01,0000,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S01_M00FF,WDAT_BYTE,INFO,OBS,2,low,FFFF,01,00FF,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S01_MFF00,WDAT_BYTE,INFO,OBS,2,low,FFFF,01,FF00,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S01_MA55A,WDAT_BYTE,INFO,OBS,2,low,FFFF,01,A55A,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S01_MFFFF,WDAT_BYTE,INFO,OBS,2,low,FFFF,01,FFFF,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S96_M0000,WDAT_BYTE,INFO,OBS,2,low,FFFF,96,0000,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S96_M00FF,WDAT_BYTE,INFO,OBS,2,low,FFFF,96,00FF,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S96_MFF00,WDAT_BYTE,INFO,OBS,2,low,FFFF,96,FF00,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S96_MA55A,WDAT_BYTE,INFO,OBS,2,low,FFFF,96,A55A,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_S96_MFFFF,WDAT_BYTE,INFO,OBS,2,low,FFFF,96,FFFF,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_SFF_M0000,WDAT_BYTE,INFO,OBS,2,low,FFFF,FF,0000,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_SFF_M00FF,WDAT_BYTE,INFO,OBS,2,low,FFFF,FF,00FF,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_SFF_MFF00,WDAT_BYTE,INFO,OBS,2,low,FFFF,FF,FF00,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_SFF_MA55A,WDAT_BYTE,INFO,OBS,2,low,FFFF,FF,A55A,FFFF,-,0/,-,changed=0
+B2_R2_OFFFF_SFF_MFFFF,WDAT_BYTE,INFO,OBS,2,low,FFFF,FF,FFFF,FFFF,-,0/,-,changed=0
+B2_R2_OA55A_S00_M0000,WDAT_BYTE,INFO,OBS,2,low,A55A,00,0000,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S00_M00FF,WDAT_BYTE,INFO,OBS,2,low,A55A,00,00FF,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S00_MFF00,WDAT_BYTE,INFO,OBS,2,low,A55A,00,FF00,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S00_MA55A,WDAT_BYTE,INFO,OBS,2,low,A55A,00,A55A,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S00_MFFFF,WDAT_BYTE,INFO,OBS,2,low,A55A,00,FFFF,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S01_M0000,WDAT_BYTE,INFO,OBS,2,low,A55A,01,0000,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S01_M00FF,WDAT_BYTE,INFO,OBS,2,low,A55A,01,00FF,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S01_MFF00,WDAT_BYTE,INFO,OBS,2,low,A55A,01,FF00,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S01_MA55A,WDAT_BYTE,INFO,OBS,2,low,A55A,01,A55A,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S01_MFFFF,WDAT_BYTE,INFO,OBS,2,low,A55A,01,FFFF,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S96_M0000,WDAT_BYTE,INFO,OBS,2,low,A55A,96,0000,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S96_M00FF,WDAT_BYTE,INFO,OBS,2,low,A55A,96,00FF,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S96_MFF00,WDAT_BYTE,INFO,OBS,2,low,A55A,96,FF00,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S96_MA55A,WDAT_BYTE,INFO,OBS,2,low,A55A,96,A55A,A55A,-,0/,-,changed=0
+B2_R2_OA55A_S96_MFFFF,WDAT_BYTE,INFO,OBS,2,low,A55A,96,FFFF,A55A,-,0/,-,changed=0
+B2_R2_OA55A_SFF_M0000,WDAT_BYTE,INFO,OBS,2,low,A55A,FF,0000,A55A,-,0/,-,changed=0
+B2_R2_OA55A_SFF_M00FF,WDAT_BYTE,INFO,OBS,2,low,A55A,FF,00FF,A55A,-,0/,-,changed=0
+B2_R2_OA55A_SFF_MFF00,WDAT_BYTE,INFO,OBS,2,low,A55A,FF,FF00,A55A,-,0/,-,changed=0
+B2_R2_OA55A_SFF_MA55A,WDAT_BYTE,INFO,OBS,2,low,A55A,FF,A55A,A55A,-,0/,-,changed=0
+B2_R2_OA55A_SFF_MFFFF,WDAT_BYTE,INFO,OBS,2,low,A55A,FF,FFFF,A55A,-,0/,-,changed=0
+B2_R3_O0000_S00_M0000,WDAT_BYTE,INFO,OBS,3,low,0000,00,0000,0000,-,0/,-,changed=0
+B2_R3_O0000_S00_M00FF,WDAT_BYTE,INFO,OBS,3,low,0000,00,00FF,0000,-,0/,-,changed=0
+B2_R3_O0000_S00_MFF00,WDAT_BYTE,INFO,OBS,3,low,0000,00,FF00,0000,-,0/,-,changed=0
+B2_R3_O0000_S00_MA55A,WDAT_BYTE,INFO,OBS,3,low,0000,00,A55A,0000,-,0/,-,changed=0
+B2_R3_O0000_S00_MFFFF,WDAT_BYTE,INFO,OBS,3,low,0000,00,FFFF,0000,-,0/,-,changed=0
+B2_R3_O0000_S01_M0000,WDAT_BYTE,INFO,OBS,3,low,0000,01,0000,0000,-,0/,-,changed=0
+B2_R3_O0000_S01_M00FF,WDAT_BYTE,INFO,OBS,3,low,0000,01,00FF,0000,-,0/,-,changed=0
+B2_R3_O0000_S01_MFF00,WDAT_BYTE,INFO,OBS,3,low,0000,01,FF00,0000,-,0/,-,changed=0
+B2_R3_O0000_S01_MA55A,WDAT_BYTE,INFO,OBS,3,low,0000,01,A55A,0000,-,0/,-,changed=0
+B2_R3_O0000_S01_MFFFF,WDAT_BYTE,INFO,OBS,3,low,0000,01,FFFF,0000,-,0/,-,changed=0
+B2_R3_O0000_S96_M0000,WDAT_BYTE,INFO,OBS,3,low,0000,96,0000,0000,-,0/,-,changed=0
+B2_R3_O0000_S96_M00FF,WDAT_BYTE,INFO,OBS,3,low,0000,96,00FF,0000,-,0/,-,changed=0
+B2_R3_O0000_S96_MFF00,WDAT_BYTE,INFO,OBS,3,low,0000,96,FF00,0000,-,0/,-,changed=0
+B2_R3_O0000_S96_MA55A,WDAT_BYTE,INFO,OBS,3,low,0000,96,A55A,0000,-,0/,-,changed=0
+B2_R3_O0000_S96_MFFFF,WDAT_BYTE,INFO,OBS,3,low,0000,96,FFFF,0000,-,0/,-,changed=0
+B2_R3_O0000_SFF_M0000,WDAT_BYTE,INFO,OBS,3,low,0000,FF,0000,0000,-,0/,-,changed=0
+B2_R3_O0000_SFF_M00FF,WDAT_BYTE,INFO,OBS,3,low,0000,FF,00FF,0000,-,0/,-,changed=0
+B2_R3_O0000_SFF_MFF00,WDAT_BYTE,INFO,OBS,3,low,0000,FF,FF00,0000,-,0/,-,changed=0
+B2_R3_O0000_SFF_MA55A,WDAT_BYTE,INFO,OBS,3,low,0000,FF,A55A,0000,-,0/,-,changed=0
+B2_R3_O0000_SFF_MFFFF,WDAT_BYTE,INFO,OBS,3,low,0000,FF,FFFF,0000,-,0/,-,changed=0
+B2_R3_OFFFF_S00_M0000,WDAT_BYTE,INFO,OBS,3,low,FFFF,00,0000,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S00_M00FF,WDAT_BYTE,INFO,OBS,3,low,FFFF,00,00FF,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S00_MFF00,WDAT_BYTE,INFO,OBS,3,low,FFFF,00,FF00,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S00_MA55A,WDAT_BYTE,INFO,OBS,3,low,FFFF,00,A55A,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S00_MFFFF,WDAT_BYTE,INFO,OBS,3,low,FFFF,00,FFFF,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S01_M0000,WDAT_BYTE,INFO,OBS,3,low,FFFF,01,0000,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S01_M00FF,WDAT_BYTE,INFO,OBS,3,low,FFFF,01,00FF,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S01_MFF00,WDAT_BYTE,INFO,OBS,3,low,FFFF,01,FF00,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S01_MA55A,WDAT_BYTE,INFO,OBS,3,low,FFFF,01,A55A,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S01_MFFFF,WDAT_BYTE,INFO,OBS,3,low,FFFF,01,FFFF,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S96_M0000,WDAT_BYTE,INFO,OBS,3,low,FFFF,96,0000,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S96_M00FF,WDAT_BYTE,INFO,OBS,3,low,FFFF,96,00FF,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S96_MFF00,WDAT_BYTE,INFO,OBS,3,low,FFFF,96,FF00,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S96_MA55A,WDAT_BYTE,INFO,OBS,3,low,FFFF,96,A55A,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_S96_MFFFF,WDAT_BYTE,INFO,OBS,3,low,FFFF,96,FFFF,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_SFF_M0000,WDAT_BYTE,INFO,OBS,3,low,FFFF,FF,0000,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_SFF_M00FF,WDAT_BYTE,INFO,OBS,3,low,FFFF,FF,00FF,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_SFF_MFF00,WDAT_BYTE,INFO,OBS,3,low,FFFF,FF,FF00,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_SFF_MA55A,WDAT_BYTE,INFO,OBS,3,low,FFFF,FF,A55A,FFFF,-,0/,-,changed=0
+B2_R3_OFFFF_SFF_MFFFF,WDAT_BYTE,INFO,OBS,3,low,FFFF,FF,FFFF,FFFF,-,0/,-,changed=0
+B2_R3_OA55A_S00_M0000,WDAT_BYTE,INFO,OBS,3,low,A55A,00,0000,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S00_M00FF,WDAT_BYTE,INFO,OBS,3,low,A55A,00,00FF,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S00_MFF00,WDAT_BYTE,INFO,OBS,3,low,A55A,00,FF00,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S00_MA55A,WDAT_BYTE,INFO,OBS,3,low,A55A,00,A55A,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S00_MFFFF,WDAT_BYTE,INFO,OBS,3,low,A55A,00,FFFF,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S01_M0000,WDAT_BYTE,INFO,OBS,3,low,A55A,01,0000,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S01_M00FF,WDAT_BYTE,INFO,OBS,3,low,A55A,01,00FF,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S01_MFF00,WDAT_BYTE,INFO,OBS,3,low,A55A,01,FF00,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S01_MA55A,WDAT_BYTE,INFO,OBS,3,low,A55A,01,A55A,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S01_MFFFF,WDAT_BYTE,INFO,OBS,3,low,A55A,01,FFFF,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S96_M0000,WDAT_BYTE,INFO,OBS,3,low,A55A,96,0000,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S96_M00FF,WDAT_BYTE,INFO,OBS,3,low,A55A,96,00FF,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S96_MFF00,WDAT_BYTE,INFO,OBS,3,low,A55A,96,FF00,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S96_MA55A,WDAT_BYTE,INFO,OBS,3,low,A55A,96,A55A,A55A,-,0/,-,changed=0
+B2_R3_OA55A_S96_MFFFF,WDAT_BYTE,INFO,OBS,3,low,A55A,96,FFFF,A55A,-,0/,-,changed=0
+B2_R3_OA55A_SFF_M0000,WDAT_BYTE,INFO,OBS,3,low,A55A,FF,0000,A55A,-,0/,-,changed=0
+B2_R3_OA55A_SFF_M00FF,WDAT_BYTE,INFO,OBS,3,low,A55A,FF,00FF,A55A,-,0/,-,changed=0
+B2_R3_OA55A_SFF_MFF00,WDAT_BYTE,INFO,OBS,3,low,A55A,FF,FF00,A55A,-,0/,-,changed=0
+B2_R3_OA55A_SFF_MA55A,WDAT_BYTE,INFO,OBS,3,low,A55A,FF,A55A,A55A,-,0/,-,changed=0
+B2_R3_OA55A_SFF_MFFFF,WDAT_BYTE,INFO,OBS,3,low,A55A,FF,FFFF,A55A,-,0/,-,changed=0
+B3_R0_O0000_S00_M0000,WDAT_BYTE,INFO,OBS,0,high,0000,00,0000,0000,-,0/,-,changed=0
+B3_R0_O0000_S00_M00FF,WDAT_BYTE,INFO,OBS,0,high,0000,00,00FF,0000,-,0/,-,changed=0
+B3_R0_O0000_S00_MFF00,WDAT_BYTE,INFO,OBS,0,high,0000,00,FF00,0000,-,0/,-,changed=0
+B3_R0_O0000_S00_MA55A,WDAT_BYTE,INFO,OBS,0,high,0000,00,A55A,0000,-,0/,-,changed=0
+B3_R0_O0000_S00_MFFFF,WDAT_BYTE,INFO,OBS,0,high,0000,00,FFFF,0000,-,0/,-,changed=0
+B3_R0_O0000_S01_M0000,WDAT_BYTE,INFO,OBS,0,high,0000,01,0000,0000,-,0/,-,changed=0
+B3_R0_O0000_S01_M00FF,WDAT_BYTE,INFO,OBS,0,high,0000,01,00FF,0000,-,0/,-,changed=0
+B3_R0_O0000_S01_MFF00,WDAT_BYTE,INFO,OBS,0,high,0000,01,FF00,0000,-,0/,-,changed=0
+B3_R0_O0000_S01_MA55A,WDAT_BYTE,INFO,OBS,0,high,0000,01,A55A,0000,-,0/,-,changed=0
+B3_R0_O0000_S01_MFFFF,WDAT_BYTE,INFO,OBS,0,high,0000,01,FFFF,0000,-,0/,-,changed=0
+B3_R0_O0000_S96_M0000,WDAT_BYTE,INFO,OBS,0,high,0000,96,0000,0000,-,0/,-,changed=0
+B3_R0_O0000_S96_M00FF,WDAT_BYTE,INFO,OBS,0,high,0000,96,00FF,0000,-,0/,-,changed=0
+B3_R0_O0000_S96_MFF00,WDAT_BYTE,INFO,OBS,0,high,0000,96,FF00,0000,-,0/,-,changed=0
+B3_R0_O0000_S96_MA55A,WDAT_BYTE,INFO,OBS,0,high,0000,96,A55A,0000,-,0/,-,changed=0
+B3_R0_O0000_S96_MFFFF,WDAT_BYTE,INFO,OBS,0,high,0000,96,FFFF,0000,-,0/,-,changed=0
+B3_R0_O0000_SFF_M0000,WDAT_BYTE,INFO,OBS,0,high,0000,FF,0000,0000,-,0/,-,changed=0
+B3_R0_O0000_SFF_M00FF,WDAT_BYTE,INFO,OBS,0,high,0000,FF,00FF,0000,-,0/,-,changed=0
+B3_R0_O0000_SFF_MFF00,WDAT_BYTE,INFO,OBS,0,high,0000,FF,FF00,0000,-,0/,-,changed=0
+B3_R0_O0000_SFF_MA55A,WDAT_BYTE,INFO,OBS,0,high,0000,FF,A55A,0000,-,0/,-,changed=0
+B3_R0_O0000_SFF_MFFFF,WDAT_BYTE,INFO,OBS,0,high,0000,FF,FFFF,0000,-,0/,-,changed=0
+B3_R0_OFFFF_S00_M0000,WDAT_BYTE,INFO,OBS,0,high,FFFF,00,0000,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S00_M00FF,WDAT_BYTE,INFO,OBS,0,high,FFFF,00,00FF,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S00_MFF00,WDAT_BYTE,INFO,OBS,0,high,FFFF,00,FF00,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S00_MA55A,WDAT_BYTE,INFO,OBS,0,high,FFFF,00,A55A,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S00_MFFFF,WDAT_BYTE,INFO,OBS,0,high,FFFF,00,FFFF,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S01_M0000,WDAT_BYTE,INFO,OBS,0,high,FFFF,01,0000,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S01_M00FF,WDAT_BYTE,INFO,OBS,0,high,FFFF,01,00FF,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S01_MFF00,WDAT_BYTE,INFO,OBS,0,high,FFFF,01,FF00,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S01_MA55A,WDAT_BYTE,INFO,OBS,0,high,FFFF,01,A55A,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S01_MFFFF,WDAT_BYTE,INFO,OBS,0,high,FFFF,01,FFFF,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S96_M0000,WDAT_BYTE,INFO,OBS,0,high,FFFF,96,0000,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S96_M00FF,WDAT_BYTE,INFO,OBS,0,high,FFFF,96,00FF,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S96_MFF00,WDAT_BYTE,INFO,OBS,0,high,FFFF,96,FF00,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S96_MA55A,WDAT_BYTE,INFO,OBS,0,high,FFFF,96,A55A,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_S96_MFFFF,WDAT_BYTE,INFO,OBS,0,high,FFFF,96,FFFF,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_SFF_M0000,WDAT_BYTE,INFO,OBS,0,high,FFFF,FF,0000,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_SFF_M00FF,WDAT_BYTE,INFO,OBS,0,high,FFFF,FF,00FF,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_SFF_MFF00,WDAT_BYTE,INFO,OBS,0,high,FFFF,FF,FF00,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_SFF_MA55A,WDAT_BYTE,INFO,OBS,0,high,FFFF,FF,A55A,FFFF,-,0/,-,changed=0
+B3_R0_OFFFF_SFF_MFFFF,WDAT_BYTE,INFO,OBS,0,high,FFFF,FF,FFFF,FFFF,-,0/,-,changed=0
+B3_R0_OA55A_S00_M0000,WDAT_BYTE,INFO,OBS,0,high,A55A,00,0000,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S00_M00FF,WDAT_BYTE,INFO,OBS,0,high,A55A,00,00FF,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S00_MFF00,WDAT_BYTE,INFO,OBS,0,high,A55A,00,FF00,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S00_MA55A,WDAT_BYTE,INFO,OBS,0,high,A55A,00,A55A,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S00_MFFFF,WDAT_BYTE,INFO,OBS,0,high,A55A,00,FFFF,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S01_M0000,WDAT_BYTE,INFO,OBS,0,high,A55A,01,0000,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S01_M00FF,WDAT_BYTE,INFO,OBS,0,high,A55A,01,00FF,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S01_MFF00,WDAT_BYTE,INFO,OBS,0,high,A55A,01,FF00,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S01_MA55A,WDAT_BYTE,INFO,OBS,0,high,A55A,01,A55A,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S01_MFFFF,WDAT_BYTE,INFO,OBS,0,high,A55A,01,FFFF,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S96_M0000,WDAT_BYTE,INFO,OBS,0,high,A55A,96,0000,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S96_M00FF,WDAT_BYTE,INFO,OBS,0,high,A55A,96,00FF,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S96_MFF00,WDAT_BYTE,INFO,OBS,0,high,A55A,96,FF00,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S96_MA55A,WDAT_BYTE,INFO,OBS,0,high,A55A,96,A55A,A55A,-,0/,-,changed=0
+B3_R0_OA55A_S96_MFFFF,WDAT_BYTE,INFO,OBS,0,high,A55A,96,FFFF,A55A,-,0/,-,changed=0
+B3_R0_OA55A_SFF_M0000,WDAT_BYTE,INFO,OBS,0,high,A55A,FF,0000,A55A,-,0/,-,changed=0
+B3_R0_OA55A_SFF_M00FF,WDAT_BYTE,INFO,OBS,0,high,A55A,FF,00FF,A55A,-,0/,-,changed=0
+B3_R0_OA55A_SFF_MFF00,WDAT_BYTE,INFO,OBS,0,high,A55A,FF,FF00,A55A,-,0/,-,changed=0
+B3_R0_OA55A_SFF_MA55A,WDAT_BYTE,INFO,OBS,0,high,A55A,FF,A55A,A55A,-,0/,-,changed=0
+B3_R0_OA55A_SFF_MFFFF,WDAT_BYTE,INFO,OBS,0,high,A55A,FF,FFFF,A55A,-,0/,-,changed=0
+B3_R1_O0000_S00_M0000,WDAT_BYTE,INFO,OBS,1,high,0000,00,0000,0000,-,0/,-,changed=0
+B3_R1_O0000_S00_M00FF,WDAT_BYTE,INFO,OBS,1,high,0000,00,00FF,0000,-,0/,-,changed=0
+B3_R1_O0000_S00_MFF00,WDAT_BYTE,INFO,OBS,1,high,0000,00,FF00,0000,-,0/,-,changed=0
+B3_R1_O0000_S00_MA55A,WDAT_BYTE,INFO,OBS,1,high,0000,00,A55A,0000,-,0/,-,changed=0
+B3_R1_O0000_S00_MFFFF,WDAT_BYTE,INFO,OBS,1,high,0000,00,FFFF,0000,-,0/,-,changed=0
+B3_R1_O0000_S01_M0000,WDAT_BYTE,INFO,OBS,1,high,0000,01,0000,0000,-,0/,-,changed=0
+B3_R1_O0000_S01_M00FF,WDAT_BYTE,INFO,OBS,1,high,0000,01,00FF,0000,-,0/,-,changed=0
+B3_R1_O0000_S01_MFF00,WDAT_BYTE,INFO,OBS,1,high,0000,01,FF00,0000,-,0/,-,changed=0
+B3_R1_O0000_S01_MA55A,WDAT_BYTE,INFO,OBS,1,high,0000,01,A55A,0000,-,0/,-,changed=0
+B3_R1_O0000_S01_MFFFF,WDAT_BYTE,INFO,OBS,1,high,0000,01,FFFF,0000,-,0/,-,changed=0
+B3_R1_O0000_S96_M0000,WDAT_BYTE,INFO,OBS,1,high,0000,96,0000,0000,-,0/,-,changed=0
+B3_R1_O0000_S96_M00FF,WDAT_BYTE,INFO,OBS,1,high,0000,96,00FF,0000,-,0/,-,changed=0
+B3_R1_O0000_S96_MFF00,WDAT_BYTE,INFO,OBS,1,high,0000,96,FF00,0000,-,0/,-,changed=0
+B3_R1_O0000_S96_MA55A,WDAT_BYTE,INFO,OBS,1,high,0000,96,A55A,0000,-,0/,-,changed=0
+B3_R1_O0000_S96_MFFFF,WDAT_BYTE,INFO,OBS,1,high,0000,96,FFFF,0000,-,0/,-,changed=0
+B3_R1_O0000_SFF_M0000,WDAT_BYTE,INFO,OBS,1,high,0000,FF,0000,0000,-,0/,-,changed=0
+B3_R1_O0000_SFF_M00FF,WDAT_BYTE,INFO,OBS,1,high,0000,FF,00FF,0000,-,0/,-,changed=0
+B3_R1_O0000_SFF_MFF00,WDAT_BYTE,INFO,OBS,1,high,0000,FF,FF00,0000,-,0/,-,changed=0
+B3_R1_O0000_SFF_MA55A,WDAT_BYTE,INFO,OBS,1,high,0000,FF,A55A,0000,-,0/,-,changed=0
+B3_R1_O0000_SFF_MFFFF,WDAT_BYTE,INFO,OBS,1,high,0000,FF,FFFF,0000,-,0/,-,changed=0
+B3_R1_OFFFF_S00_M0000,WDAT_BYTE,INFO,OBS,1,high,FFFF,00,0000,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S00_M00FF,WDAT_BYTE,INFO,OBS,1,high,FFFF,00,00FF,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S00_MFF00,WDAT_BYTE,INFO,OBS,1,high,FFFF,00,FF00,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S00_MA55A,WDAT_BYTE,INFO,OBS,1,high,FFFF,00,A55A,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S00_MFFFF,WDAT_BYTE,INFO,OBS,1,high,FFFF,00,FFFF,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S01_M0000,WDAT_BYTE,INFO,OBS,1,high,FFFF,01,0000,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S01_M00FF,WDAT_BYTE,INFO,OBS,1,high,FFFF,01,00FF,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S01_MFF00,WDAT_BYTE,INFO,OBS,1,high,FFFF,01,FF00,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S01_MA55A,WDAT_BYTE,INFO,OBS,1,high,FFFF,01,A55A,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S01_MFFFF,WDAT_BYTE,INFO,OBS,1,high,FFFF,01,FFFF,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S96_M0000,WDAT_BYTE,INFO,OBS,1,high,FFFF,96,0000,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S96_M00FF,WDAT_BYTE,INFO,OBS,1,high,FFFF,96,00FF,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S96_MFF00,WDAT_BYTE,INFO,OBS,1,high,FFFF,96,FF00,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S96_MA55A,WDAT_BYTE,INFO,OBS,1,high,FFFF,96,A55A,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_S96_MFFFF,WDAT_BYTE,INFO,OBS,1,high,FFFF,96,FFFF,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_SFF_M0000,WDAT_BYTE,INFO,OBS,1,high,FFFF,FF,0000,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_SFF_M00FF,WDAT_BYTE,INFO,OBS,1,high,FFFF,FF,00FF,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_SFF_MFF00,WDAT_BYTE,INFO,OBS,1,high,FFFF,FF,FF00,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_SFF_MA55A,WDAT_BYTE,INFO,OBS,1,high,FFFF,FF,A55A,FFFF,-,0/,-,changed=0
+B3_R1_OFFFF_SFF_MFFFF,WDAT_BYTE,INFO,OBS,1,high,FFFF,FF,FFFF,FFFF,-,0/,-,changed=0
+B3_R1_OA55A_S00_M0000,WDAT_BYTE,INFO,OBS,1,high,A55A,00,0000,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S00_M00FF,WDAT_BYTE,INFO,OBS,1,high,A55A,00,00FF,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S00_MFF00,WDAT_BYTE,INFO,OBS,1,high,A55A,00,FF00,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S00_MA55A,WDAT_BYTE,INFO,OBS,1,high,A55A,00,A55A,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S00_MFFFF,WDAT_BYTE,INFO,OBS,1,high,A55A,00,FFFF,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S01_M0000,WDAT_BYTE,INFO,OBS,1,high,A55A,01,0000,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S01_M00FF,WDAT_BYTE,INFO,OBS,1,high,A55A,01,00FF,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S01_MFF00,WDAT_BYTE,INFO,OBS,1,high,A55A,01,FF00,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S01_MA55A,WDAT_BYTE,INFO,OBS,1,high,A55A,01,A55A,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S01_MFFFF,WDAT_BYTE,INFO,OBS,1,high,A55A,01,FFFF,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S96_M0000,WDAT_BYTE,INFO,OBS,1,high,A55A,96,0000,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S96_M00FF,WDAT_BYTE,INFO,OBS,1,high,A55A,96,00FF,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S96_MFF00,WDAT_BYTE,INFO,OBS,1,high,A55A,96,FF00,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S96_MA55A,WDAT_BYTE,INFO,OBS,1,high,A55A,96,A55A,A55A,-,0/,-,changed=0
+B3_R1_OA55A_S96_MFFFF,WDAT_BYTE,INFO,OBS,1,high,A55A,96,FFFF,A55A,-,0/,-,changed=0
+B3_R1_OA55A_SFF_M0000,WDAT_BYTE,INFO,OBS,1,high,A55A,FF,0000,A55A,-,0/,-,changed=0
+B3_R1_OA55A_SFF_M00FF,WDAT_BYTE,INFO,OBS,1,high,A55A,FF,00FF,A55A,-,0/,-,changed=0
+B3_R1_OA55A_SFF_MFF00,WDAT_BYTE,INFO,OBS,1,high,A55A,FF,FF00,A55A,-,0/,-,changed=0
+B3_R1_OA55A_SFF_MA55A,WDAT_BYTE,INFO,OBS,1,high,A55A,FF,A55A,A55A,-,0/,-,changed=0
+B3_R1_OA55A_SFF_MFFFF,WDAT_BYTE,INFO,OBS,1,high,A55A,FF,FFFF,A55A,-,0/,-,changed=0
+B3_R2_O0000_S00_M0000,WDAT_BYTE,INFO,OBS,2,high,0000,00,0000,0000,-,0/,-,changed=0
+B3_R2_O0000_S00_M00FF,WDAT_BYTE,INFO,OBS,2,high,0000,00,00FF,0000,-,0/,-,changed=0
+B3_R2_O0000_S00_MFF00,WDAT_BYTE,INFO,OBS,2,high,0000,00,FF00,0000,-,0/,-,changed=0
+B3_R2_O0000_S00_MA55A,WDAT_BYTE,INFO,OBS,2,high,0000,00,A55A,0000,-,0/,-,changed=0
+B3_R2_O0000_S00_MFFFF,WDAT_BYTE,INFO,OBS,2,high,0000,00,FFFF,0000,-,0/,-,changed=0
+B3_R2_O0000_S01_M0000,WDAT_BYTE,INFO,OBS,2,high,0000,01,0000,0000,-,0/,-,changed=0
+B3_R2_O0000_S01_M00FF,WDAT_BYTE,INFO,OBS,2,high,0000,01,00FF,0000,-,0/,-,changed=0
+B3_R2_O0000_S01_MFF00,WDAT_BYTE,INFO,OBS,2,high,0000,01,FF00,0000,-,0/,-,changed=0
+B3_R2_O0000_S01_MA55A,WDAT_BYTE,INFO,OBS,2,high,0000,01,A55A,0000,-,0/,-,changed=0
+B3_R2_O0000_S01_MFFFF,WDAT_BYTE,INFO,OBS,2,high,0000,01,FFFF,0000,-,0/,-,changed=0
+B3_R2_O0000_S96_M0000,WDAT_BYTE,INFO,OBS,2,high,0000,96,0000,0000,-,0/,-,changed=0
+B3_R2_O0000_S96_M00FF,WDAT_BYTE,INFO,OBS,2,high,0000,96,00FF,0000,-,0/,-,changed=0
+B3_R2_O0000_S96_MFF00,WDAT_BYTE,INFO,OBS,2,high,0000,96,FF00,0000,-,0/,-,changed=0
+B3_R2_O0000_S96_MA55A,WDAT_BYTE,INFO,OBS,2,high,0000,96,A55A,0000,-,0/,-,changed=0
+B3_R2_O0000_S96_MFFFF,WDAT_BYTE,INFO,OBS,2,high,0000,96,FFFF,0000,-,0/,-,changed=0
+B3_R2_O0000_SFF_M0000,WDAT_BYTE,INFO,OBS,2,high,0000,FF,0000,0000,-,0/,-,changed=0
+B3_R2_O0000_SFF_M00FF,WDAT_BYTE,INFO,OBS,2,high,0000,FF,00FF,0000,-,0/,-,changed=0
+B3_R2_O0000_SFF_MFF00,WDAT_BYTE,INFO,OBS,2,high,0000,FF,FF00,0000,-,0/,-,changed=0
+B3_R2_O0000_SFF_MA55A,WDAT_BYTE,INFO,OBS,2,high,0000,FF,A55A,0000,-,0/,-,changed=0
+B3_R2_O0000_SFF_MFFFF,WDAT_BYTE,INFO,OBS,2,high,0000,FF,FFFF,0000,-,0/,-,changed=0
+B3_R2_OFFFF_S00_M0000,WDAT_BYTE,INFO,OBS,2,high,FFFF,00,0000,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S00_M00FF,WDAT_BYTE,INFO,OBS,2,high,FFFF,00,00FF,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S00_MFF00,WDAT_BYTE,INFO,OBS,2,high,FFFF,00,FF00,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S00_MA55A,WDAT_BYTE,INFO,OBS,2,high,FFFF,00,A55A,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S00_MFFFF,WDAT_BYTE,INFO,OBS,2,high,FFFF,00,FFFF,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S01_M0000,WDAT_BYTE,INFO,OBS,2,high,FFFF,01,0000,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S01_M00FF,WDAT_BYTE,INFO,OBS,2,high,FFFF,01,00FF,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S01_MFF00,WDAT_BYTE,INFO,OBS,2,high,FFFF,01,FF00,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S01_MA55A,WDAT_BYTE,INFO,OBS,2,high,FFFF,01,A55A,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S01_MFFFF,WDAT_BYTE,INFO,OBS,2,high,FFFF,01,FFFF,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S96_M0000,WDAT_BYTE,INFO,OBS,2,high,FFFF,96,0000,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S96_M00FF,WDAT_BYTE,INFO,OBS,2,high,FFFF,96,00FF,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S96_MFF00,WDAT_BYTE,INFO,OBS,2,high,FFFF,96,FF00,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S96_MA55A,WDAT_BYTE,INFO,OBS,2,high,FFFF,96,A55A,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_S96_MFFFF,WDAT_BYTE,INFO,OBS,2,high,FFFF,96,FFFF,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_SFF_M0000,WDAT_BYTE,INFO,OBS,2,high,FFFF,FF,0000,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_SFF_M00FF,WDAT_BYTE,INFO,OBS,2,high,FFFF,FF,00FF,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_SFF_MFF00,WDAT_BYTE,INFO,OBS,2,high,FFFF,FF,FF00,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_SFF_MA55A,WDAT_BYTE,INFO,OBS,2,high,FFFF,FF,A55A,FFFF,-,0/,-,changed=0
+B3_R2_OFFFF_SFF_MFFFF,WDAT_BYTE,INFO,OBS,2,high,FFFF,FF,FFFF,FFFF,-,0/,-,changed=0
+B3_R2_OA55A_S00_M0000,WDAT_BYTE,INFO,OBS,2,high,A55A,00,0000,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S00_M00FF,WDAT_BYTE,INFO,OBS,2,high,A55A,00,00FF,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S00_MFF00,WDAT_BYTE,INFO,OBS,2,high,A55A,00,FF00,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S00_MA55A,WDAT_BYTE,INFO,OBS,2,high,A55A,00,A55A,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S00_MFFFF,WDAT_BYTE,INFO,OBS,2,high,A55A,00,FFFF,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S01_M0000,WDAT_BYTE,INFO,OBS,2,high,A55A,01,0000,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S01_M00FF,WDAT_BYTE,INFO,OBS,2,high,A55A,01,00FF,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S01_MFF00,WDAT_BYTE,INFO,OBS,2,high,A55A,01,FF00,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S01_MA55A,WDAT_BYTE,INFO,OBS,2,high,A55A,01,A55A,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S01_MFFFF,WDAT_BYTE,INFO,OBS,2,high,A55A,01,FFFF,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S96_M0000,WDAT_BYTE,INFO,OBS,2,high,A55A,96,0000,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S96_M00FF,WDAT_BYTE,INFO,OBS,2,high,A55A,96,00FF,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S96_MFF00,WDAT_BYTE,INFO,OBS,2,high,A55A,96,FF00,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S96_MA55A,WDAT_BYTE,INFO,OBS,2,high,A55A,96,A55A,A55A,-,0/,-,changed=0
+B3_R2_OA55A_S96_MFFFF,WDAT_BYTE,INFO,OBS,2,high,A55A,96,FFFF,A55A,-,0/,-,changed=0
+B3_R2_OA55A_SFF_M0000,WDAT_BYTE,INFO,OBS,2,high,A55A,FF,0000,A55A,-,0/,-,changed=0
+B3_R2_OA55A_SFF_M00FF,WDAT_BYTE,INFO,OBS,2,high,A55A,FF,00FF,A55A,-,0/,-,changed=0
+B3_R2_OA55A_SFF_MFF00,WDAT_BYTE,INFO,OBS,2,high,A55A,FF,FF00,A55A,-,0/,-,changed=0
+B3_R2_OA55A_SFF_MA55A,WDAT_BYTE,INFO,OBS,2,high,A55A,FF,A55A,A55A,-,0/,-,changed=0
+B3_R2_OA55A_SFF_MFFFF,WDAT_BYTE,INFO,OBS,2,high,A55A,FF,FFFF,A55A,-,0/,-,changed=0
+B3_R3_O0000_S00_M0000,WDAT_BYTE,INFO,OBS,3,high,0000,00,0000,0000,-,0/,-,changed=0
+B3_R3_O0000_S00_M00FF,WDAT_BYTE,INFO,OBS,3,high,0000,00,00FF,0000,-,0/,-,changed=0
+B3_R3_O0000_S00_MFF00,WDAT_BYTE,INFO,OBS,3,high,0000,00,FF00,0000,-,0/,-,changed=0
+B3_R3_O0000_S00_MA55A,WDAT_BYTE,INFO,OBS,3,high,0000,00,A55A,0000,-,0/,-,changed=0
+B3_R3_O0000_S00_MFFFF,WDAT_BYTE,INFO,OBS,3,high,0000,00,FFFF,0000,-,0/,-,changed=0
+B3_R3_O0000_S01_M0000,WDAT_BYTE,INFO,OBS,3,high,0000,01,0000,0000,-,0/,-,changed=0
+B3_R3_O0000_S01_M00FF,WDAT_BYTE,INFO,OBS,3,high,0000,01,00FF,0000,-,0/,-,changed=0
+B3_R3_O0000_S01_MFF00,WDAT_BYTE,INFO,OBS,3,high,0000,01,FF00,0000,-,0/,-,changed=0
+B3_R3_O0000_S01_MA55A,WDAT_BYTE,INFO,OBS,3,high,0000,01,A55A,0000,-,0/,-,changed=0
+B3_R3_O0000_S01_MFFFF,WDAT_BYTE,INFO,OBS,3,high,0000,01,FFFF,0000,-,0/,-,changed=0
+B3_R3_O0000_S96_M0000,WDAT_BYTE,INFO,OBS,3,high,0000,96,0000,0000,-,0/,-,changed=0
+B3_R3_O0000_S96_M00FF,WDAT_BYTE,INFO,OBS,3,high,0000,96,00FF,0000,-,0/,-,changed=0
+B3_R3_O0000_S96_MFF00,WDAT_BYTE,INFO,OBS,3,high,0000,96,FF00,0000,-,0/,-,changed=0
+B3_R3_O0000_S96_MA55A,WDAT_BYTE,INFO,OBS,3,high,0000,96,A55A,0000,-,0/,-,changed=0
+B3_R3_O0000_S96_MFFFF,WDAT_BYTE,INFO,OBS,3,high,0000,96,FFFF,0000,-,0/,-,changed=0
+B3_R3_O0000_SFF_M0000,WDAT_BYTE,INFO,OBS,3,high,0000,FF,0000,0000,-,0/,-,changed=0
+B3_R3_O0000_SFF_M00FF,WDAT_BYTE,INFO,OBS,3,high,0000,FF,00FF,0000,-,0/,-,changed=0
+B3_R3_O0000_SFF_MFF00,WDAT_BYTE,INFO,OBS,3,high,0000,FF,FF00,0000,-,0/,-,changed=0
+B3_R3_O0000_SFF_MA55A,WDAT_BYTE,INFO,OBS,3,high,0000,FF,A55A,0000,-,0/,-,changed=0
+B3_R3_O0000_SFF_MFFFF,WDAT_BYTE,INFO,OBS,3,high,0000,FF,FFFF,0000,-,0/,-,changed=0
+B3_R3_OFFFF_S00_M0000,WDAT_BYTE,INFO,OBS,3,high,FFFF,00,0000,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S00_M00FF,WDAT_BYTE,INFO,OBS,3,high,FFFF,00,00FF,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S00_MFF00,WDAT_BYTE,INFO,OBS,3,high,FFFF,00,FF00,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S00_MA55A,WDAT_BYTE,INFO,OBS,3,high,FFFF,00,A55A,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S00_MFFFF,WDAT_BYTE,INFO,OBS,3,high,FFFF,00,FFFF,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S01_M0000,WDAT_BYTE,INFO,OBS,3,high,FFFF,01,0000,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S01_M00FF,WDAT_BYTE,INFO,OBS,3,high,FFFF,01,00FF,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S01_MFF00,WDAT_BYTE,INFO,OBS,3,high,FFFF,01,FF00,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S01_MA55A,WDAT_BYTE,INFO,OBS,3,high,FFFF,01,A55A,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S01_MFFFF,WDAT_BYTE,INFO,OBS,3,high,FFFF,01,FFFF,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S96_M0000,WDAT_BYTE,INFO,OBS,3,high,FFFF,96,0000,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S96_M00FF,WDAT_BYTE,INFO,OBS,3,high,FFFF,96,00FF,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S96_MFF00,WDAT_BYTE,INFO,OBS,3,high,FFFF,96,FF00,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S96_MA55A,WDAT_BYTE,INFO,OBS,3,high,FFFF,96,A55A,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_S96_MFFFF,WDAT_BYTE,INFO,OBS,3,high,FFFF,96,FFFF,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_SFF_M0000,WDAT_BYTE,INFO,OBS,3,high,FFFF,FF,0000,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_SFF_M00FF,WDAT_BYTE,INFO,OBS,3,high,FFFF,FF,00FF,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_SFF_MFF00,WDAT_BYTE,INFO,OBS,3,high,FFFF,FF,FF00,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_SFF_MA55A,WDAT_BYTE,INFO,OBS,3,high,FFFF,FF,A55A,FFFF,-,0/,-,changed=0
+B3_R3_OFFFF_SFF_MFFFF,WDAT_BYTE,INFO,OBS,3,high,FFFF,FF,FFFF,FFFF,-,0/,-,changed=0
+B3_R3_OA55A_S00_M0000,WDAT_BYTE,INFO,OBS,3,high,A55A,00,0000,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S00_M00FF,WDAT_BYTE,INFO,OBS,3,high,A55A,00,00FF,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S00_MFF00,WDAT_BYTE,INFO,OBS,3,high,A55A,00,FF00,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S00_MA55A,WDAT_BYTE,INFO,OBS,3,high,A55A,00,A55A,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S00_MFFFF,WDAT_BYTE,INFO,OBS,3,high,A55A,00,FFFF,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S01_M0000,WDAT_BYTE,INFO,OBS,3,high,A55A,01,0000,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S01_M00FF,WDAT_BYTE,INFO,OBS,3,high,A55A,01,00FF,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S01_MFF00,WDAT_BYTE,INFO,OBS,3,high,A55A,01,FF00,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S01_MA55A,WDAT_BYTE,INFO,OBS,3,high,A55A,01,A55A,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S01_MFFFF,WDAT_BYTE,INFO,OBS,3,high,A55A,01,FFFF,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S96_M0000,WDAT_BYTE,INFO,OBS,3,high,A55A,96,0000,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S96_M00FF,WDAT_BYTE,INFO,OBS,3,high,A55A,96,00FF,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S96_MFF00,WDAT_BYTE,INFO,OBS,3,high,A55A,96,FF00,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S96_MA55A,WDAT_BYTE,INFO,OBS,3,high,A55A,96,A55A,A55A,-,0/,-,changed=0
+B3_R3_OA55A_S96_MFFFF,WDAT_BYTE,INFO,OBS,3,high,A55A,96,FFFF,A55A,-,0/,-,changed=0
+B3_R3_OA55A_SFF_M0000,WDAT_BYTE,INFO,OBS,3,high,A55A,FF,0000,A55A,-,0/,-,changed=0
+B3_R3_OA55A_SFF_M00FF,WDAT_BYTE,INFO,OBS,3,high,A55A,FF,00FF,A55A,-,0/,-,changed=0
+B3_R3_OA55A_SFF_MFF00,WDAT_BYTE,INFO,OBS,3,high,A55A,FF,FF00,A55A,-,0/,-,changed=0
+B3_R3_OA55A_SFF_MA55A,WDAT_BYTE,INFO,OBS,3,high,A55A,FF,A55A,A55A,-,0/,-,changed=0
+B3_R3_OA55A_SFF_MFFFF,WDAT_BYTE,INFO,OBS,3,high,A55A,FF,FFFF,A55A,-,0/,-,changed=0
+STEP_DC00_D0,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=0 dir=0 changed=0
+STEP_DC00_D1,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=0 dir=1 changed=0
+STEP_DC00_D2,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=0 dir=2 changed=0
+STEP_DC00_D3,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=0 dir=3 changed=0
+STEP_DC00_D4,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=0 dir=4 changed=0
+STEP_DC00_D5,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=0 dir=5 changed=0
+STEP_DC00_D6,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=0 dir=6 changed=0
+STEP_DC00_D7,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=0 dir=7 changed=0
+STEP_DC01_D0,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=1 dir=0 changed=0
+STEP_DC01_D1,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=1 dir=1 changed=0
+STEP_DC01_D2,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=1 dir=2 changed=0
+STEP_DC01_D3,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=1 dir=3 changed=0
+STEP_DC01_D4,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=1 dir=4 changed=0
+STEP_DC01_D5,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=1 dir=5 changed=0
+STEP_DC01_D6,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=1 dir=6 changed=0
+STEP_DC01_D7,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=1 dir=7 changed=0
+STEP_DC02_D0,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=2 dir=0 changed=0
+STEP_DC02_D1,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=2 dir=1 changed=0
+STEP_DC02_D2,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=2 dir=2 changed=0
+STEP_DC02_D3,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=2 dir=3 changed=0
+STEP_DC02_D4,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=2 dir=4 changed=0
+STEP_DC02_D5,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=2 dir=5 changed=0
+STEP_DC02_D6,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=2 dir=6 changed=0
+STEP_DC02_D7,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=2 dir=7 changed=0
+STEP_DC15_D0,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=15 dir=0 changed=0
+STEP_DC15_D1,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=15 dir=1 changed=0
+STEP_DC15_D2,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=15 dir=2 changed=0
+STEP_DC15_D3,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=15 dir=3 changed=0
+STEP_DC15_D4,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=15 dir=4 changed=0
+STEP_DC15_D5,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=15 dir=5 changed=0
+STEP_DC15_D6,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=15 dir=6 changed=0
+STEP_DC15_D7,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=15 dir=7 changed=0
+STEP_DC16_D0,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=16 dir=0 changed=0
+STEP_DC16_D1,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=16 dir=1 changed=0
+STEP_DC16_D2,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=16 dir=2 changed=0
+STEP_DC16_D3,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=16 dir=3 changed=0
+STEP_DC16_D4,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=16 dir=4 changed=0
+STEP_DC16_D5,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=16 dir=5 changed=0
+STEP_DC16_D6,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=16 dir=6 changed=0
+STEP_DC16_D7,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=16 dir=7 changed=0
+STEP_DC17_D0,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=17 dir=0 changed=0
+STEP_DC17_D1,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=17 dir=1 changed=0
+STEP_DC17_D2,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=17 dir=2 changed=0
+STEP_DC17_D3,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=17 dir=3 changed=0
+STEP_DC17_D4,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=17 dir=4 changed=0
+STEP_DC17_D5,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=17 dir=5 changed=0
+STEP_DC17_D6,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=17 dir=6 changed=0
+STEP_DC17_D7,WDAT_STEP,INFO,OBS,3,word,0000,FFFF,0080,-,-,0/,00-88-00-00-00/08800/M0000/D-,dc=17 dir=7 changed=0
+WDAT_STREAM_3,WDAT_STREAM,INFO,OBS,0,word,0000,multi,FFFF,-,-,0000/0000/0000/0000,00-88-00-00-00/08800/M0000/D-,three parameter pairs under one WDAT
+# rows=913 strict_fail=136 errors=0

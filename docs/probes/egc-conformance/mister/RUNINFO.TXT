@@ -1,0 +1,2 @@
+PC-98 EGC conformance suite v1.3 
+Full RUNALL profile 

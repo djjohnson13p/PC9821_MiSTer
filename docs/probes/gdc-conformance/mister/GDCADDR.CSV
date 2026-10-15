@@ -1,0 +1,110 @@
+# Physical GVRAM mapping / EAD carry / boundary stepping fingerprint
+# suite=pc98-gdc-tests-v1.0-rc6 clock=2.5MHz bios054d=10 bios054c=4F
+case,class,expect,outcome,params,changes,curd,detail
+PLANE_E_D00,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=0 expected-plane=E predicted-cpu-word=0080 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D01,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=1 expected-plane=E predicted-cpu-word=0040 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D02,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=2 expected-plane=E predicted-cpu-word=0020 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D03,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=3 expected-plane=E predicted-cpu-word=0010 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D04,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=4 expected-plane=E predicted-cpu-word=0008 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D05,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=5 expected-plane=E predicted-cpu-word=0004 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D06,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=6 expected-plane=E predicted-cpu-word=0002 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D07,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=7 expected-plane=E predicted-cpu-word=0001 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D08,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=8 expected-plane=E predicted-cpu-word=8000 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D09,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=9 expected-plane=E predicted-cpu-word=4000 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D10,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=10 expected-plane=E predicted-cpu-word=2000 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D11,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=11 expected-plane=E predicted-cpu-word=1000 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D12,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=12 expected-plane=E predicted-cpu-word=0800 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D13,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=13 expected-plane=E predicted-cpu-word=0400 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D14,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=14 expected-plane=E predicted-cpu-word=0200 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_E_D15,ADDR_PLANE,STRICT,FAIL,ead=00123 dad=15 expected-plane=E predicted-cpu-word=0100 bitmatch=0,0/,23-01-00-00-00/00123/M0000/D-,total_words=0 bits=0
+PLANE_B_D00,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=0 expected-plane=B predicted-cpu-word=0080 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D01,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=1 expected-plane=B predicted-cpu-word=0040 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D02,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=2 expected-plane=B predicted-cpu-word=0020 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D03,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=3 expected-plane=B predicted-cpu-word=0010 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D04,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=4 expected-plane=B predicted-cpu-word=0008 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D05,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=5 expected-plane=B predicted-cpu-word=0004 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D06,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=6 expected-plane=B predicted-cpu-word=0002 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D07,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=7 expected-plane=B predicted-cpu-word=0001 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D08,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=8 expected-plane=B predicted-cpu-word=8000 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D09,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=9 expected-plane=B predicted-cpu-word=4000 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D10,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=10 expected-plane=B predicted-cpu-word=2000 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D11,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=11 expected-plane=B predicted-cpu-word=1000 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D12,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=12 expected-plane=B predicted-cpu-word=0800 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D13,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=13 expected-plane=B predicted-cpu-word=0400 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D14,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=14 expected-plane=B predicted-cpu-word=0200 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_B_D15,ADDR_PLANE,STRICT,FAIL,ead=04123 dad=15 expected-plane=B predicted-cpu-word=0100 bitmatch=0,0/,23-41-00-00-00/04123/M0000/D-,total_words=0 bits=0
+PLANE_R_D00,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=0 expected-plane=R predicted-cpu-word=0080 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D01,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=1 expected-plane=R predicted-cpu-word=0040 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D02,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=2 expected-plane=R predicted-cpu-word=0020 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D03,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=3 expected-plane=R predicted-cpu-word=0010 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D04,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=4 expected-plane=R predicted-cpu-word=0008 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D05,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=5 expected-plane=R predicted-cpu-word=0004 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D06,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=6 expected-plane=R predicted-cpu-word=0002 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D07,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=7 expected-plane=R predicted-cpu-word=0001 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D08,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=8 expected-plane=R predicted-cpu-word=8000 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D09,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=9 expected-plane=R predicted-cpu-word=4000 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D10,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=10 expected-plane=R predicted-cpu-word=2000 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D11,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=11 expected-plane=R predicted-cpu-word=1000 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D12,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=12 expected-plane=R predicted-cpu-word=0800 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D13,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=13 expected-plane=R predicted-cpu-word=0400 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D14,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=14 expected-plane=R predicted-cpu-word=0200 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_R_D15,ADDR_PLANE,STRICT,FAIL,ead=08123 dad=15 expected-plane=R predicted-cpu-word=0100 bitmatch=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+PLANE_G_D00,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=0 expected-plane=G predicted-cpu-word=0080 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D01,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=1 expected-plane=G predicted-cpu-word=0040 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D02,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=2 expected-plane=G predicted-cpu-word=0020 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D03,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=3 expected-plane=G predicted-cpu-word=0010 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D04,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=4 expected-plane=G predicted-cpu-word=0008 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D05,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=5 expected-plane=G predicted-cpu-word=0004 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D06,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=6 expected-plane=G predicted-cpu-word=0002 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D07,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=7 expected-plane=G predicted-cpu-word=0001 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D08,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=8 expected-plane=G predicted-cpu-word=8000 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D09,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=9 expected-plane=G predicted-cpu-word=4000 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D10,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=10 expected-plane=G predicted-cpu-word=2000 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D11,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=11 expected-plane=G predicted-cpu-word=1000 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D12,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=12 expected-plane=G predicted-cpu-word=0800 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D13,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=13 expected-plane=G predicted-cpu-word=0400 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D14,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=14 expected-plane=G predicted-cpu-word=0200 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+PLANE_G_D15,ADDR_PLANE,STRICT,FAIL,ead=0C123 dad=15 expected-plane=G predicted-cpu-word=0100 bitmatch=0,0/,23-C1-00-00-00/0C123/M0000/D-,total_words=0 bits=0
+EAD18_08123,ADDR_EAD18,INFO,OBS,dot ead=08123 dad=3 high=0,0/,23-81-00-00-00/08123/M0000/D-,total_words=0 bits=0
+EAD18_18123,ADDR_EAD18,INFO,OBS,dot ead=18123 dad=3 high=1,0/,23-81-01-00-00/18123/M0000/D-,total_words=0 bits=0
+EAD18_28123,ADDR_EAD18,INFO,OBS,dot ead=28123 dad=3 high=2,0/,23-81-02-00-00/28123/M0000/D-,total_words=0 bits=0
+EAD18_38123,ADDR_EAD18,INFO,OBS,dot ead=38123 dad=3 high=3,0/,23-81-03-00-00/38123/M0000/D-,total_words=0 bits=0
+BND_03FFF_D2,ADDR_BOUNDARY,INFO,OBS,wdat ead=03FFF dad=3 dir=2 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-3F-00-00-00/03FFF/M0000/D-,total_words=0 bits=0
+BND_03FFF_D6,ADDR_BOUNDARY,INFO,OBS,wdat ead=03FFF dad=3 dir=6 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-3F-00-00-00/03FFF/M0000/D-,total_words=0 bits=0
+BND_04000_D2,ADDR_BOUNDARY,INFO,OBS,wdat ead=04000 dad=3 dir=2 dc=1 pitch=40 dgd=0 mask=FFFF,0/,00-40-00-00-00/04000/M0000/D-,total_words=0 bits=0
+BND_04000_D6,ADDR_BOUNDARY,INFO,OBS,wdat ead=04000 dad=3 dir=6 dc=1 pitch=40 dgd=0 mask=FFFF,0/,00-40-00-00-00/04000/M0000/D-,total_words=0 bits=0
+BND_07FFF_D2,ADDR_BOUNDARY,INFO,OBS,wdat ead=07FFF dad=3 dir=2 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-7F-00-00-00/07FFF/M0000/D-,total_words=0 bits=0
+BND_07FFF_D6,ADDR_BOUNDARY,INFO,OBS,wdat ead=07FFF dad=3 dir=6 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-7F-00-00-00/07FFF/M0000/D-,total_words=0 bits=0
+BND_08000_D2,ADDR_BOUNDARY,INFO,OBS,wdat ead=08000 dad=3 dir=2 dc=1 pitch=40 dgd=0 mask=FFFF,0/,00-80-00-00-00/08000/M0000/D-,total_words=0 bits=0
+BND_08000_D6,ADDR_BOUNDARY,INFO,OBS,wdat ead=08000 dad=3 dir=6 dc=1 pitch=40 dgd=0 mask=FFFF,0/,00-80-00-00-00/08000/M0000/D-,total_words=0 bits=0
+BND_0BFFF_D2,ADDR_BOUNDARY,INFO,OBS,wdat ead=0BFFF dad=3 dir=2 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-BF-00-00-00/0BFFF/M0000/D-,total_words=0 bits=0
+BND_0BFFF_D6,ADDR_BOUNDARY,INFO,OBS,wdat ead=0BFFF dad=3 dir=6 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-BF-00-00-00/0BFFF/M0000/D-,total_words=0 bits=0
+BND_0C000_D2,ADDR_BOUNDARY,INFO,OBS,wdat ead=0C000 dad=3 dir=2 dc=1 pitch=40 dgd=0 mask=FFFF,0/,00-C0-00-00-00/0C000/M0000/D-,total_words=0 bits=0
+BND_0C000_D6,ADDR_BOUNDARY,INFO,OBS,wdat ead=0C000 dad=3 dir=6 dc=1 pitch=40 dgd=0 mask=FFFF,0/,00-C0-00-00-00/0C000/M0000/D-,total_words=0 bits=0
+BND_0FFFF_D2,ADDR_BOUNDARY,INFO,OBS,wdat ead=0FFFF dad=3 dir=2 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-FF-00-00-00/0FFFF/M0000/D-,total_words=0 bits=0
+BND_0FFFF_D6,ADDR_BOUNDARY,INFO,OBS,wdat ead=0FFFF dad=3 dir=6 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-FF-00-00-00/0FFFF/M0000/D-,total_words=0 bits=0
+BND_10000_D2,ADDR_BOUNDARY,INFO,OBS,wdat ead=10000 dad=3 dir=2 dc=1 pitch=40 dgd=0 mask=FFFF,0/,00-00-01-00-00/10000/M0000/D-,total_words=0 bits=0
+BND_10000_D6,ADDR_BOUNDARY,INFO,OBS,wdat ead=10000 dad=3 dir=6 dc=1 pitch=40 dgd=0 mask=FFFF,0/,00-00-01-00-00/10000/M0000/D-,total_words=0 bits=0
+BND_1FFFF_D2,ADDR_BOUNDARY,INFO,OBS,wdat ead=1FFFF dad=3 dir=2 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-FF-01-00-00/1FFFF/M0000/D-,total_words=0 bits=0
+BND_1FFFF_D6,ADDR_BOUNDARY,INFO,OBS,wdat ead=1FFFF dad=3 dir=6 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-FF-01-00-00/1FFFF/M0000/D-,total_words=0 bits=0
+BND_20000_D2,ADDR_BOUNDARY,INFO,OBS,wdat ead=20000 dad=3 dir=2 dc=1 pitch=40 dgd=0 mask=FFFF,0/,00-00-02-00-00/20000/M0000/D-,total_words=0 bits=0
+BND_20000_D6,ADDR_BOUNDARY,INFO,OBS,wdat ead=20000 dad=3 dir=6 dc=1 pitch=40 dgd=0 mask=FFFF,0/,00-00-02-00-00/20000/M0000/D-,total_words=0 bits=0
+BND_3FFFF_D2,ADDR_BOUNDARY,INFO,OBS,wdat ead=3FFFF dad=3 dir=2 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-FF-03-00-00/3FFFF/M0000/D-,total_words=0 bits=0
+BND_3FFFF_D6,ADDR_BOUNDARY,INFO,OBS,wdat ead=3FFFF dad=3 dir=6 dc=1 pitch=40 dgd=0 mask=FFFF,0/,FF-FF-03-00-00/3FFFF/M0000/D-,total_words=0 bits=0
+PIXEL_CARRY_0,ADDR_PIXEL_CARRY,INFO,OBS,line dx=3 dy=0 start=08800 dad=7 dir=2,0/,00-88-00-00-00/08800/M0000/D-,total_words=0 bits=0
+PIXEL_CARRY_1,ADDR_PIXEL_CARRY,INFO,OBS,line dx=3 dy=0 start=08800 dad=15 dir=2,0/,00-88-00-00-00/08800/M0000/D-,total_words=0 bits=0
+PIXEL_CARRY_2,ADDR_PIXEL_CARRY,INFO,OBS,line dx=-3 dy=0 start=08800 dad=8 dir=6,0/,00-88-00-00-00/08800/M0000/D-,total_words=0 bits=0
+PIXEL_CARRY_3,ADDR_PIXEL_CARRY,INFO,OBS,line dx=-3 dy=0 start=08800 dad=0 dir=6,0/,00-88-00-00-00/08800/M0000/D-,total_words=0 bits=0
+VP_001_D0,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=1 dir=0 dc=1 start=03FF0,0/,F0-3F-00-00-00/03FF0/M0000/D-,total_words=0 bits=0
+VP_001_D4,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=1 dir=4 dc=1 start=04010,0/,10-40-00-00-00/04010/M0000/D-,total_words=0 bits=0
+VP_039_D0,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=39 dir=0 dc=1 start=03FF0,0/,F0-3F-00-00-00/03FF0/M0000/D-,total_words=0 bits=0
+VP_039_D4,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=39 dir=4 dc=1 start=04010,0/,10-40-00-00-00/04010/M0000/D-,total_words=0 bits=0
+VP_040_D0,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=40 dir=0 dc=1 start=03FF0,0/,F0-3F-00-00-00/03FF0/M0000/D-,total_words=0 bits=0
+VP_040_D4,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=40 dir=4 dc=1 start=04010,0/,10-40-00-00-00/04010/M0000/D-,total_words=0 bits=0
+VP_041_D0,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=41 dir=0 dc=1 start=03FF0,0/,F0-3F-00-00-00/03FF0/M0000/D-,total_words=0 bits=0
+VP_041_D4,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=41 dir=4 dc=1 start=04010,0/,10-40-00-00-00/04010/M0000/D-,total_words=0 bits=0
+VP_080_D0,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=80 dir=0 dc=1 start=03FF0,0/,F0-3F-00-00-00/03FF0/M0000/D-,total_words=0 bits=0
+VP_080_D4,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=80 dir=4 dc=1 start=04010,0/,10-40-00-00-00/04010/M0000/D-,total_words=0 bits=0
+VP_255_D0,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=255 dir=0 dc=1 start=03FF0,0/,F0-3F-00-00-00/03FF0/M0000/D-,total_words=0 bits=0
+VP_255_D4,ADDR_PITCH_CARRY,INFO,OBS,vertical-boundary pitch=255 dir=4 dc=1 start=04010,0/,10-40-00-00-00/04010/M0000/D-,total_words=0 bits=0
+# rows=106 strict_fail=64 errors=0

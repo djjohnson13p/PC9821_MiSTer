@@ -1,0 +1,356 @@
+IDEPROBE - PC-9821 real-machine IDE/ATA probe (tools/hwprobe/ideprobe.s)
+Ports: 0430/0432/0433/0435 interface, 0640-064E task file, 074C/074E alt;
+005C-005F are the ARTIC counter, not IDE. Sections are BEGIN:/END: bracketed.
+BEGIN:PORTMAP
+  interface registers as found (0430 0432 0433 0435 1E8E):
+0430=41 0432=00 0433=00 0435=00 1E8E=FE 
+  task file as found BEFORE any 0432 write (0640-064E, 0740-074E):
+0640=-- 0641=-- 0642=0E 0644=0E 0646=0E 0648=0E 064A=0E 064C=0E 
+064E=0E 0740=-- 0741=-- 0742=0F 0744=0F 0746=0F 0748=0F 074A=0F 
+074C=0F 074E=0F 
+  legacy 005C-005F (the ARTIC counter, not IDE):
+005C=93 005D=B8 005E=B8 005F=8C 
+  BANK 0432 as found = 00
+  BANK 0432<-01 rb=01 st=50
+  BANK 0432<-80 rb=01 st=50
+  BANK 0432<-81 status=50
+  BANK 0432 restored rb=00
+END:PORTMAP
+BEGIN:REG
+  task file with 0432=01 (live bank):
+0640=06 0641=FF 0642=00 0644=00 0646=03 0648=E7 064A=0E 064C=A0 
+064E=50 0740=00 0741=FF 0742=00 0744=00 0746=00 0748=00 074A=00 
+074C=50 074E=00 
+END:REG
+BEGIN:TIME
+  I/O access time, TM_N=1024 back-to-back accesses per class in a cli window.
+  pit is the mode-3 oscillator counts (byte order measured); artic is the 005C/005F
+  counter delta for diagnosis. base is the interleaved control measured BESIDE the
+  class, so (pit-base)/(WAIT5F pit-base) is the class's ratio to the machine's own
+  0x5F 600 ns wait = 30 clk_sys. That ratio x30 is the value the core's class table
+  for this port should carry (the IDE data port is currently 42, the old value 30).
+  PIT channel-0 measured divisor = FFFA
+  class    port mode pit  base artic
+BASE     port=0000 mode=B pit=0083 base=0083 artic=00000024
+WAIT5F   port=005F mode=W pit=0894 base=0083 artic=00000227
+BASE     port=0000 mode=B pit=0083 base=0083 artic=00000023
+IDEDAT0  port=0640 mode=R pit=02CB base=0083 artic=000000B5
+BASE     port=0000 mode=B pit=0083 base=0083 artic=00000023
+IDEDAT1  port=0641 mode=R pit=02CB base=0083 artic=000000B5
+BASE     port=0000 mode=B pit=0083 base=0083 artic=00000024
+ATASTAT  port=064E mode=R pit=0481 base=0083 artic=00000123
+BASE     port=0000 mode=B pit=0084 base=0084 artic=00000025
+ATAERR   port=0642 mode=R pit=0482 base=0084 artic=00000123
+BASE     port=0000 mode=B pit=0083 base=0083 artic=00000023
+ATACNT   port=0644 mode=R pit=0481 base=0083 artic=00000123
+BASE     port=0000 mode=B pit=0082 base=0082 artic=00000022
+ATASEC   port=0646 mode=R pit=0481 base=0082 artic=00000123
+BASE     port=0000 mode=B pit=0083 base=0083 artic=00000024
+ATACYL   port=0648 mode=R pit=0481 base=0083 artic=00000123
+BASE     port=0000 mode=B pit=0084 base=0084 artic=00000024
+ATACYH   port=064A mode=R pit=0482 base=0084 artic=00000122
+BASE     port=0000 mode=B pit=0085 base=0085 artic=00000024
+ATADH    port=064C mode=R pit=0481 base=0085 artic=00000123
+BASE     port=0000 mode=B pit=0083 base=0083 artic=00000024
+ATAALT   port=074C mode=R pit=0482 base=0083 artic=00000123
+BASE     port=0000 mode=B pit=0084 base=0084 artic=00000024
+ATA74E   port=074E mode=R pit=047E base=0084 artic=00000123
+BASE     port=0000 mode=B pit=0083 base=0083 artic=00000024
+ATA430   port=0430 mode=R pit=0481 base=0083 artic=00000124
+BASE     port=0000 mode=B pit=0084 base=0084 artic=00000023
+ATA432   port=0432 mode=R pit=0481 base=0084 artic=00000123
+BASE     port=0000 mode=B pit=0083 base=0083 artic=00000024
+ATA1E8E  port=1E8E mode=R pit=0481 base=0083 artic=00000123
+BASE     port=0000 mode=B pit=0085 base=0085 artic=00000024
+END:TIME
+BEGIN:IDENTIFY
+  IDENTIFY status before/after = 50 50 wait_ok= 00
+  task file with 0432=01 (live bank):
+0640=06 0641=FF 0642=00 0644=00 0646=09 0648=E7 064A=0E 064C=A0 
+064E=50 0740=00 0741=FF 0742=00 0744=00 0746=00 0748=00 074A=00 
+074C=50 074E=00 
+  IDKEY w0=044A w1=1E8A w3=0010 w6=003F w49=0B00 w47=0001 w53=0007 w54=E259 w55=0008 w56=0011 w60=3F60 w61=0078 w64=0003 w82=7003 w93=4000 
+  IDW <word index> <word value>, one per line:
+  IDW 0 044A
+  IDW 1 1E8A
+  IDW 2 0000
+  IDW 3 0010
+  IDW 4 7E00
+  IDW 5 0200
+  IDW 6 003F
+  IDW 7 0078
+  IDW 8 3F60
+  IDW 9 0000
+  IDW 10 3030
+  IDW 11 3030
+  IDW 12 3037
+  IDW 13 3636
+  IDW 14 3144
+  IDW 15 3030
+  IDW 16 3030
+  IDW 17 3432
+  IDW 18 3037
+  IDW 19 3734
+  IDW 20 0002
+  IDW 21 0002
+  IDW 22 0004
+  IDW 23 5665
+  IDW 24 7232
+  IDW 25 2E33
+  IDW 26 3520
+  IDW 27 4346
+  IDW 28 2043
+  IDW 29 6172
+  IDW 30 6420
+  IDW 31 2020
+  IDW 32 2020
+  IDW 33 2020
+  IDW 34 2020
+  IDW 35 2020
+  IDW 36 2020
+  IDW 37 2020
+  IDW 38 2020
+  IDW 39 2020
+  IDW 40 2020
+  IDW 41 2020
+  IDW 42 2020
+  IDW 43 2020
+  IDW 44 2020
+  IDW 45 2020
+  IDW 46 2020
+  IDW 47 0001
+  IDW 48 0000
+  IDW 49 0B00
+  IDW 50 0000
+  IDW 51 0200
+  IDW 52 0000
+  IDW 53 0007
+  IDW 54 E259
+  IDW 55 0008
+  IDW 56 0011
+  IDW 57 3F48
+  IDW 58 0078
+  IDW 59 0101
+  IDW 60 3F60
+  IDW 61 0078
+  IDW 62 0000
+  IDW 63 0407
+  IDW 64 0003
+  IDW 65 0078
+  IDW 66 0078
+  IDW 67 0078
+  IDW 68 0078
+  IDW 69 0000
+  IDW 70 0000
+  IDW 71 0000
+  IDW 72 0000
+  IDW 73 0000
+  IDW 74 0000
+  IDW 75 0000
+  IDW 76 0000
+  IDW 77 0000
+  IDW 78 0000
+  IDW 79 0000
+  IDW 80 0000
+  IDW 81 0000
+  IDW 82 7003
+  IDW 83 5004
+  IDW 84 4000
+  IDW 85 7000
+  IDW 86 1004
+  IDW 87 4000
+  IDW 88 003F
+  IDW 89 001E
+  IDW 90 001E
+  IDW 91 0000
+  IDW 92 FFFE
+  IDW 93 4000
+  IDW 94 0000
+  IDW 95 0000
+  IDW 96 0000
+  IDW 97 0000
+  IDW 98 0000
+  IDW 99 0000
+  IDW 100 0000
+  IDW 101 0000
+  IDW 102 0000
+  IDW 103 0000
+  IDW 104 0000
+  IDW 105 0000
+  IDW 106 0000
+  IDW 107 0000
+  IDW 108 0000
+  IDW 109 0000
+  IDW 110 0000
+  IDW 111 0000
+  IDW 112 0000
+  IDW 113 0000
+  IDW 114 0000
+  IDW 115 0000
+  IDW 116 0000
+  IDW 117 0000
+  IDW 118 0000
+  IDW 119 0000
+  IDW 120 0000
+  IDW 121 0000
+  IDW 122 0000
+  IDW 123 0000
+  IDW 124 0000
+  IDW 125 0000
+  IDW 126 0000
+  IDW 127 0000
+  IDW 128 0021
+  IDW 129 0000
+  IDW 130 0000
+  IDW 131 0000
+  IDW 132 0000
+  IDW 133 0000
+  IDW 134 0000
+  IDW 135 0000
+  IDW 136 0000
+  IDW 137 0000
+  IDW 138 0000
+  IDW 139 0000
+  IDW 140 0000
+  IDW 141 0000
+  IDW 142 0000
+  IDW 143 0000
+  IDW 144 0000
+  IDW 145 0000
+  IDW 146 0000
+  IDW 147 0000
+  IDW 148 0000
+  IDW 149 0000
+  IDW 150 0000
+  IDW 151 0000
+  IDW 152 0000
+  IDW 153 0000
+  IDW 154 0000
+  IDW 155 0000
+  IDW 156 0000
+  IDW 157 0000
+  IDW 158 0000
+  IDW 159 0000
+  IDW 160 1000
+  IDW 161 0000
+  IDW 162 0000
+  IDW 163 0012
+  IDW 164 0000
+  IDW 165 0000
+  IDW 166 0000
+  IDW 167 0000
+  IDW 168 0000
+  IDW 169 0000
+  IDW 170 0000
+  IDW 171 0000
+  IDW 172 0000
+  IDW 173 0000
+  IDW 174 0000
+  IDW 175 0000
+  IDW 176 0000
+  IDW 177 0000
+  IDW 178 0000
+  IDW 179 0000
+  IDW 180 0000
+  IDW 181 0000
+  IDW 182 0000
+  IDW 183 0000
+  IDW 184 0000
+  IDW 185 0000
+  IDW 186 0000
+  IDW 187 0000
+  IDW 188 0000
+  IDW 189 0000
+  IDW 190 0000
+  IDW 191 0000
+  IDW 192 0000
+  IDW 193 0000
+  IDW 194 0000
+  IDW 195 0000
+  IDW 196 0000
+  IDW 197 0000
+  IDW 198 0000
+  IDW 199 0000
+  IDW 200 0000
+  IDW 201 0000
+  IDW 202 0000
+  IDW 203 0000
+  IDW 204 0000
+  IDW 205 0000
+  IDW 206 0000
+  IDW 207 0000
+  IDW 208 0000
+  IDW 209 0000
+  IDW 210 0000
+  IDW 211 0000
+  IDW 212 0000
+  IDW 213 0000
+  IDW 214 0000
+  IDW 215 0000
+  IDW 216 0000
+  IDW 217 0001
+  IDW 218 0000
+  IDW 219 0000
+  IDW 220 0000
+  IDW 221 0000
+  IDW 222 0000
+  IDW 223 0000
+  IDW 224 0000
+  IDW 225 0000
+  IDW 226 0000
+  IDW 227 0000
+  IDW 228 0000
+  IDW 229 0000
+  IDW 230 0000
+  IDW 231 0000
+  IDW 232 0000
+  IDW 233 0000
+  IDW 234 0000
+  IDW 235 0000
+  IDW 236 0000
+  IDW 237 0000
+  IDW 238 0000
+  IDW 239 0000
+  IDW 240 0000
+  IDW 241 0000
+  IDW 242 0000
+  IDW 243 0000
+  IDW 244 0000
+  IDW 245 0000
+  IDW 246 0000
+  IDW 247 0000
+  IDW 248 0000
+  IDW 249 0000
+  IDW 250 0000
+  IDW 251 0000
+  IDW 252 0000
+  IDW 253 0000
+  IDW 254 0000
+  IDW 255 E9A5
+END:IDENTIFY
+BEGIN:RECAL
+  RECALIBRATE 0x10 status before/after = 50 50 polls = 8
+  status transitions (poll count, raw byte, decoded bits):
+    RECAL poll 1 D0 BSY=1 DRDY=1 DSC=1 DRQ=0 ERR=0
+    RECAL poll 8 50 BSY=0 DRDY=1 DSC=1 DRQ=0 ERR=0
+  task file with 0432=01 (live bank):
+0640=06 0641=FF 0642=00 0644=00 0646=01 0648=E7 064A=0E 064C=A1 
+064E=50 0740=00 0741=FF 0742=00 0744=00 0746=00 0748=00 074A=00 
+074C=50 074E=00 
+END:RECAL
+BEGIN:DIAG
+  DIAG status before = 50 ; after 0x90 status = 50 ; after 0x90 ERROR(0642) = 01 ; odd partners 0641/0643 = FF FF
+  after 0x08 status = 51 ; after 0x08 ERROR(0642) = 04
+END:DIAG
+BEGIN:IRQ
+  vector 0x11 (IRQ9) as found = 0000:0000
+  PIC as found m_imr s_imr m_irr m_isr s_irr s_isr = 7D 75 05 00 10 00
+  during IDENTIFY s_irr s_isr m_irr m_isr = 12 00 00 00
+  ISR status = 00 count = 0 pre/final status = 51 58
+END:IRQ
+  note: slave bit1 is IRQ9 (master cascade bit7); IRQ9 vector is 0x11.
+  count>0 with s_isr bit1 set = the drive asserts IRQ9 and it reached the CPU.
+BEGIN:RESTORE
+  0432 was 00 -> now 00
+END:RESTORE
+IDEPROBE DONE

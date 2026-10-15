@@ -1,0 +1,57 @@
+PEGCWATCH BEGIN V=1
+PEGCWATCH BASE T=00F4B565 P6A=00 A0A=00 A04=00 A08=00 A0D=00 W54D=00 M68=00 A03=00
+PEGCWATCH MEM PH=A FREE=0004 PARA 0KB
+PEGCWATCH CMD NAME=doom.exe TAIL=[         ]
+PEGCWATCH MEM PH=B FREE=963F PARA 600KB
+HOOK VEC=18 OLD=FD80:0ABD NEW=083F:057F
+HOOK VEC=1C OLD=FD80:0500 NEW=083F:04D7
+HOOK VEC=23 OLD=06E0:014A NEW=083F:0664
+HOOK VEC=24 OLD=06E0:0155 NEW=083F:0665
+DX386 - 386/486 DOS Extender Version 1.20, (c) 1993/94 INFINITY Co.,Ltd.
+Program is loaded at  00110000- 0110B000 (XMS)
+[>1h[>5h*[44m                        DOOM Operating System v1.2j1.0                   
+[37mM_LoadDefaults: Load system defaults.
+V_Init: allocate screens and load a video driver.
+Z_Init: Init zone memory allocation daemon. 
+0x800000 allocated for zone
+W_Init: Init WADfiles.
+	commercial version.
+===========================================================================
+             This version is NOT SHAREWARE, do not distribute!
+         Please report software piracy to the SPA: 1-800-388-PIR8
+===========================================================================
+M_Init: Init miscellaneous info.
+R_Init: Init DOOM refresh daemon.[                          ]........................
+P_Init: Init Playloop state.
+I_Init: Setting up machine state.
+I_StartupMouse
+Mouse: detected
+I_StartupJoystick
+I_StartupKeyboard
+I_StartupSound
+I_StartupTimer()
+  calling DMX_Init
+D_CheckNetGame: Checking network game status.
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+player 1 of 1 (1 nodes)
+S_Init: Setting up sound.
+HU_Init: Setting up heads up display.
+ST_Init: Init status bar.
+[>1h[>5h*[>1l[>5l*VEC VEC=18 OLD=FD80:0ABD BACK=FD80:0ABD OKVEC VEC=1C OLD=FD80:0500 BACK=FD80:0500 OKVEC VEC=23 OLD=06E0:014A BACK=06E0:014A OKVEC VEC=24 OLD=06E0:0155 BACK=06E0:0155 OKPEGCWATCH POST T=00A3E457 P6A=00 A0A=00 A04=00 A08=00 A0D=00 W54D=00 M68=00 A03=00
+PEGCWATCH MODES N=0002 OVER=0000
+PEGCWATCH MODE N=0000 T=00A2D595 P6A=00 A0A=01 A04=00 W54D=D8
+PEGCWATCH MODE N=0001 T=00A3C26B P6A=00 A0A=00 A04=00 W54D=58
+PEGCWATCH PLANE VIEWON=0001 NZ=0002 NOP=00
+PEGCWATCH PLREG ADDR=0E0004 LAST=00 NZ=0
+PEGCWATCH PLREG ADDR=0E0006 LAST=01 NZ=1
+PEGCWATCH PLREG ADDR=0E0104 LAST=00 NZ=0
+PEGCWATCH PLREG ADDR=0E0108 LAST=00 NZ=0
+PEGCWATCH PLREG ADDR=0E0109 LAST=00 NZ=0
+PEGCWATCH PLREG ADDR=0E010C LAST=00 NZ=0
+PEGCWATCH PLREG ADDR=0E0110 LAST=00 NZ=0
+PEGCWATCH PLREG ADDR=0E0112 LAST=00 NZ=0
+PEGCWATCH PLREG ADDR=0E0114 LAST=00 NZ=0
+PEGCWATCH PLREG ADDR=0E0118 LAST=00 NZ=0
+PEGCWATCH SAMP N=0002 VIEWON=0001 MODE256T=00A2D593 I18=0000 I18KEPT=0000 I18DROP=0000 I18REC=0000
+PEGCWATCH RUN CF=00 AX=3E01
+PEGCWATCH NOFAILPEGCWATCH END V=1

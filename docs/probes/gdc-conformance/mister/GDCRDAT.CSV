@@ -1,0 +1,18 @@
+# RDAT/FIFO-turnaround/readback tests
+# suite=pc98-gdc-tests-v1.0-rc6 clock=2.5MHz bios054d=10 bios054c=4F
+case,class,expect,outcome,xfer,dir,dc,status0,statusburst,data,curd,detail
+SINGLE_0,RDAT_SINGLE,INFO,ERROR,word,0,0,44,-,00-00,ERR-1,pc98-wiring-hypothesis=69-80 match=0
+SINGLE_2,RDAT_SINGLE,INFO,ERROR,low,0,0,64,-,00,ERR-1,pc98-wiring-hypothesis=69 match=0
+SINGLE_3,RDAT_SINGLE,INFO,ERROR,high,0,0,64,-,00,ERR-1,pc98-wiring-hypothesis=80 match=0
+STEP_DIR0,RDAT_STEP,INFO,ERROR,word,0,7,04,-,00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00,ERR-1,successive-8-words
+STEP_DIR1,RDAT_STEP,INFO,ERROR,word,1,7,64,-,00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00,ERR-1,successive-8-words
+STEP_DIR2,RDAT_STEP,INFO,ERROR,word,2,7,64,-,00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00,ERR-1,successive-8-words
+STEP_DIR3,RDAT_STEP,INFO,ERROR,word,3,7,64,-,00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00,ERR-1,successive-8-words
+STEP_DIR4,RDAT_STEP,INFO,ERROR,word,4,7,64,-,00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00,ERR-1,successive-8-words
+STEP_DIR5,RDAT_STEP,INFO,ERROR,word,5,7,64,-,00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00,ERR-1,successive-8-words
+STEP_DIR6,RDAT_STEP,INFO,ERROR,word,6,7,64,-,00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00,ERR-1,successive-8-words
+STEP_DIR7,RDAT_STEP,INFO,ERROR,word,7,7,64,-,00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00,ERR-1,successive-8-words
+STATUS_BURST,RDAT_STATUS,INFO,ERROR,word,0,0,-,64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64-64,00-00,-,32-tight-samples
+RDAT_ABORT,FIFO_TURN,STRICT,ERROR,word,0,7,-,-,00-00,ERR-1,new-command-aborts-unread-data
+POST_READ_STATUS,RDAT_STATUS,INFO,OBS,word,0,0,64,64-64-64-64-64-64-64-64,-,-,after-complete/abort
+# rows=14 strict_fail=0 errors=13

@@ -1,0 +1,29 @@
+A20MAP 1 - how the PC-98 A20 mask treats physical addresses
+initial A20: F6=5E F2=FE
+BDA 0x0401=00 (128 KiB units, 1-16 MiB) 0x0594=0000
+X=0009FFF0 ram_top_below_16M=01000000 ram_top_above_16M=01200000
+BDA 0401/0594 are zero (HIMEM owns extended memory): assuming RAM to 18 MiB - check each open= value reads back its marker
+T = X + {0,1,2,3,16,17} MiB; markers A20A000i (open) / B0B0000i (masked write), i = T index.
+WBINVD brackets every A20 change; pass 2 repeats with CR0.CD=1 NW=0. IF=0, PICs masked.
+PASS 1 (486 cache as found, WBINVD around mask changes)
+  after masking: F6=5E F2=FF
+T=0009FFF0 open=A20A0000 masked=A20A0000 mwr=B0B00001 after=B0B00001
+T=0019FFF0 open=A20A0001 masked=A20A0000 mwr=B0B00001 after=A20A0001
+T=0029FFF0 open=A20A0002 masked=A20A0002 mwr=B0B00003 after=B0B00003
+T=0039FFF0 open=A20A0003 masked=A20A0002 mwr=B0B00003 after=A20A0003
+T=0109FFF0 open=A20A0004 masked=A20A0004 mwr=B0B00005 after=B0B00005
+T=0119FFF0 open=A20A0005 masked=A20A0004 mwr=B0B00005 after=A20A0005
+  pass verdict: BIT20-ONLY
+  above-16MiB (X+16M,X+17M) verdict: BIT20-ONLY
+PASS 2 (486 cache disabled: CR0.CD=1 NW=0, WBINVD)
+  after masking: F6=5E F2=FF
+T=0009FFF0 open=A20A0000 masked=A20A0000 mwr=B0B00001 after=B0B00001
+T=0019FFF0 open=A20A0001 masked=A20A0000 mwr=B0B00001 after=A20A0001
+T=0029FFF0 open=A20A0002 masked=A20A0002 mwr=B0B00003 after=B0B00003
+T=0039FFF0 open=A20A0003 masked=A20A0002 mwr=B0B00003 after=A20A0003
+T=0109FFF0 open=A20A0004 masked=A20A0004 mwr=B0B00005 after=B0B00005
+T=0119FFF0 open=A20A0005 masked=A20A0004 mwr=B0B00005 after=A20A0005
+  pass verdict: BIT20-ONLY
+  above-16MiB (X+16M,X+17M) verdict: BIT20-ONLY
+VERDICT BIT20-ONLY
+A20MAP DONE

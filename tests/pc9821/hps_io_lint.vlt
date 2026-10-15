@@ -1,0 +1,6 @@
+`verilator_config
+// sys/hps_io.sv (the framework, byte-identical upstream) assigns its kbd/mouse port outputs
+// procedurally while declaring them as nets; Quartus accepts that, Verilator calls it
+// PROCASSWIRE. tb_pc9821_fdd_write_hps instantiates the real module, so the rule is waived for
+// that one file here rather than by editing sys/ (which is frozen).
+lint_off -rule PROCASSWIRE -file "*sys/hps_io.sv"

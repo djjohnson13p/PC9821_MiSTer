@@ -1,0 +1,235 @@
+PROBE2 BEGIN
+BEGIN:SNAPSHOT
+WORKAREA 0000:0400..05FF (16 per line):
+02 00 00 00 F8 00 30 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 97 
+02 00 27 84 40 48 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 D3 62 00 00 0E 00 32 04 
+00 00 00 00 00 00 00 00 00 00 00 FF 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 18 00 00 D8 D8 00 00 00 00 00 00 00 
+D8 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+EA AA AA AA 00 00 00 00 00 00 00 00 00 00 00 00 
+04 00 A0 F5 00 00 00 00 00 0D 08 00 00 00 00 00 
+EE EA 02 00 80 FD 00 00 03 24 73 1E 2E 31 74 14 
+78 2A 74 14 0D 1C 6D 2F 65 12 73 1E 65 12 74 14 
+20 34 3E 31 20 34 74 14 72 13 2B 0B 0E 05 0E 05 
+00 00 00 00 00 10 00 00 00 00 00 00 00 00 00 00 
+00 00 00 0F 80 00 00 00 00 00 37 09 80 FD 00 00 
+00 00 00 00 4F 50 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 01 01 00 00 00 00 00 00 C8 00 00 00 
+00 00 00 00 C9 00 00 00 00 00 00 00 CA 00 00 00 
+00 00 00 00 CB 00 00 00 00 00 00 00 80 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 84 
+00 00 00 00 00 00 00 00 00 00 00 00 FF 00 00 00 
+00 F3 6D CB 00 00 73 00 FF 00 00 80 00 00 00 00 
+00 20 04 00 00 00 00 00 00 00 00 00 00 00 2B 0B 
+80 FD FF 96 D7 1A 80 FD 00 00 00 00 00 00 00 00 
+C0 00 C0 00 C0 00 C0 00 00 00 00 00 00 00 00 00 
+18 07 00 D8 12 07 00 D8 00 00 00 00 00 00 00 00 
+AF 1A 80 FD 00 00 00 00 
+TRAM A0000/A2000 first 160 cells (read before any output):
+20 00 20 00 6E 00 6F 00 
+74 00 65 00 3A 00 20 00 30 00 34 00 33 00 46 00 
+2F 00 30 00 34 00 36 00 31 00 2F 00 30 00 34 00 
+36 00 33 00 2F 00 30 00 35 00 33 00 44 00 20 00 
+72 00 65 00 61 00 64 00 20 00 62 00 61 00 63 00 
+6B 00 20 00 61 00 20 00 73 00 74 00 72 00 61 00 
+70 00 2C 00 20 00 6E 00 6F 00 74 00 20 00 61 00 
+20 00 6D 00 69 00 72 00 72 00 6F 00 72 00 20 00 
+6F 00 66 00 20 00 74 00 68 00 65 00 20 00 77 00 
+72 00 69 00 74 00 65 00 3B 00 20 00 20 00 20 00 
+20 00 20 00 20 00 20 00 E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF E1 FF 
+E1 FF E1 FF E1 FF E1 FF 
+TRAM TAIL A3FE0..A3FFF (ITF row counter + 8 memory-switch cells):
+E1 FF 48 FF E1 FF 05 FF 
+E1 FF 0C FF E1 FF 00 FF E1 FF 01 FF E1 FF 00 FF 
+E1 FF 00 FF E1 FF 81 FF 
+A4000..A400F (CG window, across the TRAM boundary):
+8F 00 8F 00 8F 00 8F 00 
+8F 00 8F 00 8F 00 8F 00 
+0020=FF 0021=00
+0022=EF 0023=00
+0031=F3 0032=45
+0033=F9 0034=FF
+0035=B8 0036=FF
+0037=FF 0038=FF
+0041=9C 0042=94
+0043=85 0044=81
+005C=FD 005D=83
+005E=83 005F=3B
+0060=04 0061=FF
+0062=-- 0063=FF
+0064=1F 0065=FF
+0068=18 0069=FF
+006A=00 006B=FF
+006E=FF 006F=FF
+0070=00 0071=AB
+0072=0F 0073=04
+0074=10 0075=FF
+0076=00 0077=FF
+0078=00 0079=FF
+007A=00 007B=FF
+007C=FF 007D=FF
+007E=FF 007F=FF
+0090=D0 0091=FF
+0092=80 0093=FF
+0094=44 0095=FF
+0096=FF 0097=FF
+0098=FF 0099=FF
+009A=FF 009B=FF
+009C=FF 009D=FF
+009E=FF 009F=FF
+00A0=04 00A1=2F
+00A2=FF 00A3=57
+00A4=00 00A5=0F
+00A6=00 00A7=FF
+00A8=37 00A9=00
+00AA=15 00AB=FF
+00AC=26 00AD=FF
+00AE=04 00AF=FF
+0128=81 0129=FF
+0430=41 0431=FF
+0432=00 0433=00
+0433=00 0434=BE
+0435=00 0436=04
+043B=FB 043C=FF
+053D=1F 053E=FC
+063C=FC 063D=EC
+09A0=01 09A1=FF
+09A8=00 09A9=FF
+0EE0=FF 0EE1=FF
+1E8E=FE 1E8F=FF
+04A0=FF 04A1=FF
+04A2=FF 04A3=FF
+04A4=FF 04A5=FF
+04A6=FF 04A7=FF
+04A8=FF 04A9=FF
+04AA=FF 04AB=FF
+04AC=FF 04AD=FF
+04AE=FF 04AF=FF
+  (-- = consume-on-read port, not sampled: 0041 keyboard data, 0062 GDC1 data, 0640/0740 ATA data)
+ATA BLOCK as left by POST/DOS (port=value, and its odd partner):
+0640=-- 0641=--
+0642=0E 0643=FF
+0644=0E 0645=FF
+0646=0E 0647=FF
+0648=0E 0649=FF
+064A=0E 064B=FF
+064C=0E 064D=FF
+064E=0E 064F=FF
+074C=0F 074D=FF
+074E=0F 074F=FF
+ROM WINDOW
+  043D=FF  043F=C4
+  F8000:0000=A1
+  F8E90 (IDE option-ROM drive bitmap) byte/byte+1/word=04 B8 B804
+END:SNAPSHOT
+BEGIN:TIME
+TIME: the timing ladder. Every figure is a RATIO against two counters a 486 can read: the
+  free-running counter at 005C (low word) / 005E (high word), and the PIT's channel 0 read
+  through its own counter-latch command. /TIMEREF measures both counters against the
+  calendar's second and converts these rows to Hz, nanoseconds and 50 MHz core cycles.
+  READ-ONLY as far as live state goes. The only writes /TIME makes are 0077 <- 00 (the PIT
+  counter-latch command: it copies the counter into the latch register and changes no state,
+  and it is deliberately NOT in the RESTORE table, because 0077's read-back is FF and
+  replaying FF would write a PIT MODE word) and 005F (the documented I/O-wait port, a
+  write-only delay generator, recorded in RESTORE). Every other access is a read.
+  ARTIC 005C/005E = 3BFAFA15
+  ARTIC again after the PIT samples below = 3BFBFB77 (delta = 00010162 ticks)
+  work-area 0501 bit 7 (the byte the BIOS's own PIT setup tests at BANK7@0x5DE7) = 00
+    -> the BIOS's own divisor here is 0x6000 = 24576, so it expects a 2.4576 MHz counter
+
+  PIT channel 0 latch/read, three samples = 208A 207E 2075
+    measured divisor = 7E7A (largest count over a 20 ms scan; mode 3 sweeps divisor..0 in steps of 2)
+  work-area 054D bit 2 (the GDC clock the BIOS published: 0 = 2.5 MHz, 1 = 5 MHz) = 00
+  I/O access time: 1024 back-to-back accesses per class, cli across each class's window, no DOS call inside it.
+  BASE is the same loop with the bus access replaced by a same-length register move, so the
+  excess columns are ONE access over a non-I/O instruction of the same shape; they include the
+  CPU's own cost of the instruction, which a 486 cannot separate from the bus time, so each is
+  an upper bound on the device's share. The ns columns use the DOCUMENTED rates (ARTIC
+  307200 Hz, PIT 2.4576 MHz); /TIMEREF measures both and reprints these rows corrected.
+    class    port  artic_d  pit_c    exc_ns(artic) exc_ns(pit)
+BASE    ---- 00000024 00000085       0       0
+WAIT    005F 00020227 00000892  418277     819
+SYSTEM  0043 0001012D 000004AA  209162     421
+CHIPSET 043B 0001012D 000004AA  209162     421
+GDC1    0060 000000B5 000002CA     460     230
+GDC2    00A0 000100FE 000003EF  209012     347
+SOUND1880188 0001012C 000004AA  209159     421
+SOUND18A018A 0001012D 000004A9  209162     421
+ATA     064E 0001012D 000004A9  209162     421
+PITDATA 0071 0001012D 000004A9  209162     421
+OPENBUS 0EE0 0001012D 000004AA  209162     421
+TRAM    A000 000100FE 000003ED  209012     346
+  raster: 00A0 polled in a tight loop for 614400 ARTIC ticks:
+    bit5 rising edges = 0 ; bit6 rising edges = 212 ; polls = 9216
+    (00A0 is the graphics GDC's status register; the machine's own GDC.TXT histogram has bit5
+     high 1.7% of the time and bit6 23.4%, so one of these rates is a vertical sync pulse and
+     the other a horizontal blanking interval - the rates themselves say which.)
+  CPU loop rate: a loop of four 1-byte adds, dec and jnz (six instructions, no memory write)
+  repeated in 4096-iteration batches:
+    iterations = 45056 ; ARTIC ticks = 328800
+    (an EFFECTIVE rate, not a clock: the 486's own instruction timing and any wait states are
+     inside it. The body is listed in tools/hwprobe/README.md.)
+END:TIME
+BEGIN:TIMEREF
+TIMEREF: the calendar (uPD4990A) as an absolute reference. Its 32.768 kHz crystal is
+  independent of the PIT's oscillator, whose value - 2.4576 MHz or 1.9968 MHz, 23% apart - is an
+  unmeasured premise (r12/02 P1-4) that every time base in this core inherits. This section
+  writes the calendar's command latch at 0020 exactly as the ITF's own INT 1Ah reader does
+  (BANK7@0x5D22: TIMEREAD, SHIFT, then clocks on 0033 bit 0, leaving the latch at 07); it
+  writes the calendar's COUNTERS only when /TIMESET is given. cli covers each bit sequence.
+  0022 mode latch (first touch) = EF
+  0128 = 81 (calendar tick rate, 0x80|rate; this read also clears a pending tick)
+  full read: 52 bits from 0033 bit 0, then the six fields decoded both ways - the uPD4993A
+  four-bit prefix question (r6/08 C19) is what separates the two lines:
+    1010000010000000000000000000000000000000000000001000
+    payload at bit 0: sec=05 min=01 hour=00 day=00 mon/wday=00 year=00  (valid BCD)
+
+    payload at bit 4: sec=10 min=00 hour=00 day=00 mon/wday=00 year=10  (valid BCD)
+  /TIMESET given: writing the calendar's own counters with the ITF's own sequence
+  (BANK7@0x5D62: opcode 1, 48 data bits, opcode 2 time set, opcode 0 hold) ...
+  NOTE: RTC counters set to 01:05:30 on day 02, month 1, year 00 - NOT RESTORABLE. To put
+        the machine's clock back: TIME 01:05:30 and then DATE.
+  set read-back: 0000110010100000100000000100000000001000000000001000
+    payload at bit 0: sec=30 min=05 hour=01 day=02 mon/wday=10 year=00  (valid BCD)
+
+    payload at bit 4: sec=53 min=10 hour=20 day=00 mon/wday=01 year=10  (valid BCD)
+  fields matching the written pattern (bit0/bit4) = 06 00 of 6
+  seconds-field alignment = payload at bit 0 (no prefix)  liveness: polling the seconds field for up to 2 s of ARTIC ticks ...
+    -> the seconds field did NOT move: the calendar's counters are not running (a dead backup
+       battery, or counters left held). Nothing on this machine can then be timed in absolute
+       units. What would make it measurable: /TIMEREF /TIMESET, which writes a known time into
+       the counters (and says so - it is not restorable), or a working battery.
+  notes: the PIT line is the strong one - it uses no ARTIC rate and no CPU timing, only the
+  PIT reload count, the divisor and the calendar's second. If the ARTIC line disagrees with the
+  documented 307200 Hz, the ARTIC is not the clean timestamp source the tree's other reports
+  assume, and the PIT-derived columns are the ones to quote. The CPU line is an effective rate,
+  not a clock.
+END:TIMEREF
+RESTORE (port=original -> now):
+  none (no writes were made)
+  note: /TIME issued the PIT counter-latch command (0077 <- 00) without a restore entry:
+        it changes no state, and replaying 0077's read-back (FF) would write a PIT mode word.
+  note: /TIMEREF wrote the calendar's command latch at 0020 and left it at 07, the state
+        the ITF's own reader leaves (BANK7@0x5D5A). It is not in the restore table because
+        0020's read-back is FF and replaying FF would pulse STB with DATA=1 - a command.
+  note: 043F/0461/0463/053D read back a strap, not a mirror of the write;
+        their 'now' byte cannot prove or disprove a restore.
+PROBE2 END

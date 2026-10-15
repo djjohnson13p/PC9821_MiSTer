@@ -1,0 +1,58 @@
+IRQWD - PC-9821 masked-ack / request-withdraw probe
+  Per line: mask it, trigger a request, poll the IRR until it latches,
+  do the acking access, read the IRR again. postack_irr bit SET = the
+  machine HOLDS the request (edge latch); bit CLEAR = it WITHDRAWS it.
+  Nothing is delivered and no vector is touched. IRQ0's row is the
+  1->0 transition count on the master IRR while masked (the STEELGUN
+  idiom); PITOUT is its control (the PIT ch0 OUT pin, read back).
+BEGIN:STATE
+  master IMR IRR ISR = 7D 01 00
+  slave  IMR IRR ISR = 75 10 00
+END:STATE
+BEGIN:PITOUT
+  PITOUT ch0_status lo hi falls rises = B0 0 65532 0 0
+END:PITOUT
+  falls/rises > 0 = the PIT channel-0 OUT pin is toggling, so the
+  IRQ0 row below is interpretable. Static OUT = the timer was not
+  running and the IRQ0 row is void. ch0_status bit7 is the OUT pin
+  and bits3:1 are the mode (3 = square wave).
+BEGIN:IRQ0
+  IRQ0 masked poll ch0_status lo hi falls rises = B0 29031 36473 2826 2826
+END:IRQ0
+  falls>0 = the machine clears the masked IRQ0 request as the PIT runs;
+  falls=0 with PITOUT toggling = the request latches and is HELD.
+BEGIN:PITCH0
+  PITCH0 IRR before ch0-write after = 01 01
+END:PITCH0
+  before bit0 set and after bit0 clear = a PIT channel-0 control write
+  withdraws the request (NP2kai io/pit.c:378/471); after bit0 still set
+  = it does not.
+BEGIN:IRQ1
+  IRQ1: press a key now (bounded wait)...
+  IRQ1  keyboard 0x41 ack trig=01 latch_irr=03 postack_irr=01
+END:IRQ1
+BEGIN:IRQ9
+  IRQ9  IDE 0x64E ack trig=01 latch_irr=12 postack_irr=10
+END:IRQ9
+BEGIN:IRQ12
+  IRQ12 OPNA reg 0x27 ack trig=01 latch_irr=10 postack_irr=10
+END:IRQ12
+BEGIN:IRQ15
+  IRQ15 calendar 0x128 ack trig=00 latch_irr=00 postack_irr=08
+END:IRQ15
+BEGIN:VERDICT
+  PITOUT falls/rises=0 0
+  IRQ0 falls/rises=2826 2826
+  PITCH0 before/after bit0=01 01
+END:VERDICT
+  Decode: PITOUT falls/rises>0 -> the PIT toggles. IRQ0 falls>0 -> the
+  machine clears the masked timer (adopt the timer clear); falls=0 with
+  PITOUT toggling -> HOLD. PITCH0 after=0 -> clear. IRQ1/9/12/15: the
+  postack_irr bit set -> HOLD, clear -> WITHDRAW.
+BEGIN:RESTORE
+  master IMR as-found 7D -> now 7D
+  slave  IMR as-found 75 -> now 75
+END:RESTORE
+  No interrupt vector was written. The OPNA timers are left stopped
+  with both flags cleared. The PIT was never reprogrammed.
+END:IRQWD
