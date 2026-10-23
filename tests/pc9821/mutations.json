@@ -745,8 +745,8 @@
   "bench": "gdc2_write",
   "file": "src/pc9821/video/pc9821_gdc2.sv",
   "why": "direction 6 steps y+ instead of 7",
-  "from": "  wire        adv_yp_w = (d_ope == 3'd0) || (d_ope == 3'd1) || (d_ope == 3'd7);",
-  "to": "  wire        adv_yp_w = (d_ope == 3'd0) || (d_ope == 3'd1) || (d_ope == 3'd6);"
+  "from": "  wire        adv_yp_w = (d_stepdir == 3'd0) || (d_stepdir == 3'd1) || (d_stepdir == 3'd7);",
+  "to": "  wire        adv_yp_w = (d_stepdir == 3'd0) || (d_stepdir == 3'd1) || (d_stepdir == 3'd6);"
  },
  {
   "bench": "gdc2_write",
@@ -2063,5 +2063,26 @@
   "why": "the window-moved flag computed from the old win0_sel instead of the value written",
   "from": "win0_sel_moved <= (next_win0 != 8'h08);",
   "to": "win0_sel_moved <= (win0_sel != 8'h08);"
+ },
+ {
+  "bench": "gdc2_figd",
+  "file": "src/pc9821/video/pc9821_gdc2.sv",
+  "why": "FIGD decode disabled",
+  "from": "(io_din == 8'h6C)",
+  "to": "(io_din == 8'h6D)"
+ },
+ {
+  "bench": "gdc2_figd",
+  "file": "src/pc9821/video/pc9821_gdc2.sv",
+  "why": "DDA chooses the wrong dependent-axis branch",
+  "from": "(d_ope[0] ^ !d_error[13])",
+  "to": "(d_ope[0] ^ d_error[13])"
+ },
+ {
+  "bench": "gdc2_figd",
+  "file": "src/pc9821/video/pc9821_gdc2.sv",
+  "why": "figure pattern rotates in the wrong direction",
+  "from": "{d_color[0],d_color[15:1]}",
+  "to": "{d_color[14:0],d_color[15]}"
  }
 ]

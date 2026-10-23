@@ -96,7 +96,12 @@ module tb_pc9821_gdc2_equiv;
         4'd11: push(1, 8'hE0);
         4'd12: push(1, 8'hC0);
         4'd13: begin push(1, 8'h6B); end
-        4'd14: begin push(1, r8(0)); push(0, r8(0)); end   // anything at all
+        4'd14: begin
+          // FIGD 0x6C is now implemented and intentionally differs from this
+          // pre-feature reference; tb_pc9821_gdc2_figd checks it against hardware.
+          x = {24'd0,r8(0)};
+          push(1, x[7:0] == 8'h6C ? 8'h6D : x[7:0]); push(0, r8(0));
+        end
         default: begin push(0, r8(0)); end
       endcase
     end

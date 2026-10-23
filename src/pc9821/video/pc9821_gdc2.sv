@@ -198,6 +198,10 @@ module pc9821_gdc2 (
   // jobs dropped for want of a queue: a WRITE completing while a draw is still walking
   // snapshots its job into the engine's pending slot, and a THIRD in flight is the
   // command FIFO this slice does not model (the conformance capture's FIFO_TURN/STATE rows).
+  // FIGD's cursor mask follows CURS.DAD and MASK independently of the legacy
+  // WDAT slice's explicit mask. NEC uPD7220/uPD7220A User Manual (Dec 1985),
+  // CURS and FIGS; the Xe10 DOT_DAD00..15 rows pin its one-hot bit order.
+  reg [15:0] gdc2_cursor_mask;
   reg [3:0]  draw_drops;   // bench-visible telemetry, not guest-visible
 
   // ---- The WRITE engine's job (the GDC2 WRITE slice) ----
@@ -217,6 +221,11 @@ module pc9821_gdc2 (
   reg  [2:0] d_ope;       // VECTW byte 0's low three bits: the direction (vectdir[])
   reg [15:0] d_color;     // INTERNAL-domain write pattern
   reg [15:0] d_mask;      // INTERNAL-domain write mask (the dot positions painted)
+  reg        d_figure, d_line;
+  // The DDA's 14-bit two's-complement arithmetic is the NEC FIGS contract:
+  // D >= 0 steps the dependent axis and adds D2; D < 0 adds D1 instead.
+  // All octants and the equality case are checked by the Xe10 LINE_CANON grid.
+  reg [13:0] d_error, d_delta1, d_delta2;
   reg        d_route_egc, d_route_grcg;   // LATCHED at the trigger (gdcpset_prepare)
   // The queued job, byte-exact snapshots of the parse's registers at the trigger -
   // only the bits the decode reads (the rest of each byte has no consumer here).
@@ -229,6 +238,8 @@ module pc9821_gdc2 (
   reg  [7:0] pend_vect1, pend_vect2;
   reg        pend_egc, pend_grcg, pend_page;
   reg        pend_valid;
+  reg        pend_figure, pend_line;
+  reg [13:0] pend_error, pend_delta1, pend_delta2;
 
   // The GDC's bit order is the uPD7220's: bit 0 of a word is the LEFTMOST pixel, so a
   // GDC word read by the CPU arrives with each byte's bits reversed. Machine-pinned:
@@ -276,6 +287,15 @@ module pc9821_gdc2 (
                      (gdc2_recv_tgt == RCV_CODE) && (gdc2_recv_left == 4'd1) &&
                      ((gdc2_wcmd & 8'hE4) == 8'h20);
 
+  // FIGD (0x6C) executes DOT/LINE only in this slice. GRCG/EGC FIGD needs
+  // a masked-pixel visit contract (TDW's CPU path writes whole words), so those
+  // routes remain unimplemented rather than expanding a dot to a tile word.
+  // Command and parameter ports are disjoint: a WDAT completion and FIGD cannot
+  // coincide. The unified queue's accept+load case below preserves both jobs.
+  wire draw_fire_f = io_wr && (io_addr == 8'hA2) && (io_din == 8'h6C) &&
+                     !(|gdc2_vect[0][7:4]) && !egc_mem_gate && !grcg_cg_gate;
+  wire draw_fire = draw_fire_w || draw_fire_f;
+
   // The QUEUED job's decode (the engine loads these, so the parse's registers are free
   // to move once the snapshot is taken). The width decode is NP2kai gdcsub_write's
   // `switch(gdc.s.cmd & 0x18)`: 8'h00 is the word, 8'h10 the low byte (mask 0x00FF),
@@ -291,7 +311,8 @@ module pc9821_gdc2 (
   wire [15:0] pend_mask_w = (pend_wctl[3:2] == 2'b11) ? {pend_mask1, pend_mask0} & 16'hFF00 :
                             (pend_wctl[3:2] == 2'b10) ? {pend_mask1, pend_mask0} & 16'h00FF :
                             {pend_mask1, pend_mask0};
-  wire [15:0] pend_col_w = pend_wg ? pend_data_w :
+  wire [15:0] pend_col_w = pend_figure ? {16{pend_code0[0]}} :
+                           pend_wg ? pend_data_w :
                            (pend_code0[0] ? 16'hFFFF : 16'h0000);
   wire [15:0] pend_msk_w = pend_mask_w;
   wire        pend_plain_w = !pend_egc && !pend_grcg;
@@ -310,15 +331,16 @@ module pc9821_gdc2 (
   // The GDC's own arithmetic is INTERNAL-domain and rev16 flips at the VRAM boundary
   // (the ROP commutes with the bit permutation, so the two are equivalent - but the
   // dot ADVANCE below is a shift, which only works in the internal numbering).
+  wire [15:0] d_paint_w = d_figure ? {16{d_color[0]}} : d_color;
   wire d_plain_w = !d_route_egc && !d_route_grcg;
   wire d_need_rd_w = d_plain_w && !((d_rop == 2'd00) && (d_mask == 16'hFFFF));
   wire [3:0]  d_be_w = d_waddr[0] ? 4'b1100 : 4'b0011;
-  wire [31:0] d_din_w = d_waddr[0] ? {rev16(d_color & d_mask), 16'h0000}
-                                   : {16'h0000, rev16(d_color & d_mask)};
+  wire [31:0] d_din_w = d_waddr[0] ? {rev16(d_paint_w & d_mask), 16'h0000}
+                                   : {16'h0000, rev16(d_paint_w & d_mask)};
   // The plain path's merge read, ROPped in the cycle its datum answers (no d_old
   // register: the strobe's datum is consumed exactly once, by this wire's capture).
   wire [15:0] d_rd_i = rev16(d_waddr[0] ? mem_rdata[31:16] : mem_rdata[15:0]);
-  wire [15:0] d_res_i = gdc_rop16(d_rop, d_rd_i, d_color, d_mask);
+  wire [15:0] d_res_i = gdc_rop16(d_rop, d_rd_i, d_paint_w, d_mask);
   wire [31:0] d_din_merge_w = d_waddr[0] ? {rev16(d_res_i), 16'h0000}
                                          : {16'h0000, rev16(d_res_i)};
   // The engine takes the job when idle; `pend_valid` is written once per cycle below.
@@ -376,10 +398,15 @@ module pc9821_gdc2 (
   // {-1,0},{-1,1}). Those rows are the suite's INFO class (it claims no model) but they
   // are the machine's OBSERVED pixels and win over NP2kai per the evidence hierarchy;
   // a WDAT-STEP slice would re-derive them formally.
-  wire        adv_xp_w = (d_ope == 3'd1) || (d_ope == 3'd2) || (d_ope == 3'd3);
-  wire        adv_xm_w = (d_ope == 3'd5) || (d_ope == 3'd6) || (d_ope == 3'd7);
-  wire        adv_yp_w = (d_ope == 3'd0) || (d_ope == 3'd1) || (d_ope == 3'd7);
-  wire        adv_ym_w = (d_ope == 3'd3) || (d_ope == 3'd4) || (d_ope == 3'd5);
+  // A line octant names an independent axis and its neighbouring diagonal.
+  // The DDA chooses one of them from D's sign; a DOT/WDAT uses the raw direction.
+  // NEC vector drawing, verified against the 288 unchanged LINE_CANON captures.
+  wire [2:0] d_stepdir = d_line ?
+      d_ope + {2'b00, (d_ope[0] ^ !d_error[13])} : d_ope;
+  wire        adv_xp_w = (d_stepdir == 3'd1) || (d_stepdir == 3'd2) || (d_stepdir == 3'd3);
+  wire        adv_xm_w = (d_stepdir == 3'd5) || (d_stepdir == 3'd6) || (d_stepdir == 3'd7);
+  wire        adv_yp_w = (d_stepdir == 3'd0) || (d_stepdir == 3'd1) || (d_stepdir == 3'd7);
+  wire        adv_ym_w = (d_stepdir == 3'd3) || (d_stepdir == 3'd4) || (d_stepdir == 3'd5);
   // The dot step in the INTERNAL numbering (bit 0 = the leftmost pixel): +x shifts the
   // mask one dot up, wrapping into the neighbouring word's opposite end at the word's
   // edge - the same fold the unit walk's wrap gives (NP2kai's `(adrs + 2) & 0x7ffe`).
@@ -450,6 +477,17 @@ module pc9821_gdc2 (
       pend_grcg <= 1'b0;
       pend_page <= 1'b0;
       draw_drops <= 4'd0;
+      gdc2_cursor_mask <= 16'h0001;
+      pend_figure <= 1'b0;
+      pend_line <= 1'b0;
+      pend_error <= 14'd0;
+      pend_delta1 <= 14'd0;
+      pend_delta2 <= 14'd0;
+      d_figure <= 1'b0;
+      d_line <= 1'b0;
+      d_error <= 14'd0;
+      d_delta1 <= 14'd0;
+      d_delta2 <= 14'd0;
       d_csrw_touch <= 1'b0;
       d_mask_touch <= 1'b0;
       d_state <= D_IDLE;
@@ -627,18 +665,26 @@ module pc9821_gdc2 (
     // the command FIFO this slice does not model (the conformance capture's FIFO_TURN/STATE rows) and
     // is dropped into `draw_drops`, which the bench reads over a hierarchical name.
     // ---------------------------------------------------------------
-    if (draw_fire_w && (!pend_valid || d_load_w)) begin
-      pend_wctl  <= {gdc2_wcmd[4:3], gdc2_wcmd[1:0]};
+    if (draw_fire && (!pend_valid || d_load_w)) begin
+      pend_figure <= draw_fire_f;
+      pend_line <= draw_fire_f && gdc2_vect[0][3];
+      pend_error <= {gdc2_vect[4][5:0], gdc2_vect[3]};
+      pend_delta2 <= {gdc2_vect[6][5:0], gdc2_vect[5]};
+      pend_delta1 <= {gdc2_vect[8][5:0], gdc2_vect[7]};
+      pend_wctl <= {draw_fire_f ? 2'b00 : gdc2_wcmd[4:3], gdc2_wcmd[1:0]};
       pend_wg    <= gdc2_csrw[2][3];
-      pend_code0 <= (gdc2_recv_ptr[0] == 1'b0) ? io_din : gdc2_code[0];
-      pend_code1 <= (gdc2_recv_ptr[0] == 1'b0) ? gdc2_code[1] : io_din;
+      pend_code0 <= draw_fire_f ? gdc2_scr[8] :
+                    ((gdc2_recv_ptr[0] == 1'b0) ? io_din : gdc2_code[0]);
+      pend_code1 <= draw_fire_f ? gdc2_scr[9] :
+                    ((gdc2_recv_ptr[0] == 1'b0) ? gdc2_code[1] : io_din);
       pend_csrw0 <= gdc2_csrw[0];
       pend_csrw1 <= gdc2_csrw[1];
-      pend_mask0 <= gdc2_mask[0];
-      pend_mask1 <= gdc2_mask[1];
+      pend_mask0 <= draw_fire_f ? gdc2_cursor_mask[7:0] : gdc2_mask[0];
+      pend_mask1 <= draw_fire_f ? gdc2_cursor_mask[15:8] : gdc2_mask[1];
       pend_dir   <= gdc2_vect[0][2:0];
-      pend_vect1 <= gdc2_vect[1];
-      pend_vect2 <= gdc2_vect[2];
+      pend_vect1 <= (draw_fire_f && !gdc2_vect[0][3]) ? 8'd0 : gdc2_vect[1];
+      pend_vect2 <= draw_fire_f ? (gdc2_vect[0][3] ? {2'b00,gdc2_vect[2][5:0]} : 8'd0)
+                                : gdc2_vect[2];
       // The route is LATCHED here, exactly gdcpset_prepare's once-per-draw dispatch
       // (io/gdc_pset.c:117-137): EGC first (its gate already ANDs the GRCG's bit 7),
       // then the GRCG's tile path, then the plain ROP path.
@@ -648,7 +694,7 @@ module pc9821_gdc2 (
       pend_valid <= 1'b1;
     end else if (d_load_w) begin
       pend_valid <= 1'b0;
-    end else if (draw_fire_w) begin
+    end else if (draw_fire) begin
       draw_drops <= draw_drops + 4'd1;
     end
     // The cursor write-back's touch flags: set by any guest cursor write, cleared when
@@ -657,11 +703,28 @@ module pc9821_gdc2 (
     d_csrw_touch <= wb_csrw_w || (d_csrw_touch && !d_load_w);
     d_mask_touch <= wb_mask_w || (d_mask_touch && !d_load_w);
 
+    // The cursor mask's single update owns three events. A guest CURS/MASK
+    // write is the later intent and overrides a simultaneous completed draw;
+    // d_*_touch protects writes received earlier in that draw as well (R2/R3).
+    if (wb_csrw_w && gdc2_recv_ptr == 4'd2)
+      gdc2_cursor_mask <= 16'h0001 << io_din[7:4];
+    else if (wb_mask_w)
+      gdc2_cursor_mask <= gdc2_recv_ptr[0] ? {io_din,gdc2_cursor_mask[7:0]}
+                                                       : {gdc2_cursor_mask[15:8],io_din};
+    else if (d_state == D_WR && mem_ready && d_left == 16'd0 &&
+             !d_csrw_touch && !d_mask_touch && !wb_csrw_w)
+      gdc2_cursor_mask <= adv_mask_w;
+
     case (d_state)
       D_IDLE: if (d_load_w) begin
         d_rop        <= pend_wctl[1:0];
         d_ope        <= pend_dir;
-        d_color      <= pend_col_w;
+        d_color      <= pend_figure ? pend_data_w : pend_col_w;
+        d_figure     <= pend_figure;
+        d_line       <= pend_line;
+        d_error      <= pend_error;
+        d_delta1     <= pend_delta1;
+        d_delta2     <= pend_delta2;
         d_mask       <= pend_msk_w;
         d_waddr      <= {pend_csrw1[5:0], pend_csrw0};
         d_route_egc  <= pend_egc;
@@ -693,6 +756,8 @@ module pc9821_gdc2 (
       end
       D_WR: if (mem_ready) begin
         mem_valid <= 1'b0;
+        if (d_figure) d_color <= {d_color[0],d_color[15:1]};
+        if (d_line) d_error <= d_error + (d_error[13] ? d_delta1 : d_delta2);
         // Every painted unit advances the cursor one dot along the direction (the
         // advance block above), the last one included - the machine's CURD readback
         // shows it advanced after a one-unit draw (STEP_DC00_*).
