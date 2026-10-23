@@ -267,4 +267,3 @@ module tb_pc9821_gdc2_figd;
 endmodule
 
 `default_nettype wire
-
