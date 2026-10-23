@@ -37,7 +37,9 @@ def render():
                     continue
                 p1, params, ead = 0, [0] * 5, 0x9000
                 dad, pattern = int(row['dad']), int(row['pattern'], 16)
-                rop, old = int(row['rop']) & 3, int(row['old'], 16)
+                rop, old = int(row['rop']), int(row['old'], 16)
+                if rop not in range(4):
+                    raise ValueError('unrecognized FIGD ROP: ' + row['case'])
             if row['outcome'] not in ('PASS', 'OBS'):
                 raise ValueError('non-oracle row selected: ' + row['case'])
             count, change = row['changes'].split('/', 1)

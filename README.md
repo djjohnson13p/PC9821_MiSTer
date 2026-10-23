@@ -93,8 +93,9 @@ under `games/PC9821/` and run `pc9821_cue2pcd` from the MiSTer menu's Scripts en
 - Floppy: a FORMAT on a D88 image fails as write-protected.
 - Not implemented: 16-bit WSS/MSS audio, the serial port, the 15 kHz and 31 kHz display modes,
   the 20- and 30-line text modes, split-screen and smooth text scrolling, the monochrome graphics
-  mode, PEGC 256-colour drawing (256-colour display works), and the graphics GDC's line, arc,
-  rectangle and character drawing.
+  mode, PEGC 256-colour drawing (256-colour display works), and the graphics GDC's arc,
+  rectangle and character drawing. Plain-plane FIGD dots and patterned lines are implemented
+  and match the checked-in Xe10 captures in simulation; FIGD through GRCG/EGC remains unimplemented.
 
 ## Development
 

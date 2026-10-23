@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // ==== WHAT THIS PROVES ====
-// The graphics GDC executes plain-plane FIGD dots and patterned Bresenham lines in every octant against the real Xe10's unchanged GDCDRAW.CSV and GDCROP.CSV: all 288 canonical endpoint lines, 16 dot positions, eight dot directions, the 48-dot A53C pattern line and 192 strict ROP cases produce exactly the captured GVRAM words, no extra writes in any plane or page, and the captured final cursor address and mask. The memory responder stalls accepts and returns reads later, so a draw must preserve its request until acceptance. FIGD through GRCG/EGC, rectangles, arcs, GCHRD, FIFO timing and the five-byte CURD format are outside this claim.
+// The graphics GDC executes plain-plane FIGD dots and patterned Bresenham lines in every octant against the real Xe10's unchanged GDCDRAW.CSV and GDCROP.CSV: all 288 canonical endpoint lines, 16 dot positions, eight dot directions, the 48-dot A53C pattern line and 192 strict ROP cases produce exactly the captured GVRAM words, no extra writes in any plane or page, and the captured final cursor address and mask. The memory responder stalls accepts and returns reads later, so a draw must preserve its request until acceptance. FIGD through GRCG/EGC, rectangles, arcs, GCHRD, FIFO timing and the five-byte CURD format are outside this claim. Directed no-CURS chains consume the advanced cursor mask, and a stalled current draw preserves later guest CURS/MASK writes and a second queued figure snapshot.
 
 `default_nettype none
 
@@ -20,6 +20,7 @@ module tb_pc9821_gdc2_figd;
   wire mr;
   reg resp = 0;
   reg [31:0] rdata = 0;
+  reg stall = 0;
   wire [15:0] line_addr;
   wire walk_page, disp, win_off, grph_on;
 
@@ -41,7 +42,7 @@ module tb_pc9821_gdc2_figd;
   integer clock_n = 0, rd_delay = 0;
   reg [31:0] rd_payload;
   wire [16:0] base_idx = {mp, mpl, mo[14:2], 1'b0};
-  assign mr = mv && rd_delay == 0 && !resp && (clock_n % 3 != 0);
+  assign mr = mv && !stall && rd_delay == 0 && !resp && (clock_n % 3 != 0);
   // The RAM is only a byte-enabled bus responder, never a graphics oracle.
   // All expected pixels come directly from the independent machine capture.
   always @(posedge clk) begin
@@ -99,6 +100,57 @@ module tb_pc9821_gdc2_figd;
       @(negedge clk); value = io_dout;
     end
   endtask
+  task automatic wait_idle;
+    integer elapsed;
+    begin
+      elapsed = 0;
+      while ((dut.d_state != 0 || dut.pend_valid) && elapsed < 50000) begin
+        @(negedge clk); elapsed++;
+      end
+      if (elapsed == 50000) $fatal(1,"FIGD did not drain its pending queue");
+      repeat (4) @(negedge clk);
+    end
+  endtask
+  task automatic clear_memory;
+    integer i;
+    begin
+      for (i = 0; i < 131072; i++) begin memory[i] = 0; expected[i] = 0; end
+    end
+  endtask
+  task automatic check_memory(input string name);
+    integer i;
+    begin
+      for (i = 0; i < 131072; i++) begin
+        checks++;
+        if (memory[i] !== expected[i])
+          fail($sformatf("%s word %05h got %04h expected %04h",name,i,memory[i],expected[i]));
+      end
+    end
+  endtask
+  task automatic check_cursor(input [15:0] ead, input [15:0] mask);
+    reg [7:0] lo, hi;
+    begin
+      write_io(8'hA2,8'hE0); read_param(lo); read_param(hi);
+      checks++;
+      if ({hi,lo} !== ead) fail($sformatf("cursor EAD got %04h expected %04h",{hi,lo},ead));
+      checks++;
+      if (dut.gdc2_cursor_mask !== mask)
+        fail($sformatf("next FIGD cursor mask got %04h expected %04h",dut.gdc2_cursor_mask,mask));
+    end
+  endtask
+  task automatic cursor(input [15:0] ead, input [3:0] dad);
+    begin
+      write_io(8'hA2,8'h49); param_word(ead); write_io(8'hA0,{dad,4'd0});
+    end
+  endtask
+  task automatic figure(input [7:0] p1, input [15:0] dc, input [15:0] d,
+                        input [15:0] d2, input [15:0] d1);
+    begin
+      write_io(8'hA2,8'h4C); write_io(8'hA0,p1);
+      param_word(dc); param_word(d); param_word(d2); param_word(d1); param_word(16'hFFFF);
+      write_io(8'hA2,8'h6C);
+    end
+  endtask
 
   // ==== CHECKS ====
   initial begin : cases
@@ -148,7 +200,60 @@ module tb_pc9821_gdc2_figd;
       checks++;
       if ({dut.gdc2_mask[1],dut.gdc2_mask[0]} !== end_mask)
         fail($sformatf("capture %0d final MASK got %04h expected %04h",v,{dut.gdc2_mask[1],dut.gdc2_mask[0]},end_mask));
+      checks++;
+      if (dut.gdc2_cursor_mask !== end_mask)
+        fail($sformatf("capture %0d next FIGD mask got %04h expected %04h",v,dut.gdc2_cursor_mask,end_mask));
     end
+
+    // Two FIGDs with NO intervening CURS/MASK consume the cursor left by the
+    // first figure. The two pixel positions are Xe10 DOT_DAD07/08's 0001/8000;
+    // the second direction is DOT_DIR2's captured cursor advance to mask 0200.
+    clear_memory;
+    write_io(8'hA2,8'h23); write_io(8'hA2,8'h78); param_word(16'hFFFF);
+    cursor(16'h9000,4'd7); figure(8'h02,0,0,0,0); wait_idle;
+    check_cursor(16'h9000,16'h0100);
+    write_io(8'hA2,8'h6C); wait_idle;
+    expected[17'h5000] = 16'h8001;
+    check_memory("two FIGDs with no CURS");
+    check_cursor(16'h9000,16'h0200);
+
+    // A new CURS and MASK while the current visit is stalled are later guest
+    // intent, so completing the old dot cannot erase either. The following
+    // figure has NO CURS: it must consume that retained address and MASK.
+    clear_memory;
+    cursor(16'h9000,4'd0);
+    stall = 1;
+    figure(8'h02,0,0,0,0);
+    if (!mv) $fatal(1,"stalled cursor test never presented a visit");
+    cursor(16'h9100,4'd9);
+    write_io(8'hA2,8'h4A); param_word(16'h0400);
+    stall = 0; wait_idle;
+    check_cursor(16'h9100,16'h0400);
+    write_io(8'hA2,8'h6C); wait_idle;
+    expected[17'h5000] = 16'h0080; // DOT_DAD00
+    expected[17'h5100] = 16'h2000; // DOT_DAD10
+    check_memory("CURS and MASK survive old completion");
+    check_cursor(16'h9100,16'h0800);
+
+    // A second FIGD queues while the first is stalled. Its later PRAM/CURS/FIGS
+    // writes cannot change the first job's snapshots. The first expected words
+    // are LINE_PATTERN_A53C verbatim; the second DOT_DAD00 adds its captured bit.
+    clear_memory;
+    write_io(8'hA2,8'h78); param_word(16'hA53C);
+    cursor(16'h9000,4'd8);
+    stall = 1;
+    figure(8'h0A,16'd47,16'hFFD1,16'hFFA2,16'd0);
+    write_io(8'hA2,8'h78); param_word(16'hFFFF);
+    cursor(16'h9000,4'd0);
+    figure(8'h00,0,0,0,0);
+    if (!dut.pend_valid) $fatal(1,"second FIGD did not queue behind stalled first");
+    stall = 0; wait_idle;
+    expected[17'h5000] = 16'h3C80;
+    expected[17'h5001] = 16'h3CA5;
+    expected[17'h5002] = 16'h3CA5;
+    expected[17'h5003] = 16'h00A5;
+    check_memory("queued FIGD snapshots");
+    check_cursor(16'h9028,16'h0001);
     // ==== VERDICT ====
     $display("NOTE gdc2_figd: %0d machine-capture cases, %0d checks, %0d errors",FIGD_CASES,checks,errors);
     if (errors != 0) $fatal(1,"TB_PC9821_GDC2_FIGD: FAIL (%0d errors)",errors);

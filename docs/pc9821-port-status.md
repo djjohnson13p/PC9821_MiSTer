@@ -148,8 +148,15 @@ page flip takes effect at the write (the real-machine probe shows the tear).
 The **graphics GDC** implements SCROLL (four partitions), the display START/STOP latch (the
 compositor's graphics enable), CSRFORM's line repeat (a 640x200 program is line-doubled into
 the 400-line raster), and the **WRITE family** (WDAT/VECTW/CSRW/WRITE, the uPD7220's vector
-path, `tb_pc9821_gdc2_write`). FIGD line/rectangle/arc drawing, the CURD read-back's five-byte
-shape and the FIFO/drawing-busy timing are accepted but **not executed** (README known issues).
+path, `tb_pc9821_gdc2_write`). Plain-plane **FIGD dot and patterned line drawing** executes with the uPD7220's 14-bit
+DDA, four ROPs, per-byte bit reversal, cursor advance and a snapshotted pending job.
+`tb_pc9821_gdc2_figd` replays 505 unmodified real Xe10 capture rows (288 canonical
+lines, 16 dot positions, eight directions, one patterned line and 192 ROP cases),
+including every resulting GVRAM word and the final cursor; directed chains and
+stalled overlapping guest writes check that later cursor state survives. These are
+simulation results, not a hardware validation of this revision. FIGD through GRCG/EGC,
+rectangle/arc drawing, the CURD read-back's five-byte shape and FIFO/drawing-busy
+timing remain **unimplemented** (README known issues).
 
 ### Character generator
 
@@ -379,7 +386,7 @@ A mid-range 486 PC-9821 (Xe10 / Xe), not a PCI-era model:
 
 ## Not implemented
 
-- the GDC2's FIGD line/rectangle/arc drawing and its FIFO/drawing-busy timing;
+- the GDC2's FIGD through GRCG/EGC, rectangle/arc drawing and its FIFO/drawing-busy timing;
 - the PEGC plane-mode engine;
 - the WSS/MSS 16-bit audio board;
 - the serial port;

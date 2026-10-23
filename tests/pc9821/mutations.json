@@ -2084,5 +2084,19 @@
   "why": "figure pattern rotates in the wrong direction",
   "from": "{d_color[0],d_color[15:1]}",
   "to": "{d_color[14:0],d_color[15]}"
+ },
+ {
+  "bench": "gdc2_write",
+  "file": "src/pc9821/video/pc9821_gdc2.sv",
+  "why": "byte WDAT takes stale prior code[0] instead of its arriving data",
+  "from": "((gdc2_recv_ptr[0] == 1'b0) ? io_din : gdc2_code[0])",
+  "to": "gdc2_code[0]"
+ },
+ {
+  "bench": "gdc2_figd",
+  "file": "src/pc9821/video/pc9821_gdc2.sv",
+  "why": "FIGD restarts at stale DAD instead of consuming its advanced mask",
+  "from": "draw_fire_f ? gdc2_cursor_mask[7:0] : gdc2_mask[0]",
+  "to": "draw_fire_f ? (16'h0001 << gdc2_csrw[2][7:4]) : gdc2_mask[0]"
  }
 ]

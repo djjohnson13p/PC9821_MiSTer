@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // ==== WHAT THIS PROVES ====
-// The graphics GDC's WRITE command executes against the ITF's own GVRAM pattern test: the exact BANK4@0xFA70F stream (GRCG TDW tiles 0x33/0x55, VECTW then CSRW 00 40 08, WRITE FF FF) reads back the tile words 0x3333 at 0xA8000 and 0x5555 at 0xB0000 exactly as the Xe10 does - the test that SETS BIOS work-area 0000:054D bit 6, the FLAMEZAP boot check - and with the GRCG never armed those tile words are ABSENT, so the bit becomes correct because the test genuinely passes and never because it is forced. The write's data path is the machine's own WDAT_WORD/GDCWG rows: the uPD7220's internal bit order lands per-byte bit-reversed in CPU VRAM (GDCCURS's MASK_0001 reads expected-cpu=0080), CURS.WG - bit 3 of CSRW's third byte - selects the WDAT word directly or the 7220's bit-0 replication of it, and the four ROPs paint the mask bits with the pattern exactly as the STRICT capture rows say (W_0_FFFF_0000_0001 lands FF7F, W_2_FFFF_0001_A55A lands 5AA5, which refutes NP2kai gdcsub_write's clear formula; the capture wins) - fifteen capture vectors replayed byte for byte. Multi-unit draws walk ONE DOT along the VECTW direction per unit and advance the cursor, exactly WDAT_STEP's observed pixels (dir 0 paints word 0x0800 and leaves the cursor at 0x0828 = +40 words, dir 1 paints (0x0800,D7) and (0x0828,D8), dir 2 paints D7 then D8 inside word 0x0800, dir 3 paints (0x0800,D7) and (0x07D8,D8); directions 4-7 and the three-unit draws replay the same capture's STEP_DC01_D4..D7 and STEP_DC02_D1..D7 rows), with the cursor write-back readable over CSRR's first two bytes (the raw_curd EAD the machine reports); a second draw queued while the first walks lands its own capture outcome and nothing is dropped. The GRCG-RMW and EGC routes carry each unit as ONE store visit on the GVRAM port share - the route latched per draw exactly as NP2kai's gdcpset_prepare latches its pset functions (io/gdc_pset.c:117-137) - and are checked DIFFERENTIALLY against the CPU path's own store of the same word, so no expected pixel is ever derived from this repo's RTL. It does not cover the FIFO/drawing-busy timing (the conformance capture's FIFO_TURN/STATE rows), the CURD read-back's five-byte shape, or the FIGD/line/rect/arc command space.
+// The graphics GDC's WRITE command executes against the ITF's own GVRAM pattern test: the exact BANK4@0xFA70F stream (GRCG TDW tiles 0x33/0x55, VECTW then CSRW 00 40 08, WRITE FF FF) reads back the tile words 0x3333 at 0xA8000 and 0x5555 at 0xB0000 exactly as the Xe10 does - the test that SETS BIOS work-area 0000:054D bit 6, the FLAMEZAP boot check - and with the GRCG never armed those tile words are ABSENT, so the bit becomes correct because the test genuinely passes and never because it is forced. The write's data path is the machine's own WDAT_WORD/GDCWG rows: the uPD7220's internal bit order lands per-byte bit-reversed in CPU VRAM (GDCCURS's MASK_0001 reads expected-cpu=0080), CURS.WG - bit 3 of CSRW's third byte - selects the WDAT word directly or the 7220's bit-0 replication of it, and the four ROPs paint the mask bits with the pattern exactly as the STRICT capture rows say (W_0_FFFF_0000_0001 lands FF7F, W_2_FFFF_0001_A55A lands 5AA5, which refutes NP2kai gdcsub_write's clear formula; the capture wins) - fifteen capture vectors replayed byte for byte. Multi-unit draws walk ONE DOT along the VECTW direction per unit and advance the cursor, exactly WDAT_STEP's observed pixels (dir 0 paints word 0x0800 and leaves the cursor at 0x0828 = +40 words, dir 1 paints (0x0800,D7) and (0x0828,D8), dir 2 paints D7 then D8 inside word 0x0800, dir 3 paints (0x0800,D7) and (0x07D8,D8); directions 4-7 and the three-unit draws replay the same capture's STEP_DC01_D4..D7 and STEP_DC02_D1..D7 rows), with the cursor write-back readable over CSRR's first two bytes (the raw_curd EAD the machine reports); a second draw queued while the first walks lands its own capture outcome and nothing is dropped. The GRCG-RMW and EGC routes carry each unit as ONE store visit on the GVRAM port share - the route latched per draw exactly as NP2kai's gdcpset_prepare latches its pset functions (io/gdc_pset.c:117-137) - and are checked DIFFERENTIALLY against the CPU path's own store of the same word, so no expected pixel is ever derived from this repo's RTL. It does not cover the FIFO/drawing-busy timing (the conformance capture's FIFO_TURN/STATE rows), the CURD read-back's five-byte shape, or the FIGD/line/rect/arc command space. Low-byte and high-byte WDAT complete on their first data byte and snapshot that arriving byte rather than the previous WDAT datum, with the opposite byte preserved (NEC WDAT TYPE 10/11 and the captured WG1 direct-data bit order).
 
 module tb_pc9821_gdc2_write;
   reg clk_sys = 0;
@@ -357,6 +357,26 @@ module tb_pc9821_gdc2_write;
     w_case("WG1_R0_O0000_S0001_MFFFF", 2'd0, 1'b1, 16'h0000, 16'h0001, 16'hFFFF, 16'h0080);
     w_case("WG1_R0_O0000_S0001_MA55A", 2'd0, 1'b1, 16'h0000, 16'h0001, 16'hA55A, 16'h0000);
     w_case("WG1_R0_O0000_S0100_MFFFF", 2'd0, 1'b1, 16'h0000, 16'h0100, 16'hFFFF, 16'h8000);
+
+    // Both byte widths finish on the FIRST parameter byte. Prime the old WDAT
+    // register with zero, then send 01: snapshotting stale code[0] on that edge
+    // would write zero. NEC WDAT TYPE=10/11 selects low/high byte; WG1's direct
+    // data and bit order are pinned above by WG1_R0_*_S0001/S0100_MFFFF.
+    gdc_vectw(3'd0,16'd0);
+    gdc_mask(16'hFFFF); gdc_csrw(16'h8080,8'h08);
+    gdc_write2(8'h20,8'h00,8'h00); gdc_wait_idle;
+    cpu_wr_word(2'd1,15'h0100,16'hAA55);
+    gdc_csrw(16'h8080,8'h08); gdc_mask(16'hFFFF);
+    gdc_write1(8'h30,8'h01); gdc_wait_idle;
+    cpu_rd_word(2'd1,15'h0100,w);
+    check16(w,16'hAA80,"low-byte WDAT snapshots its arriving byte");
+    gdc_csrw(16'h8080,8'h08); gdc_mask(16'hFFFF);
+    gdc_write2(8'h20,8'h00,8'h00); gdc_wait_idle;
+    cpu_wr_word(2'd1,15'h0100,16'hAA55);
+    gdc_csrw(16'h8080,8'h08); gdc_mask(16'hFFFF);
+    gdc_write1(8'h38,8'h01); gdc_wait_idle;
+    cpu_rd_word(2'd1,15'h0100,w);
+    check16(w,16'h8055,"high-byte WDAT snapshots its arriving byte");
 
     // ---- Section 4: the WDAT_STEP rows - one dot along the direction per unit ----
     // The painted words and the cursor write-back are the CSV's own `changes` and
