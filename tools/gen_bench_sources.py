@@ -1539,6 +1539,11 @@ BENCHES = {
             'src/pc9821/common/pc9821_dpram.sv',
         ],
     ),
+    'gdc2_character': (
+        'TB_PC9821_GDC2_CHARACTER',
+        'The graphics GDC plain-plane character command replays545 explicit-input Xe10 GDCGCHR observations (one-hot rotations, solid areas, zoom1..16, zero replacement and PRAM address selection), comparing complete GVRAM contents and captured final cursor under stalled memory responses. Nine slant/mixed cases retain unknown input glyphs and are explicitly unreplayed; this is not full-family qualification. Command preamble is NEC Design Manual v3 sections4.24.13-14, not a recovered byte-identical rc6 program.',
+        ['src/pc9821/video/pc9821_gdc2.sv'],
+    ),
     'gdc2_figd': (
         'TB_PC9821_GDC2_FIGD',
         "The graphics GDC executes plain-plane FIGD dots and patterned Bresenham lines in every octant against the real Xe10's unchanged GDCDRAW.CSV and GDCROP.CSV: all 288 canonical endpoint lines, 16 dot positions, eight dot directions, the 48-dot A53C pattern line and 192 strict ROP cases produce exactly the captured GVRAM words, no extra writes in any plane or page, and the captured final cursor address and mask. The memory responder stalls accepts and returns reads later, so a draw must preserve its request until acceptance. FIGD through GRCG/EGC, rectangles, arcs, GCHRD, FIFO timing and the five-byte CURD format are outside this claim. Directed no-CURS chains consume the advanced cursor mask, and a stalled current draw preserves later guest CURS/MASK writes and a second queued figure snapshot.",
