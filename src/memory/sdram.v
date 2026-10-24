@@ -566,6 +566,20 @@ function [14:0] rc_of(input [26:0] ad, input lg);
     rc_of = {lg ? ad[25:24] : ad[24:23],
              lg ? ad[23:11] : ad[22:10]} + 15'd1;
 endfunction
+// Compute each port's chip metadata before request arbitration. Keep the exact
+// increment/equality/XOR expression: a reduction-AND changes X/Z semantics.
+function rc_chip_of(input [26:0] ad, input [1:0] sz);
+    reg [14:0] rc_n;
+    begin
+        rc_n = rc_of(ad, sz[1]);
+        rc_chip_of = ((sz == 2'd3) && ad[26])
+                   ^ ((sz == 2'd3) && (rc_n == 15'd0));
+    end
+endfunction
+wire [3:0] port_rc_chip = {rc_chip_of(addr3, sdram_size),
+                           rc_chip_of(addr2, sdram_size),
+                           rc_chip_of(addr1, sdram_size),
+                           rc_chip_of(addr0, sdram_size)};
 /* verilator lint_on UNUSEDSIGNAL */
 reg  [14:0] rc_next_buf;
 reg         rc_chip_buf;
@@ -703,6 +717,7 @@ always @(posedge clk) begin
     automatic reg new_req;
     reg [1:0] req_id;
     reg [26:0] req_addr;
+    reg req_rc_chip;
     reg [31:0] req_din;
     reg [3:0] req_be;
     reg req_wr;
@@ -727,6 +742,7 @@ always @(posedge clk) begin
     case (req_id)
     2'd0: begin
         req_addr = addr0;
+        req_rc_chip = port_rc_chip[0];
         req_din = din0;
         req_be = be0;
         req_wr = wr0;
@@ -735,6 +751,7 @@ always @(posedge clk) begin
     end
     2'd1: begin
         req_addr = addr1;
+        req_rc_chip = port_rc_chip[1];
         req_din = din1;
         req_be = be1;
         req_wr = wr1;
@@ -743,6 +760,7 @@ always @(posedge clk) begin
     end
     2'd2: begin
         req_addr = addr2;
+        req_rc_chip = port_rc_chip[2];
         req_din = din2;
         req_be = be2;
         req_wr = wr2;
@@ -751,6 +769,7 @@ always @(posedge clk) begin
     end
     default: begin
         req_addr = addr3;
+        req_rc_chip = port_rc_chip[3];
         req_din = din3;
         req_be = be3;
         req_wr = wr3;
@@ -880,8 +899,7 @@ always @(posedge clk) begin
             req_large_buf  <= sdram_size[1];
             req_chip_buf   <= (sdram_size == 2'd3) && req_addr[26];
             rc_next_buf    <= rc_n;
-            rc_chip_buf    <= ((sdram_size == 2'd3) && req_addr[26])
-                            ^ ((sdram_size == 2'd3) && (rc_n == 15'd0));
+            rc_chip_buf    <= req_rc_chip;
             req_wr_buf     <= req_wr;
             req_gath_buf   <= req_gath;
             burst_buf      <= req_burst;
