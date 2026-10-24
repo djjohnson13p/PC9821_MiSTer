@@ -213,7 +213,7 @@ module pc9821_gdc2 (
   // VRAM_G} (io/gdc_sub.c), so in the plane-lane order the GVRAM uses (0 = B at
   // 0xA8000, 1 = R, 2 = G, 3 = E) the map is GDC plane n -> lane n-1 (mod 4).
   localparam [2:0] D_IDLE = 3'd0, D_RD = 3'd1, D_RDW = 3'd2,
-                   D_WR = 3'd3, D_NEXT = 3'd4;
+                   D_WR = 3'd3, D_NEXT = 3'd4, D_TURN = 3'd5;
   reg [2:0]  d_state;
   reg [15:0] d_left;      // units still to paint AFTER the current one: VECTW[1..2], i.e. NP2kai's leng - 1
                           // (leng is 1..65536; counting it down to 0 instead of 1 saves the +1 and a bit)
@@ -226,6 +226,8 @@ module pc9821_gdc2 (
   reg        d_character, d_slant, d_chr_reverse;
   reg [63:0] d_chr_pram;
   reg [3:0] d_chr_zoom, d_chr_xzoom_left, d_chr_yzoom_left;
+  reg [3:0] d_chr_turn_left;
+  reg d_chr_turn_done;
   reg [13:0] d_chr_rows_last, d_chr_cols_left;
   reg [2:0] d_chr_byte, d_chr_bit;
   // The DDA's 14-bit two's-complement arithmetic is the NEC FIGS contract:
@@ -421,14 +423,19 @@ module pc9821_gdc2 (
   // The DDA chooses one of them from D's sign; a DOT/WDAT uses the raw direction.
   // NEC vector drawing, verified against the 288 unchanged LINE_CANON captures.
   // NEC4.20 serpentine scan: reverse each physical strip, then advance its
-  // perpendicular axis (45-degree shear when SL). The final cursor performs
+  // perpendicular axis. SL adds a factor-scaled shear at logical-strip
+  // boundaries, preserving square zoom replicas (NEC Fig4.25). The cursor performs
   // this same turn; Xe10 AREA_1x8=>09118/M0200, AREA_8x8=>09001/M0001.
   wire chr_strip_end_w = (d_left == 16'd0) && (d_chr_xzoom_left == 4'd0);
   wire draw_done_w = d_character ? chr_strip_end_w &&
                     (d_chr_cols_left == 14'd0) && (d_chr_yzoom_left == 4'd0) :
                     (d_left == 16'd0);
-  wire [2:0] chr_stepdir_w = chr_strip_end_w ?
-      d_ope + (d_slant ? 3'd1 : 3'd2) :
+  wire chr_need_turn_w = d_character && d_slant && chr_strip_end_w &&
+                        (d_chr_yzoom_left == 4'd0);
+  wire draw_finish_w = (d_state == D_WR && mem_ready && draw_done_w && !chr_need_turn_w) ||
+                       (d_state == D_TURN && d_chr_turn_left == 4'd0 && d_chr_turn_done);
+  wire [2:0] chr_stepdir_w = (d_state == D_TURN) ? {d_ope[2:1],1'b0} :
+      chr_strip_end_w ? d_ope + 3'd2 :
       d_ope + (d_chr_reverse ? 3'd4 : 3'd0);
   wire [2:0] d_stepdir = d_character ? chr_stepdir_w : d_line ?
       d_ope + {2'b00, (d_ope[0] ^ !d_error[13])} : d_ope;
@@ -516,6 +523,8 @@ module pc9821_gdc2 (
       d_character <= 1'b0;
       d_slant <= 1'b0;
       d_chr_reverse <= 1'b0;
+      d_chr_turn_left <= 4'd0;
+      d_chr_turn_done <= 1'b0;
       d_chr_pram <= 64'd0;
       d_chr_zoom <= 4'd0;
       d_chr_xzoom_left <= 4'd0;
@@ -771,7 +780,7 @@ module pc9821_gdc2 (
     else if (wb_mask_w)
       gdc2_cursor_mask <= gdc2_recv_ptr[0] ? {io_din,gdc2_cursor_mask[7:0]}
                                                        : {gdc2_cursor_mask[15:8],io_din};
-    else if (d_state == D_WR && mem_ready && draw_done_w &&
+    else if (draw_finish_w &&
              !d_csrw_touch && !d_mask_touch && !wb_csrw_w)
       gdc2_cursor_mask <= adv_mask_w;
 
@@ -791,6 +800,8 @@ module pc9821_gdc2 (
         d_chr_rows_last <= pend_chr_rows_last;
         d_chr_cols_left <= {pend_vect2[5:0],pend_vect1};
         d_chr_reverse <= 1'b0;
+        d_chr_turn_left <= 4'd0;
+        d_chr_turn_done <= 1'b0;
         d_chr_byte   <= 3'd7;
         d_chr_bit    <= 3'd0;
         d_error      <= pend_error;
@@ -855,7 +866,15 @@ module pc9821_gdc2 (
         // Every painted unit advances the cursor one dot along the direction (the
         // advance block above), the last one included - the machine's CURD readback
         // shows it advanced after a one-unit draw (STEP_DC00_*).
-        if (draw_done_w) begin
+        if (chr_need_turn_w) begin
+          // Normal perpendicular step first; then factor cardinal shear steps.
+          // No memory visit is generated during this internal cursor turn.
+          d_waddr <= adv_waddr_w;
+          d_mask <= adv_mask_w;
+          d_chr_turn_left <= d_chr_zoom;
+          d_chr_turn_done <= draw_done_w;
+          d_state <= D_TURN;
+        end else if (draw_done_w) begin
           d_state <= D_IDLE;
           if (!d_csrw_touch && !wb_csrw_w) begin
             gdc2_csrw[0] <= adv_waddr_w[7:0];
@@ -871,6 +890,23 @@ module pc9821_gdc2 (
           d_mask  <= adv_mask_w;
           d_state <= D_NEXT;
         end
+      end
+      D_TURN: begin
+        d_waddr <= adv_waddr_w;
+        d_mask <= adv_mask_w;
+        if (d_chr_turn_left != 4'd0)
+          d_chr_turn_left <= d_chr_turn_left - 4'd1;
+        else if (d_chr_turn_done) begin
+          d_state <= D_IDLE;
+          if (!d_csrw_touch && !wb_csrw_w) begin
+            gdc2_csrw[0] <= adv_waddr_w[7:0];
+            gdc2_csrw[1] <= {gdc2_csrw[1][7:6],adv_waddr_w[13:8]};
+          end
+          if (!d_mask_touch && !wb_mask_w) begin
+            gdc2_mask[0] <= adv_mask_w[7:0];
+            gdc2_mask[1] <= adv_mask_w[15:8];
+          end
+        end else d_state <= D_NEXT;
       end
       // One clk_sys of mem_valid low between visits: the EGC's cpu port takes its
       // accept gap from the CPU stream and its S_HOLD bubble assumes one between

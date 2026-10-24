@@ -179,7 +179,7 @@ module tb_pc9821_gdc2_character;
         memory[offset]=GCHR_PIXELS[w][31:16];expected[offset]=GCHR_PIXELS[w][15:0];
       end
       // Canonical manual setup: replace/set RMW; writing zoom; pitch40;
-      // PRAM8..15; cursor EAD09000,DAD8; FIGS GC+DIR,DC,D; GCHRD.
+      // PRAM8..15; cursor EAD09000,DAD8; FIGS GC+DIR,DC,D,D2=D; GCHRD.
       write_io(8'hA2,8'h20|{6'd0,rop});
       write_io(8'hA2,8'h46);write_io(8'hA0,{4'd0,zoom});
       write_io(8'hA2,8'h47);write_io(8'hA0,8'd40);
@@ -188,7 +188,7 @@ module tb_pc9821_gdc2_character;
       write_io(8'hA2,8'h70|{4'd0,pram_start});
       for(i=0;i<int'(pram_length);i++)write_io(8'hA0,pram[(int'(pram_start)-8+i)*8+:8]);
       cursor(16'h9000,4'd8);
-      write_io(8'hA2,8'h4C);write_io(8'hA0,p1);param_word(dc);param_word(d);
+      write_io(8'hA2,8'h4C);write_io(8'hA0,p1);param_word(dc);param_word(d);param_word(d);
       write_io(8'hA2,8'h68);
       // Zoom16 visits16384 pixels; this responder needs<20clks/RMW.
       // 500000 clocks exceeds327680 plus setup margin; oracle data unchanged.
@@ -243,6 +243,24 @@ module tb_pc9821_gdc2_character;
     clear_memory();expected[17'h5000]=16'h8000;expected[17'h5050]=16'h4000;
     character(8'h90,16'd1,16'd2,4'd0,64'h0102000000000000,2'd3,16'h9000,4'd8);
     wait_idle();check_memory("manual slant2x2 DIR0");check_cursor(16'h9050,16'h0400);
+
+    // NEC Fig4.24/25: each slanted logical pixel expands into an aligned2x2
+    // square. Literal diagram-derived E, not a replay of unknown rc6 glyphs.
+    clear_memory();
+    expected[17'h5001]=16'hFFFF;expected[17'h5029]=16'hFFFF;
+    expected[17'h5050]=16'h0300;expected[17'h5078]=16'h0300;
+    expected[17'h50A0]=16'h0C00;expected[17'h50C8]=16'h0C00;
+    expected[17'h50F0]=16'h3F00;expected[17'h50F1]=16'hC0FF;
+    expected[17'h5118]=16'h3F00;expected[17'h5119]=16'hC0FF;
+    expected[17'h5140]=16'hC000;expected[17'h5168]=16'hC000;
+    expected[17'h5190]=16'h0003;expected[17'h51B8]=16'h0003;
+    expected[17'h51E0]=16'h000C;expected[17'h5208]=16'h000C;
+    expected[17'h5230]=16'hFF3F;expected[17'h5231]=16'h00C0;
+    expected[17'h5258]=16'hFF3F;expected[17'h5259]=16'h00C0;
+    before_visits=writes_seen;
+    character(8'h96,16'd7,16'd8,4'd1,64'hFF8080FF808080FF,2'd3,16'h9001,4'd15);
+    wait_idle();check_memory("NEC Fig4.25 slant zoom2 E8x8");
+    if(writes_seen-before_visits!=256)fail("NEC Fig4.25 zoom2 must visit256 pixels");
 
     // Mixed PRAM tiles repeat in both dimensions (manual4.20), not clamp8.
     clear_memory();expected[17'h5000]=16'h8000;expected[17'h5140]=16'h8000;
