@@ -434,9 +434,66 @@ module pc9821_gdc2 (
                         (d_chr_yzoom_left == 4'd0);
   wire draw_finish_w = (d_state == D_WR && mem_ready && draw_done_w && !chr_need_turn_w) ||
                        (d_state == D_TURN && d_chr_turn_left == 4'd0 && d_chr_turn_done);
+  // Keep these small operations out of Quartus25.1 carry-adder lowering.
+  // Arithmetic returns all X for any X/Z operand; preserve that pessimism,
+  // including the unknown reverse selector inside the original addition.
+  function automatic [2:0] chr_perp_dir(input [2:0] dir);
+    begin
+      case (dir)
+        3'd0: chr_perp_dir = 3'd2;
+        3'd1: chr_perp_dir = 3'd3;
+        3'd2: chr_perp_dir = 3'd4;
+        3'd3: chr_perp_dir = 3'd5;
+        3'd4: chr_perp_dir = 3'd6;
+        3'd5: chr_perp_dir = 3'd7;
+        3'd6: chr_perp_dir = 3'd0;
+        3'd7: chr_perp_dir = 3'd1;
+        default: chr_perp_dir = 3'bxxx;
+      endcase
+    end
+  endfunction
+  function automatic [2:0] chr_scan_dir(input [2:0] dir, input reverse);
+    begin
+      case ({reverse,dir})
+        4'd0: chr_scan_dir = 3'd0;
+        4'd1: chr_scan_dir = 3'd1;
+        4'd2: chr_scan_dir = 3'd2;
+        4'd3: chr_scan_dir = 3'd3;
+        4'd4: chr_scan_dir = 3'd4;
+        4'd5: chr_scan_dir = 3'd5;
+        4'd6: chr_scan_dir = 3'd6;
+        4'd7: chr_scan_dir = 3'd7;
+        4'd8: chr_scan_dir = 3'd4;
+        4'd9: chr_scan_dir = 3'd5;
+        4'd10: chr_scan_dir = 3'd6;
+        4'd11: chr_scan_dir = 3'd7;
+        4'd12: chr_scan_dir = 3'd0;
+        4'd13: chr_scan_dir = 3'd1;
+        4'd14: chr_scan_dir = 3'd2;
+        4'd15: chr_scan_dir = 3'd3;
+        default: chr_scan_dir = 3'bxxx;
+      endcase
+    end
+  endfunction
+  function automatic [2:0] chr_next_bit(input [2:0] bitno, input reverse);
+    begin
+      // Here reverse was outside the arithmetic, so an X/Z selector merges
+      // the two known results bit by bit, as the original ternary did.
+      case (bitno)
+        3'd0: chr_next_bit = reverse ? 3'd7 : 3'd1;
+        3'd1: chr_next_bit = reverse ? 3'd0 : 3'd2;
+        3'd2: chr_next_bit = reverse ? 3'd1 : 3'd3;
+        3'd3: chr_next_bit = reverse ? 3'd2 : 3'd4;
+        3'd4: chr_next_bit = reverse ? 3'd3 : 3'd5;
+        3'd5: chr_next_bit = reverse ? 3'd4 : 3'd6;
+        3'd6: chr_next_bit = reverse ? 3'd5 : 3'd7;
+        3'd7: chr_next_bit = reverse ? 3'd6 : 3'd0;
+        default: chr_next_bit = 3'bxxx;
+      endcase
+    end
+  endfunction
   wire [2:0] chr_stepdir_w = (d_state == D_TURN) ? {d_ope[2:1],1'b0} :
-      chr_strip_end_w ? d_ope + 3'd2 :
-      d_ope + (d_chr_reverse ? 3'd4 : 3'd0);
+      chr_strip_end_w ? chr_perp_dir(d_ope) : chr_scan_dir(d_ope,d_chr_reverse);
   wire [2:0] d_stepdir = d_character ? chr_stepdir_w : d_line ?
       d_ope + {2'b00, (d_ope[0] ^ !d_error[13])} : d_ope;
   wire        adv_xp_w = (d_stepdir == 3'd1) || (d_stepdir == 3'd2) || (d_stepdir == 3'd3);
@@ -860,7 +917,7 @@ module pc9821_gdc2 (
           else begin
             d_chr_xzoom_left <= d_chr_zoom;
             d_left <= d_left - 16'd1;
-            d_chr_bit <= d_chr_reverse ? d_chr_bit - 3'd1 : d_chr_bit + 3'd1;
+            d_chr_bit <= chr_next_bit(d_chr_bit,d_chr_reverse);
           end
         end
         // Every painted unit advances the cursor one dot along the direction (the
