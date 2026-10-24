@@ -38,7 +38,7 @@ module tb_pc9821_gdc2_character;
 
   reg [15:0] memory [0:131071];
   reg [15:0] expected [0:131071];
-  integer clock_n = 0, rd_delay = 0;
+  integer clock_n = 0, rd_delay = 0, writes_seen = 0;
   reg [31:0] rd_payload;
   wire [16:0] base_idx = {mp, mpl, mo[14:2], 1'b0};
   assign mr = mv && !stall && rd_delay == 0 && !resp && (clock_n % 3 != 0);
@@ -53,6 +53,7 @@ module tb_pc9821_gdc2_character;
     end
     if (rst_n && mv && mr) begin
       if (mw) begin
+        writes_seen <= writes_seen + 1;
         if (mb[0]) memory[base_idx][7:0] = md[7:0];
         if (mb[1]) memory[base_idx][15:8] = md[15:8];
         if (mb[2]) memory[base_idx+1][7:0] = md[23:16];
@@ -100,10 +101,10 @@ module tb_pc9821_gdc2_character;
     integer elapsed;
     begin
       elapsed = 0;
-      while ((dut.d_state != 0 || dut.pend_valid) && elapsed < 50000) begin
+      while ((dut.d_state != 0 || dut.pend_valid) && elapsed < 500000) begin
         @(negedge clk); elapsed++;
       end
-      if (elapsed == 50000) $fatal(1,"FIGD did not drain its pending queue");
+      if (elapsed == 500000) $fatal(1,"FIGD did not drain its pending queue");
       repeat (4) @(negedge clk);
     end
   endtask
@@ -140,6 +141,23 @@ module tb_pc9821_gdc2_character;
     end
   endtask
 
+  // Independent manual-defined controls, not fabricated rc6 glyph replays.
+  task automatic character(input [7:0] type_dir,input [15:0] dc,d,
+                           input [3:0] zoom,input [63:0] pram,input [1:0] rop,
+                           input [15:0] ead,input [3:0] dad);
+    integer j;
+    begin
+      write_io(8'hA2,8'h20|{6'd0,rop});
+      write_io(8'hA2,8'h46);write_io(8'hA0,{4'd0,zoom});
+      write_io(8'hA2,8'h78);
+      for(j=0;j<8;j++)write_io(8'hA0,pram[j*8+:8]);
+      cursor(ead,dad);
+      write_io(8'hA2,8'h4C);write_io(8'hA0,type_dir);
+      param_word(dc);param_word(d);param_word(d);
+      write_io(8'hA2,8'h68);
+    end
+  endtask
+
   // ==== CHECKS ====
   initial begin : cases
     reg [7:0] p1,lo,hi;
@@ -149,7 +167,8 @@ module tb_pc9821_gdc2_character;
     reg [3:0] zoom,pram_start,pram_length;
     reg [1:0] rop;
     reg [5:0] count;
-    integer v,i,w,offset,elapsed;
+    integer v,i,w,offset,elapsed,before_visits,op,bitval;
+    reg [15:0] rop_expected;
     repeat(4) @(negedge clk);rst_n=1;
     $display("GCHRD_CAPTURE_ACCOUNTING total=554 replayable=545 unreplayed_unknown_glyph=9");
     for(v=0;v<GCHR_CASES;v++) begin
@@ -171,9 +190,11 @@ module tb_pc9821_gdc2_character;
       cursor(16'h9000,4'd8);
       write_io(8'hA2,8'h4C);write_io(8'hA0,p1);param_word(dc);param_word(d);
       write_io(8'hA2,8'h68);
+      // Zoom16 visits16384 pixels; this responder needs<20clks/RMW.
+      // 500000 clocks exceeds327680 plus setup margin; oracle data unchanged.
       elapsed=0;
-      while((dut.d_state!=0 || dut.pend_valid) && elapsed<100000)begin @(negedge clk);elapsed++;end
-      if(elapsed==100000)$fatal(1,"GCHRD did not drain case%0d",v);
+      while((dut.d_state!=0 || dut.pend_valid) && elapsed<500000)begin @(negedge clk);elapsed++;end
+      if(elapsed==500000)$fatal(1,"GCHRD did not drain case%0d",v);
       repeat(4)@(negedge clk);
       check_memory($sformatf("GCHRD capture%0d",v));
       write_io(8'hA2,8'hE0);read_param(lo);read_param(hi);
@@ -182,6 +203,67 @@ module tb_pc9821_gdc2_character;
       checks++;
       if(dut.gdc2_cursor_mask!==end_mask)fail($sformatf("GCHRD capture%0d mask got%04h expected%04h",v,dut.gdc2_cursor_mask,end_mask));
     end
+    // NEC4.20 Fig4.26, printedp82:5x7 E, DIR6,35RMWs.
+    clear_memory();
+    expected[17'h5000]=16'h800F;expected[17'h5028]=16'h0008;
+    expected[17'h5050]=16'h0008;expected[17'h5078]=16'h000F;
+    expected[17'h50A0]=16'h0008;expected[17'h50C8]=16'h0008;
+    expected[17'h50F0]=16'h800F;
+    before_visits=writes_seen;
+    character(8'h16,16'd6,16'd5,4'd0,64'h1F10101E10101F00,2'd3,16'h9000,4'd8);
+    wait_idle();check_memory("NEC Fig4.26 E5x7");check_cursor(16'h9118,16'h0010);
+    if(writes_seen-before_visits!=35)fail("NEC Fig4.26 must visit35 pixels including zero bits");
+
+    // Literal2x2 table: PRAM15=01,14=02. Reverse only two active bits.
+    clear_memory();memory[17'h5000]=16'hFFFF;memory[17'h5028]=16'hFFFF;
+    expected[17'h5000]=16'hBFFF;expected[17'h5028]=16'h7FFF;
+    character(8'h10,16'd1,16'd2,4'd0,64'h0102000000000000,2'd0,16'h9000,4'd8);
+    wait_idle();check_memory("manual mixed2x2 DIR0");check_cursor(16'h9000,16'h0400);
+    clear_memory();memory[17'h5000]=16'hFFFF;memory[17'h4FD8]=16'hFFFF;
+    expected[17'h5000]=16'hBFFF;expected[17'h4FD8]=16'h7FFF;
+    character(8'h12,16'd1,16'd2,4'd0,64'h0102000000000000,2'd0,16'h9000,4'd8);
+    wait_idle();check_memory("manual mixed2x2 DIR2");check_cursor(16'h8FB0,16'h0100);
+
+    // All four ROPs: zero paints only in replace; other15bits survive.
+    for(bitval=0;bitval<2;bitval++)for(op=0;op<4;op++)begin
+      clear_memory();memory[17'h5000]=16'hA55A;
+      case(op)
+        0:rop_expected=bitval!=0?16'hA55A:16'h255A;
+        1,2:rop_expected=bitval!=0?16'h255A:16'hA55A;
+        default:rop_expected=16'hA55A;
+      endcase
+      expected[17'h5000]=rop_expected;before_visits=writes_seen;
+      character(8'h10,16'd0,16'd1,4'd0,bitval!=0?64'h0100000000000000:64'd0,2'(op),16'h9000,4'd8);
+      wait_idle();check_memory($sformatf("manual1x1 pattern%0d ROP%0d",bitval,op));check_cursor(16'h9000,16'h0200);
+      if(writes_seen-before_visits!=1)fail("zero/one GCHRD pixel must visit exactly once");
+    end
+
+    // Manual4.20 slant: DIR0 perpendicular turns diagonally (+1,+1).
+    // PRAM15=01,14=02: painted coordinates(0,0),(1,2), origin(8,0).
+    clear_memory();expected[17'h5000]=16'h8000;expected[17'h5050]=16'h4000;
+    character(8'h90,16'd1,16'd2,4'd0,64'h0102000000000000,2'd3,16'h9000,4'd8);
+    wait_idle();check_memory("manual slant2x2 DIR0");check_cursor(16'h9050,16'h0400);
+
+    // Mixed PRAM tiles repeat in both dimensions (manual4.20), not clamp8.
+    clear_memory();expected[17'h5000]=16'h8000;expected[17'h5140]=16'h8000;
+    character(8'h10,16'd0,16'd9,4'd0,64'h0100000000000000,2'd3,16'h9000,4'd8);
+    wait_idle();check_memory("manual initial-axis repeat9");check_cursor(16'h9140,16'h0200);
+    clear_memory();expected[17'h5000]=16'h8000;expected[17'h5001]=16'h0080;
+    character(8'h10,16'd8,16'd1,4'd0,64'h0100000000000000,2'd3,16'h9000,4'd8);
+    wait_idle();check_memory("manual perpendicular repeat9");check_cursor(16'h9001,16'h0002);
+
+    // StalledA + queuedB: both active and pending PRAM/ZOOM snapshots survive
+    // later parser writes. A=onepixel, B=2x2 replicated pixel, total5visits.
+    clear_memory();stall=1;before_visits=writes_seen;
+    expected[17'h5000]=16'h8000;expected[17'h5100]=16'h00C0;expected[17'h5128]=16'h00C0;
+    character(8'h10,16'd0,16'd1,4'd0,64'h0100000000000000,2'd3,16'h9000,4'd8);
+    character(8'h10,16'd0,16'd1,4'd1,64'h0100000000000000,2'd3,16'h9100,4'd0);
+    write_io(8'hA2,8'h78);for(i=0;i<8;i++)write_io(8'hA0,0);
+    write_io(8'hA2,8'h46);write_io(8'hA0,8'h0F);
+    stall=0;wait_idle();check_memory("active+pending PRAM/ZOOM snapshots");check_cursor(16'h9100,16'h0004);
+    if(writes_seen-before_visits!=5)fail("PRAM/ZOOM snapshot changes pixel visit count");
+    if(dut.draw_drops!=0)fail("two snapshotted GCHRD jobs must not drop");
+    $display("GCHRD_MANUAL_CONTROLS_COMPLETED E5x7=35visits mixed/ROP/slant/repeat/snapshots");
     if(errors!=0)$fatal(1,"TB_PC9821_GDC2_CHARACTER: FAIL (%0d errors; %0d checks;545 cases)",errors,checks);
     $display("TB_PC9821_GDC2_CHARACTER: PASS");$finish;
   end
