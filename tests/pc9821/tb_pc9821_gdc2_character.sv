@@ -282,7 +282,12 @@ module tb_pc9821_gdc2_character;
     if(writes_seen-before_visits!=5)fail("PRAM/ZOOM snapshot changes pixel visit count");
     if(dut.draw_drops!=0)fail("two snapshotted GCHRD jobs must not drop");
     $display("GCHRD_MANUAL_CONTROLS_COMPLETED E5x7=35visits mixed/ROP/slant/repeat/snapshots");
+    // ==== VERDICT ====
     if(errors!=0)$fatal(1,"TB_PC9821_GDC2_CHARACTER: FAIL (%0d errors; %0d checks;545 cases)",errors,checks);
     $display("TB_PC9821_GDC2_CHARACTER: PASS");$finish;
+  end
+  initial begin
+    #1_000_000_000;
+    $fatal(1,"TB_PC9821_GDC2_CHARACTER: TIMEOUT");
   end
 endmodule
